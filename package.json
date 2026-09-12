@@ -1,8 +1,6 @@
 {
-  "name": "my-top10-addon",
-  "version": "1.6.0",
-  "dependencies": {
-    "express": "^4.19.2",
-    "sharp": "^0.33.5"
-  }
+  "name": "ranked-poster-svc",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module"
 }
