@@ -38,62 +38,62 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
-// Pure Vector Paths for Apple TV Style Numbers (Grid Height: 200)
+// High-Precision SVG Paths for Apple TV Style Digits (Grid Box: 100 x 150)
 const DIGIT_PATHS = {
   "1": {
-    width: 80,
-    path: '<path d="M 15 35 L 55 0 L 68 0 L 68 200 L 22 200 L 22 165 L 36 165 L 36 30 Z" />'
+    width: 75,
+    path: '<path d="M 20 30 L 55 0 L 75 0 L 75 150 L 35 150 L 35 125 L 50 125 L 50 25 L 30 40 Z" />'
   },
   "2": {
-    width: 120,
-    path: '<path d="M 10 55 C 10 15, 110 15, 110 60 C 110 95, 75 125, 10 165 L 10 200 L 115 200 L 115 165 L 55 165 L 85 135 C 112 108, 120 85, 120 60 C 120 20, 90 0, 60 0 C 30 0, 10 20, 10 55 Z" />'
+    width: 95,
+    path: '<path d="M 10 40 C 10 10, 90 10, 90 45 C 90 70, 60 95, 10 125 L 10 150 L 95 150 L 95 125 L 40 125 L 70 98 C 92 75, 100 55, 100 40 C 100 12, 72 0, 48 0 C 24 0, 8 15, 8 40 Z" />'
   },
   "3": {
-    width: 120,
-    path: '<path d="M 15 20 L 110 20 L 110 55 L 60 85 C 95 85, 115 105, 115 140 C 115 180, 85 200, 55 200 C 25 200, 10 180, 5 150 L 38 145 C 40 162, 48 170, 58 170 C 70 170, 80 160, 80 140 C 80 120, 70 110, 52 110 L 38 110 L 38 80 L 68 52 L 15 52 Z" />'
+    width: 95,
+    path: '<path d="M 12 18 L 88 18 L 88 45 L 48 70 C 76 70, 92 84, 92 110 C 92 138, 68 150, 48 150 C 22 150, 8 132, 5 110 L 28 106 C 30 118, 38 128, 48 128 C 58 128, 68 120, 68 108 C 68 94, 58 85, 42 85 L 30 85 L 30 62 L 55 42 L 12 42 Z" />'
   },
   "4": {
-    width: 115,
-    path: '<path d="M 75 0 L 10 120 L 75 120 L 75 0 Z M 75 120 L 110 120 L 110 150 L 75 150 L 75 200 L 42 200 L 42 150 L 0 150 L 0 115 L 75 0 Z" />'
+    width: 90,
+    path: '<path d="M 60 0 L 5 95 L 60 95 L 60 0 Z M 60 95 L 90 95 L 90 118 L 60 118 L 60 150 L 36 150 L 36 118 L 0 118 L 0 90 L 60 0 Z" />'
   },
   "5": {
-    width: 120,
-    path: '<path d="M 15 20 L 105 20 L 105 52 L 48 52 L 42 85 C 52 78, 68 75, 80 78 C 105 85, 118 108, 118 140 C 118 180, 92 200, 58 200 C 25 200, 8 178, 5 145 L 38 140 C 40 158, 48 168, 58 168 C 72 168, 82 158, 82 140 C 82 122, 70 110, 52 110 C 42 110, 32 115, 25 120 L 15 20 Z" />'
+    width: 95,
+    path: '<path d="M 12 15 L 85 15 L 85 40 L 38 40 L 34 65 C 42 60, 54 58, 65 60 C 84 65, 95 82, 95 106 C 95 135, 75 150, 48 150 C 20 150, 8 132, 5 108 L 26 104 C 28 118, 36 128, 48 128 C 58 128, 68 118, 68 104 C 68 90, 58 80, 42 80 C 34 80, 26 84, 20 88 L 12 15 Z" />'
   },
   "6": {
-    width: 120,
-    path: '<path d="M 65 0 C 25 0, 5 40, 5 110 C 5 160, 25 200, 62 200 C 95 200, 115 170, 115 130 C 115 90, 92 65, 60 65 C 45 65, 32 72, 24 85 C 28 45, 42 30, 68 30 L 105 30 L 105 0 Z M 60 95 C 75 95, 82 108, 82 130 C 82 152, 75 168, 60 168 C 45 168, 38 152, 38 130 C 38 108, 45 95, 60 95 Z" />'
+    width: 95,
+    path: '<path d="M 52 0 C 20 0, 5 30, 5 80 C 5 120, 20 150, 50 150 C 76 150, 92 128, 92 98 C 92 68, 74 50, 48 50 C 36 50, 26 55, 19 65 C 22 35, 34 22, 54 22 L 85 22 L 85 0 Z M 48 72 C 60 72, 68 82, 68 98 C 68 114, 60 126, 48 126 C 36 126, 28 114, 28 98 C 28 82, 36 72, 48 72 Z" />'
   },
   "7": {
-    width: 120,
-    path: '<path d="M 10 20 L 115 20 L 115 50 L 60 200 L 22 200 L 75 52 L 10 52 Z" />'
+    width: 90,
+    path: '<path d="M 8 15 L 92 15 L 92 38 L 48 150 L 20 150 L 60 40 L 8 40 Z" />'
   },
   "8": {
-    width: 120,
-    path: '<path d="M 60 0 C 30 0, 12 18, 12 48 C 12 70, 25 85, 42 95 C 22 105, 5 122, 5 152 C 5 182, 28 200, 60 200 C 92 200, 115 182, 115 152 C 115 122, 98 105, 78 95 C 95 85, 108 70, 108 48 C 108 18, 90 0, 60 0 Z M 60 30 C 72 30, 76 40, 76 50 C 76 60, 70 70, 60 70 C 50 70, 48 60, 48 50 C 48 40, 52 30, 60 30 Z M 60 120 C 72 120, 80 130, 80 152 C 80 170, 72 172, 60 172 C 48 172, 40 170, 40 152 C 40 130, 48 120, 60 120 Z" />'
+    width: 95,
+    path: '<path d="M 48 0 C 24 0, 10 14, 10 36 C 10 52, 20 64, 34 70 C 18 78, 4 90, 4 112 C 4 135, 22 150, 48 150 C 74 150, 92 135, 92 112 C 92 90, 78 78, 62 70 C 76 64, 86 52, 86 36 C 86 14, 72 0, 48 0 Z M 48 22 C 58 22, 64 28, 64 36 C 64 44, 58 52, 48 52 C 38 52, 32 44, 32 36 C 32 28, 38 22, 48 22 Z M 48 90 C 60 90, 68 98, 68 112 C 68 126, 60 130, 48 130 C 36 130, 28 126, 28 112 C 28 98, 36 90, 48 90 Z" />'
   },
   "9": {
-    width: 120,
-    path: '<path d="M 55 200 C 95 200, 115 160, 115 90 C 115 40, 95 0, 58 0 C 25 0, 5 30, 5 70 C 5 110, 28 135, 60 135 C 75 135, 88 128, 96 115 C 92 155, 78 170, 52 170 L 15 170 L 15 200 Z M 60 32 C 75 32, 82 48, 82 70 C 82 92, 75 105, 60 105 C 45 105, 38 92, 38 70 C 38 48, 45 32, 60 32 Z" />'
+    width: 95,
+    path: '<path d="M 44 150 C 75 150, 90 120, 90 68 C 90 30, 75 0, 45 0 C 20 0, 4 22, 4 52 C 4 82, 22 100, 48 100 C 60 100, 70 95, 76 86 C 73 116, 62 128, 42 128 L 12 128 L 12 150 Z M 48 22 C 60 22, 68 34, 68 52 C 68 70, 60 80, 48 80 C 36 80, 28 70, 28 52 C 28 34, 36 22, 48 22 Z" />'
   },
   "0": {
-    width: 120,
-    path: '<path d="M 60 0 C 22 0, 5 35, 5 100 C 5 165, 22 200, 60 200 C 98 200, 115 165, 115 100 C 115 35, 98 0, 60 0 Z M 60 32 C 78 32, 80 58, 80 100 C 80 142, 78 168, 60 168 C 42 168, 40 142, 40 100 C 40 58, 42 32, 60 32 Z" />'
+    width: 95,
+    path: '<path d="M 48 0 C 18 0, 4 26, 4 75 C 4 124, 18 150, 48 150 C 78 150, 92 124, 92 75 C 92 26, 78 0, 48 0 Z M 48 24 C 62 24, 66 44, 66 75 C 66 106, 62 126, 48 126 C 34 126, 30 106, 30 75 C 30 44, 34 24, 48 24 Z" />'
   }
 };
 
-function renderRankVector(rankNum) {
+function renderRankSvg(rankNum) {
   const digits = String(rankNum).split("");
-  let totalWidth = 0;
-  let pathsSvg = "";
+  let xOffset = 0;
+  let paths = "";
 
   digits.forEach((d) => {
     const digitData = DIGIT_PATHS[d] || DIGIT_PATHS["1"];
-    pathsSvg += `<g transform="translate(${totalWidth}, 0)">${digitData.path}</g>`;
-    totalWidth += digitData.width + 8;
+    paths += `<g transform="translate(${xOffset}, 0)">${digitData.path}</g>`;
+    xOffset += digitData.width + 10;
   });
 
-  return { pathsSvg, totalWidth };
+  return paths;
 }
 
 // Helper to get base host URL in Vercel Cloud environment
@@ -224,7 +224,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}`;
+      // v=4 parameter forces Vercel & Stremio to immediately purge old cached dots
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=4`;
 
       return {
         id: idToUse,
@@ -236,7 +237,7 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
       };
     }).filter(Boolean);
 
-    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
+    res.setHeader("Cache-Control", "public, max-age=1800, s-maxage=1800");
     res.json({ metas });
   } catch (err) {
     console.error(`Catalog Error (${type}):`, err.message);
@@ -297,38 +298,30 @@ app.get("/api/poster", async (req, res) => {
       : "";
 
     const numRank = parseInt(rank, 10) || 1;
-    const { pathsSvg } = renderRankVector(numRank);
+    const digitPathsSvg = renderRankSvg(numRank);
 
-    // Dynamic Vector Scale based on Backdrop Height
-    const desiredHeight = Math.round(height * 0.70); // 70% height
-    const scale = (desiredHeight / 200).toFixed(3);
-    const xPos = Math.round(width * 0.025);
-    const yPos = Math.round(height * 0.96 - desiredHeight);
+    // Dynamic Scale for 1280x720 (Rank height ~ 450px)
+    const scale = (height * 0.0031).toFixed(3);
+    const xPos = Math.round(width * 0.03);
+    const yPos = Math.round(height * 0.32);
 
     const svgOverlay = Buffer.from(`
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="bottomShadow" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="#000000" stop-opacity="0" />
-            <stop offset="40%" stop-color="#000000" stop-opacity="0.25" />
-            <stop offset="100%" stop-color="#000000" stop-opacity="0.88" />
+            <stop offset="40%" stop-color="#000000" stop-opacity="0.3" />
+            <stop offset="100%" stop-color="#000000" stop-opacity="0.9" />
           </linearGradient>
 
           <linearGradient id="leftShadow" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stop-color="#000000" stop-opacity="0.85" />
-            <stop offset="35%" stop-color="#000000" stop-opacity="0.3" />
+            <stop offset="40%" stop-color="#000000" stop-opacity="0.25" />
             <stop offset="100%" stop-color="#000000" stop-opacity="0" />
           </linearGradient>
 
-          <linearGradient id="appleTvGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stop-color="#FFFFFF" />
-            <stop offset="60%" stop-color="#F2F2F2" />
-            <stop offset="100%" stop-color="#CCCCCC" />
-          </linearGradient>
-
-          <filter id="appleShadow" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.95"/>
-            <feDropShadow dx="-4" dy="0" stdDeviation="6" flood-color="#000000" flood-opacity="0.6"/>
+          <filter id="appleShadow" x="-20%" y="-20%" width="150%" height="150%">
+            <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.95"/>
           </filter>
 
           <filter id="pillShadow" x="-20%" y="-20%" width="140%" height="140%">
@@ -339,9 +332,9 @@ app.get("/api/poster", async (req, res) => {
         <rect width="${width}" height="${height}" fill="url(#leftShadow)" />
         <rect width="${width}" height="${height}" fill="url(#bottomShadow)" />
 
-        <!-- Vector Apple TV Rank Number -->
-        <g filter="url(#appleShadow)" transform="translate(${xPos}, ${yPos}) scale(${scale})" fill="url(#appleTvGradient)" stroke="rgba(255,255,255,0.4)" stroke-width="2">
-          ${pathsSvg}
+        <!-- Apple TV Vector Rank Number -->
+        <g filter="url(#appleShadow)" transform="translate(${xPos}, ${yPos}) scale(${scale})" fill="#FFFFFF" stroke="rgba(0,0,0,0.4)" stroke-width="2">
+          ${digitPathsSvg}
         </g>
 
         <!-- Genre Pill -->
