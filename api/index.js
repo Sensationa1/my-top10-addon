@@ -8,7 +8,7 @@ const SOURCES = {
 
 const MANIFEST = {
   id: "community.nuvio.top10.ranked",
-  version: "3.0.0",
+  version: "4.0.0",
   name: "Top 10 Trending",
   description: "Top 10 trending movies & series from Trakt with ranked landscape posters.",
   logo: "https://i.imgur.com/lphiQ9I.png",
@@ -23,20 +23,18 @@ const MANIFEST = {
 };
 
 // ── Fetch MDBList items ───────────────────────────────────────────────────────
+// MDBList returns { movies: [...] } for movie lists and { shows: [...] } for show lists
+// Each item has imdb_id (not imdbid), title, release_year
 async function fetchList(listId) {
-  const url = `https://api.mdblist.com/lists/${listId}/items?apikey=${MDBLIST_KEY}&limit=10`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`MDBList ${r.status}: ${await r.text()}`);
+  const r = await fetch(
+    `https://api.mdblist.com/lists/${listId}/items?apikey=${MDBLIST_KEY}&limit=10`
+  );
+  if (!r.ok) throw new Error(`MDBList ${r.status}`);
   const data = await r.json();
-  // Log raw keys to help debug TV shows
-  console.log("MDBList keys:", Object.keys(data));
-  const items = data.items || data.movies || data.shows || [];
-  console.log(`MDBList returned ${items.length} items for list ${listId}`);
-  if (items[0]) console.log("Sample item keys:", Object.keys(items[0]));
-  return items.slice(0, 10);
+  return data.movies || data.shows || data.items || [];
 }
 
-// ── Fetch TMDB backdrop via imdb_id ──────────────────────────────────────────
+// ── Fetch TMDB images by IMDB ID ──────────────────────────────────────────────
 async function fetchImages(imdbId, stremioType) {
   if (!TMDB_KEY || !imdbId) return null;
   try {
@@ -45,60 +43,55 @@ async function fetchImages(imdbId, stremioType) {
     );
     if (!r.ok) return null;
     const d = await r.json();
-    const results = stremioType === "movie"
-      ? (d.movie_results || [])
-      : (d.tv_results || []);
-    const item = results[0];
+    const item = stremioType === "movie"
+      ? (d.movie_results || [])[0]
+      : (d.tv_results   || [])[0];
     if (!item) return null;
     return {
-      backdrop: item.backdrop_path
-        ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}`
-        : null,
-      background: item.backdrop_path
-        ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`
-        : null,
-      poster: item.poster_path
-        ? `https://image.tmdb.org/t/p/w342${item.poster_path}`
-        : null,
+      backdrop:   item.backdrop_path ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}`  : null,
+      background: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : null,
+      poster:     item.poster_path   ? `https://image.tmdb.org/t/p/w342${item.poster_path}`    : null,
     };
-  } catch (e) {
-    console.error("TMDB fetch error:", e.message);
-    return null;
-  }
+  } catch { return null; }
+}
+
+// ── Ranked poster via imagekit free CDN overlay ───────────────────────────────
+// We use wsrv.nl (a free image proxy/processor) to add the rank number
+// directly onto the TMDB backdrop. This returns a real image URL Nuvio can load.
+function rankedPosterUrl(backdropUrl, rank) {
+  if (!backdropUrl) return null;
+  // wsrv.nl supports text overlay via &wtl= parameter
+  // Font size 120, white text, bottom-left position, bold
+  const n = String(rank);
+  const encoded = encodeURIComponent(backdropUrl);
+  return `https://wsrv.nl/?url=${encoded}&w=780&h=439&fit=cover&wtl=${n}&wts=120&wtc=ffffff&wtb=1&wtp=0&wta=0&wtx=10&wty=-10&output=jpg`;
 }
 
 // ── Build meta ────────────────────────────────────────────────────────────────
 async function buildMeta(item, rank, stremioType) {
-  const imdbId = item.imdbid || item.imdb_id || null;
+  // MDBList field is imdb_id for shows, imdbid for movies — handle both
+  const imdbId = item.imdb_id || item.imdbid || null;
   const title  = item.title || item.name || "";
-
-  console.log(`rank ${rank}: imdbId=${imdbId} title=${title}`);
+  const year   = item.release_year || item.year || null;
 
   const imgs = await fetchImages(imdbId, stremioType);
 
-  // Poster: use TMDB backdrop directly — Nuvio renders these fine in landscape mode
-  // We use wsrv.nl to overlay the rank number onto the image as text
-  let poster = null;
-  if (imgs?.backdrop) {
-    // wsrv.nl image processing: resize to 780x439 (16:9), overlay rank number
-    const encoded = encodeURIComponent(imgs.backdrop);
-    poster = imgs.backdrop; // Direct TMDB backdrop — most compatible
-  } else if (imgs?.poster) {
-    poster = imgs.poster;
-  }
+  // Try wsrv.nl ranked poster first, fall back to plain backdrop, then portrait
+  const poster = rankedPosterUrl(imgs?.backdrop, rank)
+    || imgs?.backdrop
+    || imgs?.poster
+    || undefined;
 
   return {
     id:          imdbId || `mdb:${item.id}`,
     type:        stremioType,
     name:        title,
-    poster:      poster || undefined,
+    poster,
     posterShape: "landscape",
     background:  imgs?.background || undefined,
     description: item.description || item.overview || "",
-    releaseInfo: item.year ? String(item.year) : undefined,
-    imdbRating:  item.imdbrating
-      ? String(Number(item.imdbrating).toFixed(1))
-      : undefined,
+    releaseInfo: year ? String(year) : undefined,
+    imdbRating:  item.imdbrating ? String(Number(item.imdbrating).toFixed(1)) : undefined,
   };
 }
 
@@ -109,19 +102,15 @@ export default async function handler(req, res) {
 
   const path = req.url.split("?")[0].replace(/^\/api/, "");
 
-  // /manifest.json
   if (path === "/manifest.json" || path === "/" || path === "") {
     res.setHeader("Content-Type", "application/json");
     return res.status(200).json(MANIFEST);
   }
 
-  // /catalog/:type/:id.json
   const match = path.match(/^\/catalog\/([^/]+)\/([^/]+?)(?:\.json)?$/);
   if (match) {
     const key = `${match[1]}/${match[2]}`;
     const src = SOURCES[key];
-
-    console.log(`Catalog request: key=${key} found=${!!src}`);
 
     if (!src) {
       res.setHeader("Content-Type", "application/json");
@@ -135,13 +124,13 @@ export default async function handler(req, res) {
     try {
       const items = await fetchList(src.listId);
       const metas = await Promise.all(
-        items.map((item, i) => buildMeta(item, i + 1, src.stremioType))
+        items.slice(0, 10).map((item, i) => buildMeta(item, i + 1, src.stremioType))
       );
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=7200");
       return res.status(200).json({ metas });
     } catch (err) {
-      console.error("Catalog error:", err);
+      console.error(err);
       res.setHeader("Content-Type", "application/json");
       return res.status(502).json({ error: err.message, metas: [] });
     }
