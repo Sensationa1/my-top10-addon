@@ -38,6 +38,64 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
+// Studio-Grade Netflix Condensed Geometry (Base ViewBox: 100x160 per digit)
+const DIGIT_PATHS = {
+  "1": { 
+    width: 60, 
+    path: '<path d="M 12 38 L 40 10 L 62 10 L 62 150 L 34 150 L 34 38 Z"/>' 
+  },
+  "2": { 
+    width: 90, 
+    path: '<path d="M 8 42 C 8 16, 22 8, 48 8 C 74 8, 88 16, 88 42 C 88 66, 68 88, 45 110 L 22 128 L 88 128 L 88 150 L 8 150 L 8 128 L 48 88 C 64 70, 64 58, 64 42 C 64 26, 56 24, 48 24 C 38 24, 32 28, 32 42 Z"/>' 
+  },
+  "3": { 
+    width: 88, 
+    path: '<path d="M 10 10 L 86 10 L 86 32 L 46 72 C 70 72, 86 84, 86 108 C 86 134, 70 150, 48 150 C 22 150, 8 134, 8 108 L 32 108 C 32 122, 38 128, 48 128 C 58 128, 62 120, 62 108 C 62 96, 54 90, 38 90 L 26 90 L 26 70 L 54 32 L 10 32 Z"/>' 
+  },
+  "4": { 
+    width: 90, 
+    path: '<path d="M 56 10 L 84 10 L 84 94 L 94 94 L 94 116 L 84 116 L 84 150 L 58 150 L 58 116 L 8 116 L 8 94 Z M 58 38 L 26 94 L 58 94 Z"/>' 
+  },
+  "5": { 
+    width: 88, 
+    path: '<path d="M 12 10 L 84 10 L 84 30 L 34 30 L 28 64 C 40 56, 52 54, 62 54 C 78 54, 88 66, 88 100 C 88 132, 72 150, 48 150 C 22 150, 8 132, 8 104 L 32 104 C 32 120, 38 128, 48 128 C 58 128, 64 120, 64 100 C 64 84, 56 76, 44 76 C 34 76, 26 82, 20 90 L 10 82 Z"/>' 
+  },
+  "6": { 
+    width: 88, 
+    path: '<path d="M 48 10 C 20 10, 8 32, 8 80 C 8 128, 20 150, 48 150 C 76 150, 88 128, 88 94 C 88 64, 74 54, 50 54 C 36 54, 24 62, 16 72 C 16 34, 28 32, 48 32 L 70 32 L 70 10 Z M 48 76 C 64 76, 64 84, 64 98 C 64 116, 58 128, 48 128 C 38 128, 32 116, 32 98 C 32 84, 38 76, 48 76 Z"/>' 
+  },
+  "7": { 
+    width: 84, 
+    path: '<path d="M 8 10 L 86 10 L 86 28 L 44 150 L 18 150 L 58 28 L 8 28 Z"/>' 
+  },
+  "8": { 
+    width: 88, 
+    path: '<path d="M 48 10 C 26 10, 12 22, 12 42 C 12 58, 24 68, 36 72 C 20 76, 8 88, 8 110 C 8 132, 22 150, 48 150 C 74 150, 88 132, 88 110 C 88 88, 76 76, 60 72 C 72 68, 84 58, 84 42 C 84 22, 70 10, 48 10 Z M 48 30 C 60 30, 62 36, 62 44 C 62 52, 56 58, 48 58 C 40 58, 34 52, 34 44 C 34 36, 36 30, 48 30 Z M 48 78 C 62 78, 64 86, 64 110 C 64 128, 58 130, 48 130 C 38 130, 32 128, 32 110 C 32 86, 34 78, 48 78 Z"/>' 
+  },
+  "9": { 
+    width: 88, 
+    path: '<path d="M 48 10 C 20 10, 8 32, 8 64 C 8 94, 22 104, 46 104 C 60 104, 72 96, 80 86 C 80 122, 68 128, 48 128 L 26 128 L 26 150 L 48 150 C 76 150, 88 128, 88 80 C 88 32, 76 10, 48 10 Z M 48 32 C 60 32, 64 42, 64 60 C 64 74, 58 84, 48 84 C 38 84, 32 74, 32 60 C 32 42, 36 32, 48 32 Z"/>' 
+  },
+  "0": { 
+    width: 88, 
+    path: '<path d="M 48 10 C 18 10, 8 30, 8 80 C 8 130, 18 150, 48 150 C 78 150, 88 130, 88 80 C 88 30, 78 10, 48 10 Z M 48 32 C 64 32, 64 48, 64 80 C 64 112, 64 128, 48 128 C 32 128, 32 112, 32 80 C 32 48, 32 32, 48 32 Z"/>' 
+  }
+};
+
+function renderRankSvg(rankNum) {
+  const digits = String(rankNum).split("");
+  let xOffset = 0;
+  let paths = "";
+
+  digits.forEach((d) => {
+    const digitData = DIGIT_PATHS[d] || DIGIT_PATHS["1"];
+    paths += `<g transform="translate(${xOffset}, 0)">${digitData.path}</g>`;
+    xOffset += digitData.width - 6; // Tight Netflix kerning
+  });
+
+  return paths;
+}
+
 // Helper to get base host URL in Vercel Cloud environment
 function getHostUrl(req) {
   const protocol = req.headers["x-forwarded-proto"] || "https";
@@ -166,8 +224,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      // v=10 forces Vercel CDN & Stremio to immediately flush old wobbly image caches
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=10`;
+      // v=12 forces NuVio & Stremio iOS to purge stale image caches completely
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=12`;
 
       return {
         id: idToUse,
@@ -240,60 +298,50 @@ app.get("/api/poster", async (req, res) => {
       : "";
 
     const numRank = parseInt(rank, 10) || 1;
+    const digitPathsSvg = renderRankSvg(numRank);
 
-    // Netflix Bold Scale & Positioning Calculations
-    const fontSize = Math.round(height * 0.78);
-    const textX = Math.round(width * 0.02);
-    const textY = Math.round(height * 0.88); // Text Baseline
-    const strokeWidth = Math.round(height * 0.02);
+    // Scale calculation: 160px base height scaled to 70% of poster height
+    const desiredHeight = Math.round(height * 0.70); 
+    const scale = (desiredHeight / 160).toFixed(3);
+    const xPos = Math.round(width * 0.025);
+    const yPos = Math.round(height * 0.20);
 
     const pillWidth = Math.max(110, formattedGenres.length * 12 + 32);
     const pillXPos = width - pillWidth - Math.round(width * 0.04);
     const pillYPos = Math.round(height * 0.05);
 
-    const fontStack = "'Impact', 'Arial Black', 'Trebuchet MS', 'DejaVu Sans', sans-serif";
-
     const svgOverlay = Buffer.from(`
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <!-- Dark Contrast Vignette for Left Side -->
           <linearGradient id="netflixGradient" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stop-color="#000000" stop-opacity="0.85" />
-            <stop offset="35%" stop-color="#000000" stop-opacity="0.45" />
-            <stop offset="70%" stop-color="#000000" stop-opacity="0.0" />
+            <stop offset="40%" stop-color="#000000" stop-opacity="0.45" />
+            <stop offset="75%" stop-color="#000000" stop-opacity="0.0" />
           </linearGradient>
         </defs>
 
-        <!-- Left-Side Gradient Vignette -->
+        <!-- Left-Side Gradient Vignette for Rank Contrast -->
         <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#netflixGradient)" />
 
-        <!-- 1. Drop Shadow Layer -->
-        <text 
-          x="${textX + 6}" 
-          y="${textY + 6}" 
-          font-family="${fontStack}" 
-          font-size="${fontSize}" 
-          font-weight="900" 
-          fill="#000000" 
-          opacity="0.9">
-          ${numRank}
-        </text>
+        <!-- Layer 1: Solid Drop Shadow -->
+        <g transform="translate(${xPos + 8}, ${yPos + 8}) scale(${scale})" fill="#000000" opacity="0.85">
+          ${digitPathsSvg}
+        </g>
 
-        <!-- 2. Crisp White Outline + Dark Core Fill -->
-        <text 
-          x="${textX}" 
-          y="${textY}" 
-          font-family="${fontStack}" 
-          font-size="${fontSize}" 
-          font-weight="900" 
-          fill="#121212" 
-          stroke="#FFFFFF" 
-          stroke-width="${strokeWidth}" 
-          stroke-linejoin="miter" 
-          stroke-miterlimit="3"
-          paint-order="stroke fill">
-          ${numRank}
-        </text>
+        <!-- Layer 2: Razor-Sharp White Border Stroke -->
+        <g transform="translate(${xPos}, ${yPos}) scale(${scale})" 
+           fill="none" 
+           stroke="#FFFFFF" 
+           stroke-width="7" 
+           stroke-linejoin="round" 
+           stroke-linecap="round">
+          ${digitPathsSvg}
+        </g>
+
+        <!-- Layer 3: Dark Inner Core Fill -->
+        <g transform="translate(${xPos}, ${yPos}) scale(${scale})" fill="#141414">
+          ${digitPathsSvg}
+        </g>
 
         <!-- Top-Right Genre Badge -->
         ${
