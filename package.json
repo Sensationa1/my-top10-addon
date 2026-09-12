@@ -1,8 +1,8 @@
 {
   "name": "my-top10-addon",
-  "version": "1.5.0",
-  "description": "Top 10 from MDBList with ranking numbers",
+  "version": "1.6.0",
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "sharp": "^0.33.5"
   }
 }
