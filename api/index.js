@@ -38,48 +38,18 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
-// High-Precision SVG Paths for Apple TV Style Digits (Grid Box: 100 x 150)
+// Clean Apple TV Sans-Serif Vector Digits (Grid Height: 120)
 const DIGIT_PATHS = {
-  "1": {
-    width: 75,
-    path: '<path d="M 20 30 L 55 0 L 75 0 L 75 150 L 35 150 L 35 125 L 50 125 L 50 25 L 30 40 Z" />'
-  },
-  "2": {
-    width: 95,
-    path: '<path d="M 10 40 C 10 10, 90 10, 90 45 C 90 70, 60 95, 10 125 L 10 150 L 95 150 L 95 125 L 40 125 L 70 98 C 92 75, 100 55, 100 40 C 100 12, 72 0, 48 0 C 24 0, 8 15, 8 40 Z" />'
-  },
-  "3": {
-    width: 95,
-    path: '<path d="M 12 18 L 88 18 L 88 45 L 48 70 C 76 70, 92 84, 92 110 C 92 138, 68 150, 48 150 C 22 150, 8 132, 5 110 L 28 106 C 30 118, 38 128, 48 128 C 58 128, 68 120, 68 108 C 68 94, 58 85, 42 85 L 30 85 L 30 62 L 55 42 L 12 42 Z" />'
-  },
-  "4": {
-    width: 90,
-    path: '<path d="M 60 0 L 5 95 L 60 95 L 60 0 Z M 60 95 L 90 95 L 90 118 L 60 118 L 60 150 L 36 150 L 36 118 L 0 118 L 0 90 L 60 0 Z" />'
-  },
-  "5": {
-    width: 95,
-    path: '<path d="M 12 15 L 85 15 L 85 40 L 38 40 L 34 65 C 42 60, 54 58, 65 60 C 84 65, 95 82, 95 106 C 95 135, 75 150, 48 150 C 20 150, 8 132, 5 108 L 26 104 C 28 118, 36 128, 48 128 C 58 128, 68 118, 68 104 C 68 90, 58 80, 42 80 C 34 80, 26 84, 20 88 L 12 15 Z" />'
-  },
-  "6": {
-    width: 95,
-    path: '<path d="M 52 0 C 20 0, 5 30, 5 80 C 5 120, 20 150, 50 150 C 76 150, 92 128, 92 98 C 92 68, 74 50, 48 50 C 36 50, 26 55, 19 65 C 22 35, 34 22, 54 22 L 85 22 L 85 0 Z M 48 72 C 60 72, 68 82, 68 98 C 68 114, 60 126, 48 126 C 36 126, 28 114, 28 98 C 28 82, 36 72, 48 72 Z" />'
-  },
-  "7": {
-    width: 90,
-    path: '<path d="M 8 15 L 92 15 L 92 38 L 48 150 L 20 150 L 60 40 L 8 40 Z" />'
-  },
-  "8": {
-    width: 95,
-    path: '<path d="M 48 0 C 24 0, 10 14, 10 36 C 10 52, 20 64, 34 70 C 18 78, 4 90, 4 112 C 4 135, 22 150, 48 150 C 74 150, 92 135, 92 112 C 92 90, 78 78, 62 70 C 76 64, 86 52, 86 36 C 86 14, 72 0, 48 0 Z M 48 22 C 58 22, 64 28, 64 36 C 64 44, 58 52, 48 52 C 38 52, 32 44, 32 36 C 32 28, 38 22, 48 22 Z M 48 90 C 60 90, 68 98, 68 112 C 68 126, 60 130, 48 130 C 36 130, 28 126, 28 112 C 28 98, 36 90, 48 90 Z" />'
-  },
-  "9": {
-    width: 95,
-    path: '<path d="M 44 150 C 75 150, 90 120, 90 68 C 90 30, 75 0, 45 0 C 20 0, 4 22, 4 52 C 4 82, 22 100, 48 100 C 60 100, 70 95, 76 86 C 73 116, 62 128, 42 128 L 12 128 L 12 150 Z M 48 22 C 60 22, 68 34, 68 52 C 68 70, 60 80, 48 80 C 36 80, 28 70, 28 52 C 28 34, 36 22, 48 22 Z" />'
-  },
-  "0": {
-    width: 95,
-    path: '<path d="M 48 0 C 18 0, 4 26, 4 75 C 4 124, 18 150, 48 150 C 78 150, 92 124, 92 75 C 92 26, 78 0, 48 0 Z M 48 24 C 62 24, 66 44, 66 75 C 66 106, 62 126, 48 126 C 34 126, 30 106, 30 75 C 30 44, 34 24, 48 24 Z" />'
-  }
+  "1": { width: 32, path: '<path d="M 2 24 L 28 0 L 28 120 L 0 120 L 0 96 L 8 96 L 8 24 Z" />' },
+  "2": { width: 68, path: '<path d="M 4 36 C 4 12, 64 12, 64 42 C 64 64, 40 84, 4 102 L 4 120 L 68 120 L 68 96 L 28 96 L 48 78 C 64 62, 68 50, 68 40 C 68 10, 50 0, 34 0 C 16 0, 4 12, 4 36 Z" />' },
+  "3": { width: 68, path: '<path d="M 6 18 L 62 18 L 62 40 L 32 60 C 52 60, 66 72, 66 92 C 66 110, 50 120, 34 120 C 16 120, 4 106, 2 88 L 22 84 C 24 94, 30 100, 36 100 C 44 100, 48 94, 48 84 C 48 72, 40 66, 28 66 L 20 66 L 20 48 L 38 34 L 6 34 Z" />' },
+  "4": { width: 68, path: '<path d="M 44 0 L 0 74 L 44 74 L 44 0 Z M 44 74 L 68 74 L 68 94 L 44 94 L 44 120 L 24 120 L 24 94 L 0 94 L 0 70 L 44 0 Z" />' },
+  "5": { width: 68, path: '<path d="M 8 12 L 62 12 L 62 32 L 28 32 L 24 52 C 30 48, 40 46, 48 48 C 62 52, 68 66, 68 84 C 68 106, 54 120, 34 120 C 14 120, 4 106, 2 86 L 22 82 C 24 92, 28 100, 36 100 C 44 100, 48 92, 48 82 C 48 70, 42 62, 30 62 C 24 62, 18 66, 14 70 L 8 12 Z" />' },
+  "6": { width: 68, path: '<path d="M 38 0 C 14 0, 4 24, 4 60 C 4 92, 14 120, 36 120 C 56 120, 68 102, 68 78 C 68 54, 54 40, 36 40 C 26 40, 18 44, 12 52 C 14 28, 24 18, 40 18 L 62 18 L 62 0 Z M 36 58 C 44 58, 48 66, 48 78 C 48 90, 44 100, 36 100 C 28 100, 22 90, 22 78 C 22 66, 28 58, 36 58 Z" />' },
+  "7": { width: 64, path: '<path d="M 4 12 L 64 12 L 64 30 L 32 120 L 10 120 L 40 30 L 4 30 Z" />' },
+  "8": { width: 68, path: '<path d="M 34 0 C 16 0, 6 12, 6 28 C 6 42, 14 52, 24 56 C 12 62, 2 72, 2 90 C 2 108, 16 120, 34 120 C 56 120, 66 108, 66 90 C 66 72, 56 62, 44 56 C 54 52, 62 42, 62 28 C 62 12, 52 0, 34 0 Z M 34 18 C 42 18, 46 22, 46 28 C 46 34, 42 40, 34 40 C 26 40, 22 34, 22 28 C 22 22, 26 18, 34 18 Z M 34 72 C 42 72, 48 78, 48 90 C 48 100, 42 104, 34 104 C 26 104, 20 100, 20 90 C 20 78, 26 72, 34 72 Z" />' },
+  "9": { width: 68, path: '<path d="M 32 120 C 54 120, 64 96, 64 54 C 64 24, 52 0, 32 0 C 14 0, 2 18, 2 42 C 2 66, 16 80, 34 80 C 42 80, 50 76, 54 68 C 52 92, 44 102, 30 102 L 8 102 L 8 120 Z M 34 18 C 42 18, 46 26, 46 42 C 46 56, 42 64, 34 64 C 26 64, 20 56, 20 42 C 20 26, 26 18, 34 18 Z" />' },
+  "0": { width: 68, path: '<path d="M 34 0 C 12 0, 2 20, 2 60 C 2 100, 12 120, 34 120 C 56 120, 66 100, 66 60 C 66 20, 56 0, 34 0 Z M 34 20 C 44 20, 46 36, 46 60 C 46 84, 44 100, 34 100 C 24 100, 22 84, 22 60 C 22 36, 24 20, 34 20 Z" />' }
 };
 
 function renderRankSvg(rankNum) {
@@ -90,7 +60,7 @@ function renderRankSvg(rankNum) {
   digits.forEach((d) => {
     const digitData = DIGIT_PATHS[d] || DIGIT_PATHS["1"];
     paths += `<g transform="translate(${xOffset}, 0)">${digitData.path}</g>`;
-    xOffset += digitData.width + 10;
+    xOffset += digitData.width + 12;
   });
 
   return paths;
@@ -224,8 +194,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      // v=4 parameter forces Vercel & Stremio to immediately purge old cached dots
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=4`;
+      // v=5 forces Vercel CDN and Stremio cache to instantly purge old styles
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=5`;
 
       return {
         id: idToUse,
@@ -300,28 +270,26 @@ app.get("/api/poster", async (req, res) => {
     const numRank = parseInt(rank, 10) || 1;
     const digitPathsSvg = renderRankSvg(numRank);
 
-    // Dynamic Scale for 1280x720 (Rank height ~ 450px)
-    const scale = (height * 0.0031).toFixed(3);
-    const xPos = Math.round(width * 0.03);
-    const yPos = Math.round(height * 0.32);
+    // Apple TV Style: Clean Top-Left Position & Proportional Scale (~14% height)
+    const desiredHeight = Math.round(height * 0.14); 
+    const scale = (desiredHeight / 120).toFixed(3);
+    const xPos = Math.round(width * 0.04);
+    const yPos = Math.round(height * 0.05);
+
+    const pillWidth = Math.max(120, formattedGenres.length * 13 + 36);
+    const pillXPos = width - pillWidth - Math.round(width * 0.04);
 
     const svgOverlay = Buffer.from(`
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <linearGradient id="bottomShadow" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#000000" stop-opacity="0" />
-            <stop offset="40%" stop-color="#000000" stop-opacity="0.3" />
-            <stop offset="100%" stop-color="#000000" stop-opacity="0.9" />
-          </linearGradient>
-
-          <linearGradient id="leftShadow" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stop-color="#000000" stop-opacity="0.85" />
-            <stop offset="40%" stop-color="#000000" stop-opacity="0.25" />
+          <linearGradient id="topShadow" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#000000" stop-opacity="0.8" />
+            <stop offset="50%" stop-color="#000000" stop-opacity="0.3" />
             <stop offset="100%" stop-color="#000000" stop-opacity="0" />
           </linearGradient>
 
-          <filter id="appleShadow" x="-20%" y="-20%" width="150%" height="150%">
-            <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.95"/>
+          <filter id="textShadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.85"/>
           </filter>
 
           <filter id="pillShadow" x="-20%" y="-20%" width="140%" height="140%">
@@ -329,30 +297,30 @@ app.get("/api/poster", async (req, res) => {
           </filter>
         </defs>
 
-        <rect width="${width}" height="${height}" fill="url(#leftShadow)" />
-        <rect width="${width}" height="${height}" fill="url(#bottomShadow)" />
+        <!-- Top Vignette for Contrast -->
+        <rect width="${width}" height="${Math.round(height * 0.35)}" fill="url(#topShadow)" />
 
-        <!-- Apple TV Vector Rank Number -->
-        <g filter="url(#appleShadow)" transform="translate(${xPos}, ${yPos}) scale(${scale})" fill="#FFFFFF" stroke="rgba(0,0,0,0.4)" stroke-width="2">
+        <!-- Apple TV Top-Left Rank Number -->
+        <g filter="url(#textShadow)" transform="translate(${xPos}, ${yPos}) scale(${scale})" fill="#FFFFFF">
           ${digitPathsSvg}
         </g>
 
-        <!-- Genre Pill -->
+        <!-- Genre Pill (Top-Right) -->
         ${
           formattedGenres
             ? `
-        <g transform="translate(${Math.round(width * 0.03)}, ${Math.round(height * 0.05)})" filter="url(#pillShadow)">
+        <g transform="translate(${pillXPos}, ${yPos})" filter="url(#pillShadow)">
           <rect 
             rx="${Math.round(height * 0.022)}" 
             ry="${Math.round(height * 0.022)}" 
-            width="${Math.max(120, formattedGenres.length * 13 + 36)}" 
+            width="${pillWidth}" 
             height="${Math.round(height * 0.062)}" 
             fill="rgba(0, 0, 0, 0.78)" 
             stroke="rgba(255, 255, 255, 0.25)" 
             stroke-width="1.5"
           />
           <text 
-            x="${Math.round((Math.max(120, formattedGenres.length * 13 + 36)) / 2)}" 
+            x="${Math.round(pillWidth / 2)}" 
             y="${Math.round(height * 0.043)}" 
             font-family="DejaVu Sans, Arial, sans-serif" 
             font-size="${Math.round(height * 0.028)}" 
