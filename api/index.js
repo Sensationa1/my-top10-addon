@@ -29,7 +29,7 @@ const MANIFEST = {
     },
     {
       id: "top10_trending_shows",
-      type: "series", // MUST be 'series' for Stremio TV shows
+      type: "series",
       name: "Top 10 Trending Shows",
       extraSupported: [],
       posterShape: "landscape"
@@ -72,7 +72,7 @@ app.get("/manifest.json", (req, res) => {
 // TMDB Backdrop Lookup Helper
 async function getTmdbData(imdbId, type) {
   const apiKey = process.env.TMDB_API_KEY;
-  if (!apiKey) return { backdropUrl: null, genres: "" };
+  if (!apiKey) return { backdropUrl: null };
 
   try {
     const findRes = await axios.get(
@@ -141,7 +141,6 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
   const { type, id } = req.params;
   const hostUrl = getHostUrl(req);
 
-  // Validate type (must be 'movie' or 'series')
   if (type !== "movie" && type !== "series") {
     return res.json({ metas: [] });
   }
@@ -160,7 +159,6 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
       const title = item.title || item.name || "Unknown";
       const rank = index + 1;
 
-      // Extract genres if present in raw list
       let genres = "";
       if (Array.isArray(item.genres)) {
         genres = item.genres.slice(0, 2).join(",");
@@ -172,7 +170,7 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 
       return {
         id: idToUse,
-        type: type, // 'movie' or 'series'
+        type: type,
         name: `${rank}. ${title}`,
         poster: posterUrl,
         posterShape: "landscape",
@@ -206,9 +204,7 @@ app.get("/api/poster", async (req, res) => {
         const extUrl = `https://extendedratings.com/backdrop/${cleanImdbId}?config=russel&key=Kolkko11&v=fd3ce853`;
         const response = await axios.get(extUrl, { responseType: "arraybuffer", timeout: 4500 });
         backdropBuffer = Buffer.from(response.data);
-      } catch (e) {
-        // Fallback to TMDB
-      }
+      } catch (e) {}
     }
 
     // 2. Secondary Fallback: TMDB Backdrop
@@ -242,44 +238,64 @@ app.get("/api/poster", async (req, res) => {
       ? genres.split(",").slice(0, 2).join(" • ").toUpperCase()
       : "";
 
-    // Composite Apple TV style numbers and Genre tag pill onto backdrop
+    const numRank = parseInt(rank, 10) || 1;
+    
+    // Scale font dynamically for single vs double digits
+    const fontSize = numRank >= 10 ? Math.round(height * 0.76) : Math.round(height * 0.95);
+    const xPos = Math.round(width * 0.015);
+    const yPos = Math.round(height * 0.96);
+
     const svgOverlay = Buffer.from(`
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
         <defs>
+          <!-- Dark scrim across bottom & left for cinematic depth -->
           <linearGradient id="bottomShadow" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="#000000" stop-opacity="0" />
-            <stop offset="50%" stop-color="#000000" stop-opacity="0.3" />
-            <stop offset="100%" stop-color="#000000" stop-opacity="0.85" />
+            <stop offset="40%" stop-color="#000000" stop-opacity="0.25" />
+            <stop offset="100%" stop-color="#000000" stop-opacity="0.88" />
           </linearGradient>
+
           <linearGradient id="leftShadow" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stop-color="#000000" stop-opacity="0.8" />
-            <stop offset="40%" stop-color="#000000" stop-opacity="0.2" />
+            <stop offset="0%" stop-color="#000000" stop-opacity="0.85" />
+            <stop offset="35%" stop-color="#000000" stop-opacity="0.3" />
             <stop offset="100%" stop-color="#000000" stop-opacity="0" />
           </linearGradient>
-          <linearGradient id="numberGradient" x1="0" y1="0" x2="0" y2="1">
+
+          <!-- Apple TV Style Metallic Gradient -->
+          <linearGradient id="appleTvGradient" x1="0%" y1="0%" x2="0%" y2="100%">
             <stop offset="0%" stop-color="#FFFFFF" />
-            <stop offset="100%" stop-color="#CCCCCC" />
+            <stop offset="60%" stop-color="#F2F2F2" />
+            <stop offset="100%" stop-color="#D0D0D0" />
           </linearGradient>
-          <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="4" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.9"/>
+
+          <!-- Heavy Drop Shadow for Apple TV Number -->
+          <filter id="appleShadow" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.95"/>
+            <feDropShadow dx="-4" dy="0" stdDeviation="8" flood-color="#000000" flood-opacity="0.6"/>
+          </filter>
+
+          <!-- Subtle Shadow for Genre Pill -->
+          <filter id="pillShadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.75"/>
           </filter>
         </defs>
 
         <rect width="${width}" height="${height}" fill="url(#leftShadow)" />
         <rect width="${width}" height="${height}" fill="url(#bottomShadow)" />
 
-        <!-- Apple TV Style Rank Number -->
-        <g filter="url(#dropShadow)">
+        <!-- Giant Apple TV Style Rank Number -->
+        <g filter="url(#appleShadow)">
           <text 
-            x="${Math.round(width * 0.04)}" 
-            y="${Math.round(height * 0.92)}" 
-            font-family="system-ui, -apple-system, 'SF Pro Display', Arial, sans-serif" 
-            font-size="${Math.round(height * 0.55)}" 
+            x="${xPos}" 
+            y="${yPos}" 
+            font-family="-apple-system, 'SF Pro Display', 'Impact', 'Arial Black', sans-serif" 
+            font-size="${fontSize}" 
             font-weight="900" 
-            fill="url(#numberGradient)" 
-            stroke="rgba(255,255,255,0.3)" 
-            stroke-width="2">
-            ${rank || "1"}
+            letter-spacing="-8"
+            fill="url(#appleTvGradient)" 
+            stroke="rgba(255,255,255,0.4)" 
+            stroke-width="3">
+            ${numRank}
           </text>
         </g>
 
@@ -287,25 +303,25 @@ app.get("/api/poster", async (req, res) => {
         ${
           formattedGenres
             ? `
-        <g transform="translate(${Math.round(width * 0.04)}, ${Math.round(height * 0.06)})" filter="url(#dropShadow)">
+        <g transform="translate(${Math.round(width * 0.03)}, ${Math.round(height * 0.05)})" filter="url(#pillShadow)">
           <rect 
-            rx="${Math.round(height * 0.025)}" 
-            ry="${Math.round(height * 0.025)}" 
-            width="${Math.max(120, formattedGenres.length * 12 + 32)}" 
-            height="${Math.round(height * 0.06)}" 
-            fill="rgba(0, 0, 0, 0.72)" 
-            stroke="rgba(255, 255, 255, 0.3)" 
+            rx="${Math.round(height * 0.022)}" 
+            ry="${Math.round(height * 0.022)}" 
+            width="${Math.max(120, formattedGenres.length * 13 + 36)}" 
+            height="${Math.round(height * 0.062)}" 
+            fill="rgba(0, 0, 0, 0.78)" 
+            stroke="rgba(255, 255, 255, 0.25)" 
             stroke-width="1.5"
           />
           <text 
-            x="${Math.round((Math.max(120, formattedGenres.length * 12 + 32)) / 2)}" 
-            y="${Math.round(height * 0.041)}" 
-            font-family="system-ui, -apple-system, Arial, sans-serif" 
+            x="${Math.round((Math.max(120, formattedGenres.length * 13 + 36)) / 2)}" 
+            y="${Math.round(height * 0.043)}" 
+            font-family="-apple-system, 'SF Pro Text', Arial, sans-serif" 
             font-size="${Math.round(height * 0.028)}" 
             font-weight="800" 
             fill="#FFFFFF" 
             text-anchor="middle" 
-            letter-spacing="1">
+            letter-spacing="1.2">
             ${formattedGenres}
           </text>
         </g>
@@ -317,7 +333,7 @@ app.get("/api/poster", async (req, res) => {
 
     const result = await sharp(backdropBuffer)
       .composite([{ input: svgOverlay, top: 0, left: 0 }])
-      .jpeg({ quality: 88 })
+      .jpeg({ quality: 90 })
       .toBuffer();
 
     res.setHeader("Content-Type", "image/jpeg");
