@@ -1,0 +1,8 @@
+{
+  "name": "my-top10-addon",
+  "version": "1.2.0",
+  "description": "TMDB Top 10 with ranking numbers",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
