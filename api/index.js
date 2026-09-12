@@ -38,69 +38,49 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
-// Studio Netflix Geometry Glyphs (Base height: 150px)
+// --------------------------------------------------------------------------------
+// ZERO-CURVE GEOMETRIC BLOCK FONT
+// 100% straight math coordinates. Completely impossible to look "hand-drawn".
+// Grid: 100x160. Uniform stroke thickness: 35px.
+// --------------------------------------------------------------------------------
 const DIGIT_PATHS = {
-  "1": { 
-    width: 52, 
-    path: "M 5,35 L 28,10 L 50,10 L 50,150 L 22,150 L 22,35 Z" 
-  },
-  "2": { 
-    width: 86, 
-    path: "M 6,38 C 6,12 22,5 48,5 C 72,5 88,15 88,38 C 88,62 68,82 42,108 L 18,128 L 88,128 L 88,150 L 6,150 L 6,126 L 46,84 C 62,68 62,54 62,38 C 62,25 54,20 48,20 C 40,20 32,25 32,38 Z" 
-  },
-  "3": { 
-    width: 86, 
-    path: "M 8,8 L 84,8 L 84,28 L 44,68 C 68,68 86,80 86,106 C 86,132 70,150 46,150 C 22,150 8,134 8,108 L 32,108 C 32,122 38,128 46,128 C 56,128 62,120 62,106 C 62,92 54,84 38,84 L 26,84 L 26,64 L 54,28 L 8,28 Z" 
-  },
-  "4": { 
-    width: 86, 
-    path: "M 52,8 L 80,8 L 80,92 L 90,92 L 90,114 L 80,114 L 80,150 L 56,150 L 56,114 L 6,114 L 6,92 Z M 56,34 L 24,92 L 56,92 Z" 
-  },
-  "5": { 
-    width: 86, 
-    path: "M 10,8 L 82,8 L 82,28 L 32,28 L 26,62 C 38,54 50,52 60,52 C 76,52 86,64 86,98 C 86,130 70,150 46,150 C 22,150 8,132 8,106 L 32,106 C 32,120 38,128 46,128 C 56,128 62,120 62,98 C 62,82 54,74 42,74 C 32,74 24,80 18,88 L 8,80 Z" 
-  },
-  "6": { 
-    width: 86, 
-    path: "M 46,8 C 20,8 8,30 8,78 C 8,126 20,150 46,150 C 72,150 86,128 86,94 C 86,64 72,52 48,52 C 34,52 22,60 16,70 C 16,34 28,30 46,30 L 68,30 L 68,8 Z M 46,72 C 60,72 62,82 62,96 C 62,114 56,128 46,128 C 36,128 30,114 30,96 C 30,82 36,72 46,72 Z" 
-  },
-  "7": { 
-    width: 82, 
-    path: "M 6,8 L 82,8 L 82,26 L 42,150 L 16,150 L 56,26 L 6,26 Z" 
-  },
-  "8": { 
-    width: 86, 
-    path: "M 46,8 C 24,8 12,20 12,40 C 12,56 24,66 36,70 C 20,74 8,86 8,108 C 8,130 22,150 46,150 C 70,150 84,130 84,108 C 84,86 72,74 56,70 C 68,66 80,56 80,40 C 80,20 68,8 46,8 Z M 46,26 C 56,26 58,32 58,40 C 58,48 52,54 46,54 C 40,54 34,48 34,40 C 34,32 36,26 46,26 Z M 46,74 C 58,74 60,82 60,108 C 60,126 54,130 46,130 C 38,130 32,126 32,108 C 32,82 34,74 46,74 Z" 
-  },
-  "9": { 
-    width: 86, 
-    path: "M 46,8 C 20,8 8,30 8,62 C 8,92 22,102 44,102 C 58,102 70,94 78,84 C 78,120 66,128 46,128 L 24,128 L 24,150 L 46,150 C 74,150 86,128 86,80 C 86,32 74,8 46,8 Z M 46,28 C 58,28 62,38 62,58 C 62,72 56,82 46,82 C 36,82 30,72 30,58 C 30,38 34,28 46,28 Z" 
-  },
-  "0": { 
-    width: 86, 
-    path: "M 46,8 C 18,8 8,28 8,78 C 8,128 18,148 46,148 C 74,148 84,128 84,78 C 84,28 74,8 46,8 Z M 46,28 C 60,28 60,44 60,78 C 60,112 60,128 46,128 C 32,128 32,112 32,78 C 32,44 32,28 46,28 Z" 
-  }
+  "1": { width: 75,  path: "M 40,160 L 75,160 L 75,0 L 15,0 L 15,35 L 40,35 Z" },
+  "2": { width: 100, path: "M 0,0 L 100,0 L 100,95 L 35,95 L 35,125 L 100,125 L 100,160 L 0,160 L 0,60 L 65,60 L 65,35 L 0,35 Z" },
+  "3": { width: 100, path: "M 0,0 L 100,0 L 100,160 L 0,160 L 0,125 L 65,125 L 65,95 L 20,95 L 20,60 L 65,60 L 65,35 L 0,35 Z" },
+  "4": { width: 100, path: "M 0,0 L 35,0 L 35,60 L 65,60 L 65,0 L 100,0 L 100,160 L 65,160 L 65,95 L 0,95 Z" },
+  "5": { width: 100, path: "M 0,0 L 100,0 L 100,35 L 35,35 L 35,60 L 100,60 L 100,160 L 0,160 L 0,95 L 65,95 L 65,125 L 0,125 Z" },
+  "6": { width: 100, path: "M 0,0 L 100,0 L 100,35 L 35,35 L 35,60 L 100,60 L 100,160 L 0,160 Z M 35,95 L 65,95 L 65,125 L 35,125 Z" },
+  "7": { width: 100, path: "M 0,0 L 100,0 L 100,160 L 65,160 L 65,35 L 0,35 Z" },
+  "8": { width: 100, path: "M 0,0 L 100,0 L 100,160 L 0,160 Z M 35,35 L 65,35 L 65,60 L 35,60 Z M 35,95 L 65,95 L 65,125 L 35,125 Z" },
+  "9": { width: 100, path: "M 0,0 L 100,0 L 100,160 L 65,160 L 65,95 L 0,95 Z M 35,35 L 65,35 L 65,60 L 35,60 Z" },
+  "0": { width: 100, path: "M 0,0 L 100,0 L 100,160 L 0,160 Z M 35,35 L 65,35 L 65,125 L 35,125 Z" }
 };
 
+// TRIPLE LAYER SVG RENDER (Prevents "White Dots" & iOS stroke bugs)
 function renderRankSvg(rankNum) {
   const digits = String(rankNum).split("");
   let xOffset = 0;
-  let shadowPaths = "";
-  let mainPaths = "";
+  
+  let shadowLayer = "";
+  let outlineLayer = "";
+  let coreLayer = "";
 
   digits.forEach((d) => {
     const digitData = DIGIT_PATHS[d] || DIGIT_PATHS["1"];
     
-    // Drop Shadow
-    shadowPaths += `<path transform="translate(${xOffset + 5}, 5)" d="${digitData.path}" fill="#000000" opacity="0.85"/>`;
+    // 1. Solid Base Shadow
+    shadowLayer += `<path transform="translate(${xOffset + 8}, 8)" d="${digitData.path}" fill="#000000" opacity="0.85" fill-rule="evenodd"/>`;
     
-    // Crisp White Border + Dark Inner Fill in a single SVG render pass
-    mainPaths += `<path transform="translate(${xOffset}, 0)" d="${digitData.path}" fill="#141414" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="miter" paint-order="stroke fill"/>`;
+    // 2. Thick White Stroke Layer (Underneath Core)
+    outlineLayer += `<path transform="translate(${xOffset}, 0)" d="${digitData.path}" fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linejoin="miter" fill-rule="evenodd"/>`;
     
-    xOffset += digitData.width - 4;
+    // 3. Dark Geometric Core Fill
+    coreLayer += `<path transform="translate(${xOffset}, 0)" d="${digitData.path}" fill="#141414" fill-rule="evenodd"/>`;
+    
+    xOffset += digitData.width + 12; // Crisp kerning between digits
   });
 
-  return `<g>${shadowPaths}${mainPaths}</g>`;
+  return `<g>${shadowLayer}${outlineLayer}${coreLayer}</g>`;
 }
 
 // Helper to get base host URL in Vercel Cloud environment
@@ -231,8 +211,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      // v=13 forces NuVio & Stremio iOS to purge old image caches completely
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=13`;
+      // v=14 immediately busts cache on Stremio Web, iOS, and NuVio
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=14`;
 
       return {
         id: idToUse,
@@ -307,9 +287,9 @@ app.get("/api/poster", async (req, res) => {
     const numRank = parseInt(rank, 10) || 1;
     const digitPathsSvg = renderRankSvg(numRank);
 
-    // Scaling calculations (Digit Height = 70% of poster height)
+    // Scaling calculations
     const desiredHeight = Math.round(height * 0.70); 
-    const scale = (desiredHeight / 150).toFixed(3);
+    const scale = (desiredHeight / 160).toFixed(3);
     const xPos = Math.round(width * 0.025);
     const yPos = Math.round(height * 0.18);
 
@@ -330,7 +310,7 @@ app.get("/api/poster", async (req, res) => {
         <!-- Left-Side Gradient Vignette -->
         <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#netflixGradient)" />
 
-        <!-- Rendered Vector Digits -->
+        <!-- Rendered Triple-Layer Vector Digits -->
         <g transform="translate(${xPos}, ${yPos}) scale(${scale})">
           ${digitPathsSvg}
         </g>
