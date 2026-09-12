@@ -24,7 +24,7 @@ const manifest = {
 };
 
 // ====== CONFIG ======
-const MDBLIST_API_KEY = "84k3gqmfidzkniqojvnman7lk";   // ← make sure your real key is here
+const MDBLIST_API_KEY = "84k3gqmfidzkniqojvnman7lk";
 const BASE_URL = "https://my-top10-addon.vercel.app";
 
 // ========== CUSTOM RANKED POSTER ENDPOINT ==========
@@ -96,13 +96,12 @@ async function getMDBList(listPath, type) {
 
     const data = await res.json();
 
-    // Handle different possible response structures
     let items = [];
     if (Array.isArray(data)) {
       items = data;
-    } else if (data.movies) {
+    } else if (data.movies && data.movies.length > 0) {
       items = data.movies;
-    } else if (data.shows) {
+    } else if (data.shows && data.shows.length > 0) {
       items = data.shows;
     } else if (data.items) {
       items = data.items;
@@ -110,13 +109,18 @@ async function getMDBList(listPath, type) {
 
     return items.slice(0, 10).map((item, index) => {
       const rank = index + 1;
-      const id = item.id || item.ids?.tmdb || item.tmdb_id || item.ids?.imdb;
+      const id = item.ids?.tmdb || item.id || item.tmdb_id;
       const name = item.title || item.name || "Unknown";
       const year = item.release_year || item.year || "";
 
       let originalPoster = item.poster || item.poster_path;
       if (originalPoster && !originalPoster.startsWith('http')) {
         originalPoster = `https://image.tmdb.org/t/p/w780${originalPoster}`;
+      }
+
+      // Prefer higher quality poster
+      if (originalPoster && originalPoster.includes('/w200/')) {
+        originalPoster = originalPoster.replace('/w200/', '/w780/');
       }
 
       const poster = originalPoster
@@ -150,13 +154,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
   if (cleanId === 'my_top_movies') {
     metas = await getMDBList('snoak/trending-movies', 'movie');
   } else if (cleanId === 'my_top_series') {
-    // Primary list
     metas = await getMDBList('snoak/trakt-s-trending-shows', 'series');
-
-    // Fallback if empty
-    if (metas.length === 0) {
-      metas = await getMDBList('snoak/trakt-trending-shows', 'series');
-    }
   }
 
   res.setHeader('Content-Type', 'application/json');
