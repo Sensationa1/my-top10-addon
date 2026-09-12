@@ -1,4 +1,3 @@
-const TMDB_KEY = process.env.TMDB_API_KEY;
 const MDBLIST_KEY = process.env.MDBLIST_API_KEY;
 
 const SOURCES = {
@@ -6,6 +5,7 @@ const SOURCES = {
     listId: "87667",
     stremioType: "movie",
   },
+
   "series/top10-series": {
     listId: "88434",
     stremioType: "series",
@@ -16,34 +16,64 @@ const MANIFEST = {
   id: "community.nuvio.top10.ranked",
   version: "5.0.0",
   name: "Top 10 Trending",
+
   description:
     "Top 10 Trakt trending movies and series from Snoak MDBList.",
+
   resources: ["catalog"],
+
   types: ["movie", "series"],
+
   idPrefixes: ["tt"],
+
   catalogs: [
     {
       id: "top10-movies",
       type: "movie",
       name: "🔥 Top 10 Movies",
     },
+
     {
       id: "top10-series",
       type: "series",
       name: "🔥 Top 10 Series",
     },
   ],
+
   behaviorHints: {
     adult: false,
     p2pNotSupported: true,
   },
 };
 
-/* -------------------------------------------------------------------------- */
-/* MDBLIST                                                                    */
-/* -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   MDBLIST
+   ========================================================================== */
+
+/*
+ * Snoak's MDBList lists:
+ *
+ * 87667 = Trakt Trending Movies
+ * 88434 = Trakt Trending Shows
+ *
+ * We deliberately use MDBList rather than the Trakt API.
+ *
+ * This means:
+ *
+ * - No Trakt VIP
+ * - No Trakt OAuth
+ * - No Trakt API calls
+ * - No Trakt client ID required
+ *
+ * Snoak's lists provide the ordering.
+ */
 
 async function fetchList(listId) {
+  if (!MDBLIST_KEY) {
+    throw new Error("MDBLIST_API_KEY is not configured");
+  }
+
   const url =
     `https://api.mdblist.com/lists/${listId}/items` +
     `?apikey=${encodeURIComponent(MDBLIST_KEY)}` +
@@ -52,108 +82,97 @@ async function fetchList(listId) {
   const response = await fetch(url);
 
   if (!response.ok) {
-    throw new Error(`MDBList returned ${response.status}`);
+    throw new Error(
+      `MDBList request failed: ${response.status}`
+    );
   }
 
   const data = await response.json();
 
   /*
-   * Snoak MDBList lists can return movies/shows depending on the list.
-   * Keep all common formats supported.
+   * MDBList may return:
+   *
+   * movies
+   * shows
+   * items
+   *
+   * depending on the list type/API response.
    */
-  return (
+
+  const items =
     data.movies ||
     data.shows ||
     data.items ||
-    []
-  ).slice(0, 10);
+    [];
+
+  return Array.isArray(items)
+    ? items.slice(0, 10)
+    : [];
 }
 
-/* -------------------------------------------------------------------------- */
-/* TMDB                                                                       */
-/*                                                                            */
-/* Used only for metadata/background information.                             */
-/* The actual Nuvio poster comes from ExtendedRatings.                        */
-/* -------------------------------------------------------------------------- */
 
-async function fetchTMDB(imdbId, stremioType) {
-  if (!TMDB_KEY || !imdbId) {
-    return null;
-  }
+/* ==========================================================================
+   IMDb ID
+   ========================================================================== */
 
-  try {
-    const url =
-      `https://api.themoviedb.org/3/find/${encodeURIComponent(imdbId)}` +
-      `?api_key=${encodeURIComponent(TMDB_KEY)}` +
-      `&external_source=imdb_id`;
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-
-    const item =
-      stremioType === "movie"
-        ? (data.movie_results || [])[0]
-        : (data.tv_results || [])[0];
-
-    if (!item) {
-      return null;
-    }
-
-    return {
-      backdrop: item.backdrop_path
-        ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`
-        : null,
-
-      overview: item.overview || "",
-
-      releaseDate:
-        item.release_date ||
-        item.first_air_date ||
-        null,
-    };
-  } catch {
-    return null;
-  }
+function getImdbId(item) {
+  return (
+    item.imdb_id ||
+    item.imdbid ||
+    item.imdb ||
+    item.ids?.imdb ||
+    null
+  );
 }
 
-/* -------------------------------------------------------------------------- */
-/* EXTENDEDRATINGS                                                            */
-/*                                                                            */
-/* Main artwork source.                                                       */
-/*                                                                            */
-/* IMPORTANT: This is deliberately NOT a TMDB poster.                        */
-/* ExtendedRatings supplies the landscape poster.                            */
-/*                                                                            */
-/* IMDb ID example: tt1234567                                                  */
-/*                                                                            */
-/* https://extendedratings.com/poster/tt1234567                               */
-/* ?config=russel&key=Kolkko11&v=fd3ce853                                      */
-/* -------------------------------------------------------------------------- */
 
-function extendedRatingsPoster(imdbId) {
+/* ==========================================================================
+   EXTENDED RATINGS
+   ========================================================================== */
+
+/*
+ * THIS IS THE IMPORTANT CHANGE.
+ *
+ * We are NOT using:
+ *
+ * /poster/{id}
+ *
+ * because that is portrait artwork.
+ *
+ * We are using:
+ *
+ * /backdrop/{id}
+ *
+ * which is ExtendedRatings' actual landscape artwork.
+ *
+ * Example:
+ *
+ * https://extendedratings.com/backdrop/tt1234567
+ * ?config=russel&key=Kolkko11&v=fd3ce853
+ */
+
+function extendedRatingsBackdrop(imdbId) {
   if (!imdbId) {
     return null;
   }
 
   return (
-    `https://extendedratings.com/poster/${encodeURIComponent(imdbId)}` +
+    `https://extendedratings.com/backdrop/` +
+    `${encodeURIComponent(imdbId)}` +
     `?config=russel&key=Kolkko11&v=fd3ce853`
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* BTTTR                                                                       */
-/*                                                                            */
-/* Genre/tag artwork source requested by you.                                  */
-/*                                                                            */
-/* Example:                                                                    */
-/* https://btttr.cc/poster-g/imdb/poster-default/tt1234567.jpg?tag=none       */
-/* -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   BTTTR
+   ========================================================================== */
+
+/*
+ * BTTTR remains available as the genre/tag artwork source.
+ *
+ * It is NOT used to stretch the ExtendedRatings artwork.
+ */
 
 function btttrPoster(imdbId) {
   if (!imdbId) {
@@ -166,41 +185,62 @@ function btttrPoster(imdbId) {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* APPLE-TV STYLE RANKED LANDSCAPE POSTER                                      */
-/*                                                                            */
-/* The rank is rendered INTO the image itself.                                */
-/*                                                                            */
-/* Nuvio therefore receives ONE landscape image instead of:                   */
-/*                                                                            */
-/*   poster + separate badge                                                   */
-/*                                                                            */
-/* It receives:                                                               */
-/*                                                                            */
-/*   [ 1 ] LANDSCAPE POSTER                                                    */
-/*                                                                            */
-/* This is much closer to the Apple TV / TopToday presentation.                */
-/* -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   RANKED LANDSCAPE IMAGE
+   ========================================================================== */
+
+/*
+ * The image entering this function is ALREADY a landscape image:
+ *
+ * ExtendedRatings BACKDROP
+ *
+ * We then put the Apple-TV-style ranking number over it.
+ *
+ * The important distinction is:
+ *
+ * BEFORE:
+ *
+ * ExtendedRatings portrait poster
+ *          ↓
+ * force 16:9
+ *
+ * NOW:
+ *
+ * ExtendedRatings landscape backdrop
+ *          ↓
+ * add number
+ *          ↓
+ * Nuvio
+ *
+ * No portrait poster is stretched.
+ */
 
 function rankedLandscapePoster(imdbId, rank) {
-  const source = extendedRatingsPoster(imdbId);
+  const backdrop =
+    extendedRatingsBackdrop(imdbId);
 
-  if (!source) {
+  if (!backdrop) {
     return null;
   }
 
   /*
-   * wsrv.nl is used as an image-processing layer.
+   * wsrv.nl performs the image transformation.
    *
-   * The source remains the ExtendedRatings landscape artwork.
+   * The source is the ExtendedRatings BACKDROP.
    *
-   * w/h = 16:9
-   * fit=cover = force landscape output
+   * 780 × 439 = 16:9 output.
    *
-   * wt* parameters add the rank directly to the returned image.
+   * fit=cover is only used to guarantee the final image
+   * has the exact landscape dimensions. It is NOT converting
+   * a portrait poster into landscape.
    */
-  const encodedSource = encodeURIComponent(source);
-  const number = String(rank);
+
+  const encodedSource =
+    encodeURIComponent(backdrop);
+
+  const number =
+    String(rank);
 
   return (
     `https://wsrv.nl/?` +
@@ -210,6 +250,10 @@ function rankedLandscapePoster(imdbId, rank) {
     `&fit=cover` +
     `&output=jpg` +
     `&q=95` +
+
+    /*
+     * Text overlay
+     */
     `&wtl=${encodeURIComponent(number)}` +
     `&wts=120` +
     `&wtc=ffffff` +
@@ -221,20 +265,18 @@ function rankedLandscapePoster(imdbId, rank) {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* META                                                                       */
-/* -------------------------------------------------------------------------- */
 
-async function buildMeta(item, rank, stremioType) {
-  /*
-   * MDBList/Snoak can expose the IMDb identifier under either
-   * imdb_id or imdbid depending on the endpoint/list.
-   */
+/* ==========================================================================
+   BUILD META
+   ========================================================================== */
+
+async function buildMeta(
+  item,
+  rank,
+  stremioType
+) {
   const imdbId =
-    item.imdb_id ||
-    item.imdbid ||
-    item.imdb ||
-    null;
+    getImdbId(item);
 
   const title =
     item.title ||
@@ -246,30 +288,26 @@ async function buildMeta(item, rank, stremioType) {
     item.year ||
     null;
 
+  /*
+   * If MDBList somehow returns an item without an IMDb ID,
+   * don't create a broken Nuvio item.
+   */
+
   if (!imdbId) {
     console.warn(
-      `Skipping "${title}" because no IMDb ID was returned by MDBList`
+      `Skipping "${title}" because no IMDb ID was returned.`
     );
 
     return null;
   }
 
-  const tmdb = await fetchTMDB(
-    imdbId,
-    stremioType
-  );
-
   /*
-   * Primary poster:
+   * Main poster:
    *
-   * ExtendedRatings
-   *        ↓
-   * 16:9 crop
-   *        ↓
-   * rank embedded into image
-   *        ↓
-   * Nuvio
+   * ExtendedRatings BACKDROP
+   * + rank number
    */
+
   const rankedPoster =
     rankedLandscapePoster(
       imdbId,
@@ -277,32 +315,34 @@ async function buildMeta(item, rank, stremioType) {
     );
 
   /*
-   * If the image processor temporarily fails,
-   * return the raw ExtendedRatings image.
+   * Raw ExtendedRatings backdrop is our fallback.
    */
-  const rawExtendedPoster =
-    extendedRatingsPoster(imdbId);
+
+  const rawBackdrop =
+    extendedRatingsBackdrop(
+      imdbId
+    );
 
   /*
-   * Final fallback is the BTTTR poster.
-   *
-   * This means an item should still have artwork even if
-   * ExtendedRatings is unavailable.
+   * BTTTR is the final artwork fallback.
    */
-  const fallbackPoster =
-    btttrPoster(imdbId);
+
+  const btttr =
+    btttrPoster(
+      imdbId
+    );
 
   const poster =
     rankedPoster ||
-    rawExtendedPoster ||
-    fallbackPoster ||
-    tmdb?.backdrop ||
+    rawBackdrop ||
+    btttr ||
     undefined;
 
   return {
     /*
-     * Nuvio/Stremio needs IMDb IDs for the catalog item.
+     * IMDb ID is what Nuvio/Stremio uses.
      */
+
     id: imdbId,
 
     type: stremioType,
@@ -310,33 +350,26 @@ async function buildMeta(item, rank, stremioType) {
     name: title,
 
     /*
-     * THIS IS THE IMPORTANT PART FOR NUVIO.
-     *
-     * The returned artwork is explicitly landscape.
+     * The actual returned image is landscape.
      */
+
     poster,
 
     posterShape: "landscape",
 
     /*
-     * Nuvio can use this when opening the title.
+     * Keep these useful fields available.
      */
-    background:
-      tmdb?.backdrop ||
-      undefined,
 
     description:
       item.description ||
       item.overview ||
-      tmdb?.overview ||
       "",
 
     releaseInfo:
       year
         ? String(year)
-        : tmdb?.releaseDate
-          ? String(tmdb.releaseDate).slice(0, 4)
-          : undefined,
+        : undefined,
 
     imdbRating:
       item.imdbrating != null
@@ -344,45 +377,49 @@ async function buildMeta(item, rank, stremioType) {
         : undefined,
 
     /*
-     * Extra information retained in the metadata object.
-     * Useful if you later want Nuvio-specific rendering.
+     * Additional information.
      */
+
     imdb_id: imdbId,
 
-    rank,
+    rank: rank,
 
     /*
-     * Keep the BTTTR source available in the metadata without
-     * replacing the main landscape poster.
+     * BTTTR genre/tag artwork remains available
+     * without replacing the main landscape poster.
      */
-    genrePoster: fallbackPoster,
+
+    genrePoster: btttr,
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* CATALOG                                                                    */
-/* -------------------------------------------------------------------------- */
 
-async function buildCatalog(type, listId) {
+/* ==========================================================================
+   BUILD TOP 10
+   ========================================================================== */
+
+async function buildCatalog(
+  type,
+  listId
+) {
   const items =
     await fetchList(listId);
 
-  const firstTen =
+  /*
+   * The order from Snoak MDBList is preserved.
+   *
+   * Position 1 = #1
+   * Position 2 = #2
+   * ...
+   * Position 10 = #10
+   */
+
+  const topTen =
     items.slice(0, 10);
 
-  /*
-   * Keep the original MDBList ordering.
-   *
-   * This is important:
-   *
-   * MDBList rank 1 → number 1
-   * MDBList rank 2 → number 2
-   * ...
-   * MDBList rank 10 → number 10
-   */
-  const results =
+  const metas =
     await Promise.all(
-      firstTen.map(
+      topTen.map(
         (item, index) =>
           buildMeta(
             item,
@@ -392,14 +429,18 @@ async function buildCatalog(type, listId) {
       )
     );
 
-  return results.filter(Boolean);
+  return metas.filter(Boolean);
 }
 
-/* -------------------------------------------------------------------------- */
-/* HTTP HANDLER                                                               */
-/* -------------------------------------------------------------------------- */
 
-export default async function handler(req, res) {
+/* ==========================================================================
+   HTTP HANDLER
+   ========================================================================== */
+
+export default async function handler(
+  req,
+  res
+) {
   res.setHeader(
     "Access-Control-Allow-Origin",
     "*"
@@ -416,7 +457,9 @@ export default async function handler(req, res) {
   );
 
   if (req.method === "OPTIONS") {
-    return res.status(200).end();
+    return res
+      .status(200)
+      .end();
   }
 
   const requestUrl =
@@ -427,9 +470,10 @@ export default async function handler(req, res) {
       .split("?")[0]
       .replace(/^\/api/, "");
 
-  /* ---------------------------------------------------------------------- */
-  /* MANIFEST                                                               */
-  /* ---------------------------------------------------------------------- */
+
+  /* ------------------------------------------------------------------------
+     MANIFEST
+     ------------------------------------------------------------------------ */
 
   if (
     path === "/" ||
@@ -441,14 +485,15 @@ export default async function handler(req, res) {
       "application/json"
     );
 
-    return res.status(200).json(
-      MANIFEST
-    );
+    return res
+      .status(200)
+      .json(MANIFEST);
   }
 
-  /* ---------------------------------------------------------------------- */
-  /* CATALOG                                                                */
-  /* ---------------------------------------------------------------------- */
+
+  /* ------------------------------------------------------------------------
+     CATALOG
+     ------------------------------------------------------------------------ */
 
   const match =
     path.match(
@@ -462,11 +507,12 @@ export default async function handler(req, res) {
     const catalogId =
       match[2];
 
-    const key =
+    const sourceKey =
       `${type}/${catalogId}`;
 
     const source =
-      SOURCES[key];
+      SOURCES[sourceKey];
+
 
     if (!source) {
       res.setHeader(
@@ -474,10 +520,13 @@ export default async function handler(req, res) {
         "application/json"
       );
 
-      return res.status(404).json({
-        metas: [],
-      });
+      return res
+        .status(404)
+        .json({
+          metas: [],
+        });
     }
+
 
     if (!MDBLIST_KEY) {
       res.setHeader(
@@ -485,12 +534,15 @@ export default async function handler(req, res) {
         "application/json"
       );
 
-      return res.status(500).json({
-        error:
-          "MDBLIST_API_KEY is not configured",
-        metas: [],
-      });
+      return res
+        .status(500)
+        .json({
+          error:
+            "MDBLIST_API_KEY is not configured",
+          metas: [],
+        });
     }
+
 
     try {
       const metas =
@@ -499,25 +551,31 @@ export default async function handler(req, res) {
           source.listId
         );
 
+
       res.setHeader(
         "Content-Type",
         "application/json"
       );
 
+
       /*
        * Cache for 15 minutes.
        *
-       * Snoak/MDBList handles the actual Trakt Trending
-       * refresh; your Nuvio addon does not hammer MDBList.
+       * This prevents excessive MDBList requests while
+       * allowing the Top 10 list to update regularly.
        */
+
       res.setHeader(
         "Cache-Control",
         "public, s-maxage=900, stale-while-revalidate=1800"
       );
 
-      return res.status(200).json({
-        metas,
-      });
+
+      return res
+        .status(200)
+        .json({
+          metas,
+        });
 
     } catch (error) {
       console.error(
@@ -530,25 +588,30 @@ export default async function handler(req, res) {
         "application/json"
       );
 
-      return res.status(502).json({
-        error:
-          error?.message ||
-          "Unable to load MDBList",
-        metas: [],
-      });
+      return res
+        .status(502)
+        .json({
+          error:
+            error?.message ||
+            "Unable to load MDBList",
+          metas: [],
+        });
     }
   }
 
-  /* ---------------------------------------------------------------------- */
-  /* NOT FOUND                                                              */
-  /* ---------------------------------------------------------------------- */
+
+  /* ------------------------------------------------------------------------
+     404
+     ------------------------------------------------------------------------ */
 
   res.setHeader(
     "Content-Type",
     "application/json"
   );
 
-  return res.status(404).json({
-    error: "Not found",
-  });
+  return res
+    .status(404)
+    .json({
+      error: "not found",
+    });
 }
