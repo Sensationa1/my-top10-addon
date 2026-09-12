@@ -12,7 +12,7 @@ app.use((req, res, next) => {
 
 const manifest = {
   id: "community.mytoptenaddon",
-  version: "1.4.0",
+  version: "1.4.1",
   name: "Live Top 10",
   description: "Top 10 Movies & Series from MDBList with ranking numbers",
   resources: ["catalog"],
@@ -24,7 +24,7 @@ const manifest = {
 };
 
 // ====== CONFIG ======
-const MDBLIST_API_KEY = "84k3gqmfidzkniqojvnman7lk";   // ← put your key here
+const MDBLIST_API_KEY = "84k3gqmfidzkniqojvnman7lk";   // ← make sure your real key is here
 const BASE_URL = "https://my-top10-addon.vercel.app";
 
 // ========== CUSTOM RANKED POSTER ENDPOINT ==========
@@ -89,7 +89,6 @@ app.get('/poster', async (req, res) => {
 // ========== MDBLIST HELPER ==========
 async function getMDBList(listPath, type) {
   try {
-    // listPath example: "snoak/trending-movies"
     const url = `https://api.mdblist.com/lists/${listPath}/items?apikey=${MDBLIST_API_KEY}&limit=10&append_to_response=poster`;
 
     const res = await fetch(url);
@@ -97,17 +96,24 @@ async function getMDBList(listPath, type) {
 
     const data = await res.json();
 
-    // MDBList returns { movies: [...] } or { shows: [...] } or a unified array
-    let items = data.movies || data.shows || data || [];
-    if (!Array.isArray(items)) items = [];
+    // Handle different possible response structures
+    let items = [];
+    if (Array.isArray(data)) {
+      items = data;
+    } else if (data.movies) {
+      items = data.movies;
+    } else if (data.shows) {
+      items = data.shows;
+    } else if (data.items) {
+      items = data.items;
+    }
 
     return items.slice(0, 10).map((item, index) => {
       const rank = index + 1;
-      const id = item.id || item.ids?.tmdb || item.tmdb_id;
+      const id = item.id || item.ids?.tmdb || item.tmdb_id || item.ids?.imdb;
       const name = item.title || item.name || "Unknown";
       const year = item.release_year || item.year || "";
 
-      // Prefer poster from MDBList, otherwise fallback to TMDB style
       let originalPoster = item.poster || item.poster_path;
       if (originalPoster && !originalPoster.startsWith('http')) {
         originalPoster = `https://image.tmdb.org/t/p/w780${originalPoster}`;
@@ -144,7 +150,13 @@ app.get('/catalog/:type/:id*', async (req, res) => {
   if (cleanId === 'my_top_movies') {
     metas = await getMDBList('snoak/trending-movies', 'movie');
   } else if (cleanId === 'my_top_series') {
+    // Primary list
     metas = await getMDBList('snoak/trakt-s-trending-shows', 'series');
+
+    // Fallback if empty
+    if (metas.length === 0) {
+      metas = await getMDBList('snoak/trakt-trending-shows', 'series');
+    }
   }
 
   res.setHeader('Content-Type', 'application/json');
