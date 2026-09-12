@@ -38,14 +38,56 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
-// Helper to get base host URL in Vercel Cloud environment
+// --------------------------------------------------------------------------------
+// PURE VECTOR DIGIT GLYPHS (Base Height: 150px)
+// Eliminates server font dependencies. Guarantees 100% deterministic rendering.
+// --------------------------------------------------------------------------------
+const DIGIT_PATHS = {
+  "1": { width: 50, path: "M 12,30 L 32,10 L 48,10 L 48,150 L 12,150 L 12,126 L 26,126 L 26,30 Z" },
+  "2": { width: 80, path: "M 8,40 C 8,14 26,4 50,4 C 74,4 88,18 88,40 C 88,60 68,82 44,106 L 20,126 L 88,126 L 88,150 L 8,150 L 8,124 L 46,82 C 64,64 64,52 64,40 C 64,26 56,22 50,22 C 42,22 34,28 34,40 Z" },
+  "3": { width: 80, path: "M 10,10 L 82,10 L 82,32 L 44,70 C 66,70 84,82 84,106 C 84,132 68,150 44,150 C 20,150 10,134 10,110 L 32,110 C 32,122 38,128 44,128 C 54,128 60,120 60,106 C 60,92 52,84 38,84 L 26,84 L 26,62 L 52,32 L 10,32 Z" },
+  "4": { width: 82, path: "M 48,8 L 76,8 L 76,92 L 86,92 L 86,114 L 76,114 L 76,150 L 52,150 L 52,114 L 8,114 L 8,90 Z M 52,36 L 24,90 L 52,90 Z" },
+  "5": { width: 80, path: "M 10,10 L 80,10 L 80,32 L 32,32 L 28,62 C 38,54 48,52 58,52 C 74,52 84,64 84,98 C 84,130 68,150 44,150 C 20,150 10,132 10,108 L 32,108 C 32,120 38,128 44,128 C 54,128 60,120 60,98 C 60,82 52,74 40,74 C 30,74 22,80 18,88 L 8,80 Z" },
+  "6": { width: 80, path: "M 44,8 C 20,8 8,28 8,76 C 8,124 20,150 44,150 C 68,150 82,128 82,96 C 82,66 68,54 46,54 C 34,54 22,60 16,70 C 16,36 28,30 44,30 L 66,30 L 66,8 Z M 44,74 C 58,74 60,84 60,98 C 60,114 54,128 44,128 C 34,128 28,114 28,98 C 28,84 34,74 44,74 Z" },
+  "7": { width: 78, path: "M 8,8 L 80,8 L 80,28 L 40,150 L 16,150 L 54,28 L 8,28 Z" },
+  "8": { width: 80, path: "M 44,8 C 24,8 12,20 12,40 C 12,56 24,66 36,70 C 20,74 8,86 8,108 C 8,130 22,150 44,150 C 66,150 80,130 80,108 C 80,86 68,74 52,70 C 64,66 76,56 76,40 C 76,20 64,8 44,8 Z M 44,28 C 54,28 56,34 56,42 C 56,50 50,56 44,56 C 38,56 32,50 32,42 C 32,34 34,28 44,28 Z M 44,74 C 54,74 56,82 56,108 C 56,126 52,130 44,130 C 36,130 32,126 32,108 C 32,82 34,74 44,74 Z" },
+  "9": { width: 80, path: "M 44,8 C 20,8 8,28 8,60 C 8,92 22,102 44,102 C 56,102 68,94 74,84 C 74,118 64,128 44,128 L 24,128 L 24,150 L 44,150 C 70,150 82,128 82,80 C 82,32 70,8 44,8 Z M 44,28 C 54,28 58,38 58,58 C 58,72 52,82 44,82 C 36,82 30,72 30,58 C 30,38 34,28 44,28 Z" },
+  "0": { width: 80, path: "M 44,8 C 18,8 8,28 8,78 C 8,128 18,148 44,148 C 70,148 80,128 80,78 C 80,28 70,8 44,8 Z M 44,28 C 58,28 58,44 58,78 C 58,112 58,128 44,128 C 30,128 30,112 30,78 C 30,44 30,28 44,28 Z" }
+};
+
+// Renders solid layered silhouettes to prevent stroke cap artifacts
+function renderRankSvg(rankNum) {
+  const digits = String(rankNum).split("");
+  let xOffset = 0;
+  
+  let shadowLayer = "";
+  let borderLayer = "";
+  let coreLayer = "";
+
+  digits.forEach((d) => {
+    const digitData = DIGIT_PATHS[d] || DIGIT_PATHS["1"];
+    
+    // 1. Soft Ambient Shadow
+    shadowLayer += `<path transform="translate(${xOffset + 6}, 6)" d="${digitData.path}" fill="#000000" opacity="0.8" fill-rule="evenodd"/>`;
+    
+    // 2. Solid White Outer Silhouette Layer
+    borderLayer += `<path transform="translate(${xOffset}, 0)" d="${digitData.path}" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="10" stroke-linejoin="miter" fill-rule="evenodd"/>`;
+    
+    // 3. Dark Core Layer
+    coreLayer += `<path transform="translate(${xOffset}, 0)" d="${digitData.path}" fill="#141414" fill-rule="evenodd"/>`;
+    
+    xOffset += digitData.width - 2;
+  });
+
+  return `<g>${shadowLayer}${borderLayer}${coreLayer}</g>`;
+}
+
 function getHostUrl(req) {
   const protocol = req.headers["x-forwarded-proto"] || "https";
   const host = req.headers.host;
   return `${protocol}://${host}`;
 }
 
-// Landing Page
 app.get("/", (req, res) => {
   const hostUrl = getHostUrl(req);
   res.send(`
@@ -53,7 +95,7 @@ app.get("/", (req, res) => {
       <head><title>Top 10 Trending Addon</title></head>
       <body style="font-family: system-ui, sans-serif; text-align: center; padding: 50px; background: #0f0f12; color: #fff;">
         <h1>Top 10 Trending Addon</h1>
-        <p>Landscape posters with embedded real-font Netflix numbers & genre tags.</p>
+        <p>Landscape posters with embedded Netflix-style numbers & genre tags.</p>
         <a href="stremio://${req.headers.host}/manifest.json" style="background: #e50914; color: white; padding: 14px 28px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 6px; display: inline-block; margin-top: 20px;">Install in Stremio</a>
         <p style="margin-top: 20px; font-size: 13px; color: #888;">Manifest URL: ${hostUrl}/manifest.json</p>
       </body>
@@ -61,7 +103,6 @@ app.get("/", (req, res) => {
   `);
 });
 
-// Stremio Addon Manifest
 app.get("/manifest.json", (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
@@ -69,7 +110,6 @@ app.get("/manifest.json", (req, res) => {
   res.json(MANIFEST);
 });
 
-// TMDB Backdrop Lookup Helper
 async function getTmdbData(imdbId, type) {
   const apiKey = process.env.TMDB_API_KEY;
   if (!apiKey) return { backdropUrl: null };
@@ -94,7 +134,6 @@ async function getTmdbData(imdbId, type) {
   return { backdropUrl: null };
 }
 
-// Fetch Trending Items (MDBList with Trakt/TMDB Fallbacks)
 async function fetchTrendingList(type) {
   let rawItems = [];
   const apiKey = process.env.TMDB_API_KEY;
@@ -133,7 +172,6 @@ async function fetchTrendingList(type) {
   return rawItems;
 }
 
-// Catalog Handler
 app.get("/catalog/:type/:id.json", async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
@@ -166,8 +204,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      // v=17 forces complete cache invalidation
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=17`;
+      // Cache buster v=18 flushes previous missing-glyph dots
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=18`;
 
       return {
         id: idToUse,
@@ -187,7 +225,6 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
   }
 });
 
-// Dynamic Image Composite Generator
 app.get("/api/poster", async (req, res) => {
   const { id, rank, type, genres } = req.query;
 
@@ -199,7 +236,6 @@ app.get("/api/poster", async (req, res) => {
     let backdropBuffer = null;
     const cleanImdbId = id.startsWith("tt") ? id : null;
 
-    // 1. Primary Backdrop Source
     if (cleanImdbId) {
       try {
         const extUrl = `https://extendedratings.com/backdrop/${cleanImdbId}?config=russel&key=Kolkko11&v=fd3ce853`;
@@ -208,7 +244,6 @@ app.get("/api/poster", async (req, res) => {
       } catch (e) {}
     }
 
-    // 2. TMDB Fallback
     if (!backdropBuffer && cleanImdbId) {
       const tmdbInfo = await getTmdbData(cleanImdbId, type);
       if (tmdbInfo.backdropUrl) {
@@ -219,7 +254,6 @@ app.get("/api/poster", async (req, res) => {
       }
     }
 
-    // 3. Neutral Fallback Canvas
     if (!backdropBuffer) {
       backdropBuffer = await sharp({
         create: {
@@ -240,12 +274,13 @@ app.get("/api/poster", async (req, res) => {
       : "";
 
     const numRank = parseInt(rank, 10) || 1;
+    const digitPathsSvg = renderRankSvg(numRank);
 
-    // Proportional font dimensions (Fixed: no longer overflowing the canvas)
-    const fontSize = Math.round(height * 0.42); // ~300px on 720p
-    const textX = Math.round(width * 0.025);
-    const textY = Math.round(height * 0.72);
-    const strokeWidth = Math.round(fontSize * 0.06);
+    // Number scale: 65% of backdrop height
+    const desiredHeight = Math.round(height * 0.65); 
+    const scale = (desiredHeight / 150).toFixed(3);
+    const xPos = Math.round(width * 0.025);
+    const yPos = Math.round(height * 0.22);
 
     const pillWidth = Math.max(110, formattedGenres.length * 12 + 32);
     const pillXPos = width - pillWidth - Math.round(width * 0.04);
@@ -264,32 +299,10 @@ app.get("/api/poster", async (req, res) => {
         <!-- Left-Side Gradient Vignette -->
         <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#netflixGradient)" />
 
-        <!-- 1. Real Font Drop Shadow -->
-        <text 
-          x="${textX + 6}" 
-          y="${textY + 6}" 
-          font-family="'DejaVu Sans', 'Liberation Sans', sans-serif" 
-          font-size="${fontSize}" 
-          font-weight="bold" 
-          fill="#000000" 
-          opacity="0.85">
-          ${numRank}
-        </text>
-
-        <!-- 2. Real Font with White Outline & Dark Core -->
-        <text 
-          x="${textX}" 
-          y="${textY}" 
-          font-family="'DejaVu Sans', 'Liberation Sans', sans-serif" 
-          font-size="${fontSize}" 
-          font-weight="bold" 
-          fill="#141414" 
-          stroke="#FFFFFF" 
-          stroke-width="${strokeWidth}" 
-          stroke-linejoin="round"
-          paint-order="stroke fill">
-          ${numRank}
-        </text>
+        <!-- Rendered Vector Digits -->
+        <g transform="translate(${xPos}, ${yPos}) scale(${scale})">
+          ${digitPathsSvg}
+        </g>
 
         <!-- Top-Right Genre Badge -->
         ${
@@ -308,7 +321,7 @@ app.get("/api/poster", async (req, res) => {
           <text 
             x="${Math.round(pillWidth / 2)}" 
             y="${Math.round(height * 0.040)}" 
-            font-family="'DejaVu Sans', system-ui, sans-serif" 
+            font-family="system-ui, -apple-system, sans-serif" 
             font-size="${Math.round(height * 0.026)}" 
             font-weight="700" 
             fill="#FFFFFF" 
