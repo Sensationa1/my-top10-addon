@@ -1,23 +1,22 @@
 const TMDB_KEY    = process.env.TMDB_API_KEY;
 const MDBLIST_KEY = process.env.MDBLIST_API_KEY;
 
-// MDBList list IDs — Trakt trending, mirrored & auto-updated daily
-// Movies: snoak/trending-movies        → list 87667
-// Shows:  snoak/trakt-s-trending-shows → list 88434
+// Trakt trending lists mirrored on MDBList, auto-updated daily
 const SOURCES = {
-  "movie/top10-movies":  { listId: "87667", type: "movie"  },
-  "series/top10-series": { listId: "88434", type: "series" },
+  "movie/top10-movies":  { listId: "87667", stremioType: "movie"  },
+  "series/top10-series": { listId: "88434", stremioType: "series" },
 };
 
 const MANIFEST = {
   id: "community.nuvio.top10.ranked",
-  version: "1.0.0",
+  version: "2.0.0",
   name: "Top 10 Trending",
   description: "Top 10 trending movies & series from Trakt with ranked landscape posters.",
   logo: "https://i.imgur.com/lphiQ9I.png",
   resources: ["catalog"],
   types: ["movie", "series"],
-  idPrefixes: ["tmdb:"],
+  // Use tt IMDB IDs — Cinemeta resolves these so items are clickable
+  idPrefixes: ["tt"],
   catalogs: [
     { id: "top10-movies",  type: "movie",  name: "🔥 Top 10 Movies"  },
     { id: "top10-series",  type: "series", name: "🔥 Top 10 Series"  },
@@ -25,13 +24,12 @@ const MANIFEST = {
   behaviorHints: { adult: false, p2pNotSupported: true },
 };
 
-// ── SVG poster with rank number ───────────────────────────────────────────────
+// ── SVG ranked poster ─────────────────────────────────────────────────────────
 function buildPosterSVG(backdropUrl, rank) {
-  const n          = Number(rank) || 1;
-  const isDouble   = n >= 10;
-  const fontSize   = isDouble ? 108 : 130;
-  const xPos       = isDouble ? 3 : 7;
-  const strokeW    = 2.8;
+  const n        = Number(rank) || 1;
+  const isDouble = n >= 10;
+  const fontSize = isDouble ? 108 : 130;
+  const xPos     = isDouble ? 3 : 7;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 320 180" width="320" height="180">
   <defs>
@@ -59,65 +57,73 @@ function buildPosterSVG(backdropUrl, rank) {
     letter-spacing="${isDouble ? -7 : -5}"
     fill="#0a0a12"
     stroke="rgba(255,255,255,0.95)"
-    stroke-width="${strokeW}"
+    stroke-width="2.8"
     paint-order="stroke fill"
   >${n}</text>
 </svg>`;
 }
 
-// ── Fetch top 10 from MDBList ─────────────────────────────────────────────────
+// ── Fetch MDBList items ───────────────────────────────────────────────────────
 async function fetchList(listId) {
   const url = `https://api.mdblist.com/lists/${listId}/items?apikey=${MDBLIST_KEY}&limit=10`;
   const r = await fetch(url);
-  if (!r.ok) throw new Error(`MDBList ${r.status}`);
+  if (!r.ok) throw new Error(`MDBList ${r.status}: ${await r.text()}`);
   const data = await r.json();
+  // MDBList returns { items: [...] } or { movies: [...] } or { shows: [...] }
   return (data.items || data.movies || data.shows || []).slice(0, 10);
 }
 
-// ── Fetch TMDB backdrop ───────────────────────────────────────────────────────
-async function fetchBackdrop(tmdbId, mediaType) {
-  if (!TMDB_KEY || !tmdbId) return null;
-  const endpoint = mediaType === "movie" ? "movie" : "tv";
+// ── Fetch TMDB backdrop by IMDB ID ────────────────────────────────────────────
+async function fetchBackdrop(imdbId, stremioType) {
+  if (!TMDB_KEY || !imdbId) return null;
   try {
-    const r = await fetch(`https://api.themoviedb.org/3/${endpoint}/${tmdbId}?api_key=${TMDB_KEY}`);
-    if (!r.ok) return { backdrop: null, poster: null };
+    // find_by_external_id lets us look up by imdb_id → works for both movies & shows
+    const r = await fetch(
+      `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_KEY}&external_source=imdb_id`
+    );
+    if (!r.ok) return null;
     const d = await r.json();
-    return {
-      backdrop: d.backdrop_path ? `https://image.tmdb.org/t/p/w780${d.backdrop_path}` : null,
-      large:    d.backdrop_path ? `https://image.tmdb.org/t/p/w1280${d.backdrop_path}` : null,
-    };
-  } catch { return { backdrop: null, large: null }; }
+    const results = stremioType === "movie"
+      ? (d.movie_results || [])
+      : (d.tv_results   || []);
+    const item = results[0];
+    return item?.backdrop_path
+      ? {
+          w780:  `https://image.tmdb.org/t/p/w780${item.backdrop_path}`,
+          w1280: `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`,
+        }
+      : null;
+  } catch { return null; }
 }
 
-// ── Build Stremio meta object ─────────────────────────────────────────────────
+// ── Build meta ────────────────────────────────────────────────────────────────
 async function buildMeta(item, rank, stremioType, host) {
-  const tmdbId = item.tmdb_id || item.tmdbid;
+  // MDBList items have imdbid (string like "tt1234567") or imdb_id
+  const imdbId = item.imdbid || item.imdb_id || null;
   const title  = item.title || item.name || "";
-  const mediaType = stremioType === "movie" ? "movie" : "tv";
 
-  const imgs = await fetchBackdrop(tmdbId, mediaType);
+  const imgs = await fetchBackdrop(imdbId, stremioType);
 
-  // Poster URL = our own /poster endpoint → SVG with rank number on backdrop
-  const params = new URLSearchParams({
-    rank: String(rank),
-    ...(imgs?.backdrop ? { back: imgs.backdrop } : {}),
-  });
+  const params = new URLSearchParams({ rank: String(rank) });
+  if (imgs?.w780) params.set("back", imgs.w780);
   const poster = `https://${host}/poster?${params}`;
 
   return {
-    id:          tmdbId ? `tmdb:${tmdbId}` : `mdb:${item.id}`,
+    id:          imdbId || `mdb:${item.id}`,
     type:        stremioType,
     name:        title,
     poster,
     posterShape: "landscape",
-    background:  imgs?.large  || undefined,
+    background:  imgs?.w1280 || undefined,
     description: item.description || item.overview || "",
     releaseInfo: item.year ? String(item.year) : undefined,
-    imdbRating:  item.imdbrating ? String(Number(item.imdbrating).toFixed(1)) : undefined,
+    imdbRating:  item.imdbrating
+      ? String(Number(item.imdbrating).toFixed(1))
+      : undefined,
   };
 }
 
-// ── Main handler ──────────────────────────────────────────────────────────────
+// ── Handler ───────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -158,7 +164,7 @@ export default async function handler(req, res) {
     try {
       const items = await fetchList(src.listId);
       const metas = await Promise.all(
-        items.map((item, i) => buildMeta(item, i + 1, src.type, host))
+        items.map((item, i) => buildMeta(item, i + 1, src.stremioType, host))
       );
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=7200");
