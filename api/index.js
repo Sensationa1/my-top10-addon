@@ -39,24 +39,24 @@ const MANIFEST = {
 };
 
 // --------------------------------------------------------------------------------
-// ZERO-CURVE GEOMETRIC BLOCK FONT
-// 100% straight math coordinates. Completely impossible to look "hand-drawn".
-// Grid: 100x160. Uniform stroke thickness: 35px.
+// PROFESSIONAL CINEMATIC TYPEFACE PATHS
+// Smooth bezier curves and arc geometry. Crisp, clean, high-end font appearance.
+// Grid: 100x160.
 // --------------------------------------------------------------------------------
 const DIGIT_PATHS = {
-  "1": { width: 75,  path: "M 40,160 L 75,160 L 75,0 L 15,0 L 15,35 L 40,35 Z" },
-  "2": { width: 100, path: "M 0,0 L 100,0 L 100,95 L 35,95 L 35,125 L 100,125 L 100,160 L 0,160 L 0,60 L 65,60 L 65,35 L 0,35 Z" },
-  "3": { width: 100, path: "M 0,0 L 100,0 L 100,160 L 0,160 L 0,125 L 65,125 L 65,95 L 20,95 L 20,60 L 65,60 L 65,35 L 0,35 Z" },
-  "4": { width: 100, path: "M 0,0 L 35,0 L 35,60 L 65,60 L 65,0 L 100,0 L 100,160 L 65,160 L 65,95 L 0,95 Z" },
-  "5": { width: 100, path: "M 0,0 L 100,0 L 100,35 L 35,35 L 35,60 L 100,60 L 100,160 L 0,160 L 0,95 L 65,95 L 65,125 L 0,125 Z" },
-  "6": { width: 100, path: "M 0,0 L 100,0 L 100,35 L 35,35 L 35,60 L 100,60 L 100,160 L 0,160 Z M 35,95 L 65,95 L 65,125 L 35,125 Z" },
-  "7": { width: 100, path: "M 0,0 L 100,0 L 100,160 L 65,160 L 65,35 L 0,35 Z" },
-  "8": { width: 100, path: "M 0,0 L 100,0 L 100,160 L 0,160 Z M 35,35 L 65,35 L 65,60 L 35,60 Z M 35,95 L 65,95 L 65,125 L 35,125 Z" },
-  "9": { width: 100, path: "M 0,0 L 100,0 L 100,160 L 65,160 L 65,95 L 0,95 Z M 35,35 L 65,35 L 65,60 L 35,60 Z" },
-  "0": { width: 100, path: "M 0,0 L 100,0 L 100,160 L 0,160 Z M 35,35 L 65,35 L 65,125 L 35,125 Z" }
+  "1": { width: 70,  path: "M 20,35 L 45,15 L 45,160 L 75,160 L 75,0 L 45,0 L 20,20 Z" },
+  "2": { width: 100, path: "M 10,40 A 40,40 0 0,1 90,40 C 90,75 50,105 10,140 L 10,160 L 100,160 L 100,130 L 55,130 C 70,115 90,95 90,65 C 90,30 65,10 45,10 C 25,10 10,22 10,40 Z" },
+  "3": { width: 100, path: "M 10,25 C 25,10 50,5 75,20 C 95,32 98,60 80,78 C 98,90 95,130 70,148 C 45,165 15,150 10,130 L 40,115 C 45,125 58,130 68,122 C 78,115 78,95 65,90 C 55,85 45,85 35,85 L 35,65 L 45,65 C 55,65 65,60 70,50 C 75,40 70,28 55,25 C 40,22 25,32 20,45 L 0,35 C 3,20 10,12 25,15 Z" },
+  "4": { width: 100, path: "M 65,0 L 35,110 L 0,110 L 0,135 L 35,135 L 35,160 L 65,160 L 65,135 L 100,135 L 100,110 L 65,110 Z M 65,30 L 65,90 L 20,90 Z" },
+  "5": { width: 100, path: "M 5,0 L 100,0 L 100,30 L 35,30 L 35,65 C 45,60 55,60 65,65 C 90,75 100,100 95,130 C 90,155 65,165 40,165 C 20,165 5,155 0,140 L 25,115 C 32,125 42,135 55,135 C 70,135 75,125 72,115 C 70,102 55,95 40,95 C 25,95 10,85 5,70 Z" },
+  "6": { width: 100, path: "M 50,5 C 20,5 0,30 0,90 C 0,145 25,165 55,165 C 80,165 100,145 95,110 L 65,100 C 68,115 62,135 48,135 C 32,135 30,115 30,90 C 35,95 45,100 55,100 C 80,100 95,80 95,50 C 95,20 75,5 50,5 Z M 55,30 C 68,30 70,45 70,55 C 70,68 68,75 55,75 C 42,75 35,65 35,55 C 35,45 42,30 55,30 Z" },
+  "7": { width: 100, path: "M 0,0 L 100,0 L 100,25 L 45,160 L 15,160 L 65,45 L 0,45 Z" },
+  "8": { width: 100, path: "M 50,5 C 25,5 10,22 10,48 C 10,70 30,82 50,90 C 30,98 10,110 10,135 C 10,158 28,165 50,165 C 72,165 90,158 90,135 C 90,110 70,98 50,90 C 70,82 90,70 90,48 C 90,22 75,5 50,5 Z M 50,30 C 60,30 65,38 65,48 C 65,58 60,65 50,65 C 40,65 35,58 35,48 C 35,38 40,30 50,30 Z M 50,105 C 60,105 65,112 65,122 C 65,132 60,140 50,140 C 40,140 35,132 35,122 C 35,112 40,105 50,105 Z" },
+  "9": { width: 100, path: "M 50,0 C 25,0 5,15 5,50 C 5,80 25,95 45,95 C 55,95 65,90 70,85 L 70,160 L 100,160 L 100,0 Z M 50,25 C 62,25 68,38 68,50 C 68,62 62,75 50,75 C 38,75 32,62 32,50 C 32,38 38,25 50,25 Z" },
+  "0": { width: 100, path: "M 50,0 C 20,0 0,25 0,85 C 0,140 20,165 50,165 C 80,165 100,140 100,85 C 100,25 80,0 50,0 Z M 50,30 C 65,30 70,48 70,85 C 70,120 65,135 50,135 C 35,135 30,120 30,85 C 30,48 35,30 50,30 Z" }
 };
 
-// TRIPLE LAYER SVG RENDER (Prevents "White Dots" & iOS stroke bugs)
+// TRIPLE LAYER SVG RENDER (Prevents rendering bugs & creates 3D Netflix depth)
 function renderRankSvg(rankNum) {
   const digits = String(rankNum).split("");
   let xOffset = 0;
@@ -68,16 +68,16 @@ function renderRankSvg(rankNum) {
   digits.forEach((d) => {
     const digitData = DIGIT_PATHS[d] || DIGIT_PATHS["1"];
     
-    // 1. Solid Base Shadow
+    // 1. Solid Base Drop Shadow
     shadowLayer += `<path transform="translate(${xOffset + 8}, 8)" d="${digitData.path}" fill="#000000" opacity="0.85" fill-rule="evenodd"/>`;
     
-    // 2. Thick White Stroke Layer (Underneath Core)
-    outlineLayer += `<path transform="translate(${xOffset}, 0)" d="${digitData.path}" fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linejoin="miter" fill-rule="evenodd"/>`;
+    // 2. Thick White Stroke Layer (Outer Contrast)
+    outlineLayer += `<path transform="translate(${xOffset}, 0)" d="${digitData.path}" fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd"/>`;
     
-    // 3. Dark Geometric Core Fill
+    // 3. Dark Cinematic Core Fill
     coreLayer += `<path transform="translate(${xOffset}, 0)" d="${digitData.path}" fill="#141414" fill-rule="evenodd"/>`;
     
-    xOffset += digitData.width + 12; // Crisp kerning between digits
+    xOffset += digitData.width + 12; // Precise Kerning
   });
 
   return `<g>${shadowLayer}${outlineLayer}${coreLayer}</g>`;
@@ -98,7 +98,7 @@ app.get("/", (req, res) => {
       <head><title>Top 10 Trending Addon</title></head>
       <body style="font-family: system-ui, sans-serif; text-align: center; padding: 50px; background: #0f0f12; color: #fff;">
         <h1>Top 10 Trending Addon</h1>
-        <p>Landscape posters with embedded Netflix-style numbers & genre tags.</p>
+        <p>Landscape posters with embedded cinematic Netflix-style numbers & genre tags.</p>
         <a href="stremio://${req.headers.host}/manifest.json" style="background: #e50914; color: white; padding: 14px 28px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 6px; display: inline-block; margin-top: 20px;">Install in Stremio</a>
         <p style="margin-top: 20px; font-size: 13px; color: #888;">Manifest URL: ${hostUrl}/manifest.json</p>
       </body>
@@ -211,8 +211,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      // v=14 immediately busts cache on Stremio Web, iOS, and NuVio
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=14`;
+      // v=15 immediately busts cache across Stremio Web, iOS, and NuVio
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=15`;
 
       return {
         id: idToUse,
@@ -310,7 +310,7 @@ app.get("/api/poster", async (req, res) => {
         <!-- Left-Side Gradient Vignette -->
         <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#netflixGradient)" />
 
-        <!-- Rendered Triple-Layer Vector Digits -->
+        <!-- Rendered Professional Cinematic Digits -->
         <g transform="translate(${xPos}, ${yPos}) scale(${scale})">
           ${digitPathsSvg}
         </g>
