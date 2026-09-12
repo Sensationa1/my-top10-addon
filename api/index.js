@@ -38,18 +38,48 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
-// Clean Apple TV Sans-Serif Vector Digits (Grid Height: 120)
+// Authentic Apple SF Pro Display Vector Glyphs (Height Box: 100)
 const DIGIT_PATHS = {
-  "1": { width: 32, path: '<path d="M 2 24 L 28 0 L 28 120 L 0 120 L 0 96 L 8 96 L 8 24 Z" />' },
-  "2": { width: 68, path: '<path d="M 4 36 C 4 12, 64 12, 64 42 C 64 64, 40 84, 4 102 L 4 120 L 68 120 L 68 96 L 28 96 L 48 78 C 64 62, 68 50, 68 40 C 68 10, 50 0, 34 0 C 16 0, 4 12, 4 36 Z" />' },
-  "3": { width: 68, path: '<path d="M 6 18 L 62 18 L 62 40 L 32 60 C 52 60, 66 72, 66 92 C 66 110, 50 120, 34 120 C 16 120, 4 106, 2 88 L 22 84 C 24 94, 30 100, 36 100 C 44 100, 48 94, 48 84 C 48 72, 40 66, 28 66 L 20 66 L 20 48 L 38 34 L 6 34 Z" />' },
-  "4": { width: 68, path: '<path d="M 44 0 L 0 74 L 44 74 L 44 0 Z M 44 74 L 68 74 L 68 94 L 44 94 L 44 120 L 24 120 L 24 94 L 0 94 L 0 70 L 44 0 Z" />' },
-  "5": { width: 68, path: '<path d="M 8 12 L 62 12 L 62 32 L 28 32 L 24 52 C 30 48, 40 46, 48 48 C 62 52, 68 66, 68 84 C 68 106, 54 120, 34 120 C 14 120, 4 106, 2 86 L 22 82 C 24 92, 28 100, 36 100 C 44 100, 48 92, 48 82 C 48 70, 42 62, 30 62 C 24 62, 18 66, 14 70 L 8 12 Z" />' },
-  "6": { width: 68, path: '<path d="M 38 0 C 14 0, 4 24, 4 60 C 4 92, 14 120, 36 120 C 56 120, 68 102, 68 78 C 68 54, 54 40, 36 40 C 26 40, 18 44, 12 52 C 14 28, 24 18, 40 18 L 62 18 L 62 0 Z M 36 58 C 44 58, 48 66, 48 78 C 48 90, 44 100, 36 100 C 28 100, 22 90, 22 78 C 22 66, 28 58, 36 58 Z" />' },
-  "7": { width: 64, path: '<path d="M 4 12 L 64 12 L 64 30 L 32 120 L 10 120 L 40 30 L 4 30 Z" />' },
-  "8": { width: 68, path: '<path d="M 34 0 C 16 0, 6 12, 6 28 C 6 42, 14 52, 24 56 C 12 62, 2 72, 2 90 C 2 108, 16 120, 34 120 C 56 120, 66 108, 66 90 C 66 72, 56 62, 44 56 C 54 52, 62 42, 62 28 C 62 12, 52 0, 34 0 Z M 34 18 C 42 18, 46 22, 46 28 C 46 34, 42 40, 34 40 C 26 40, 22 34, 22 28 C 22 22, 26 18, 34 18 Z M 34 72 C 42 72, 48 78, 48 90 C 48 100, 42 104, 34 104 C 26 104, 20 100, 20 90 C 20 78, 26 72, 34 72 Z" />' },
-  "9": { width: 68, path: '<path d="M 32 120 C 54 120, 64 96, 64 54 C 64 24, 52 0, 32 0 C 14 0, 2 18, 2 42 C 2 66, 16 80, 34 80 C 42 80, 50 76, 54 68 C 52 92, 44 102, 30 102 L 8 102 L 8 120 Z M 34 18 C 42 18, 46 26, 46 42 C 46 56, 42 64, 34 64 C 26 64, 20 56, 20 42 C 20 26, 26 18, 34 18 Z" />' },
-  "0": { width: 68, path: '<path d="M 34 0 C 12 0, 2 20, 2 60 C 2 100, 12 120, 34 120 C 56 120, 66 100, 66 60 C 66 20, 56 0, 34 0 Z M 34 20 C 44 20, 46 36, 46 60 C 46 84, 44 100, 34 100 C 24 100, 22 84, 22 60 C 22 36, 24 20, 34 20 Z" />' }
+  "1": { 
+    width: 44, 
+    path: '<path d="M 12.5 23.6 C 18.2 19.2, 24.3 13.8, 28.5 8.2 L 41.2 8.2 L 41.2 91.8 L 26.2 91.8 L 26.2 25.8 L 12.5 35.2 Z"/>' 
+  },
+  "2": { 
+    width: 82, 
+    path: '<path d="M 6.2 28.8 C 6.2 12.2, 21.2 2.2, 41.5 2.2 C 61.8 2.2, 76.2 12.5, 76.2 27.8 C 76.2 39.2, 68.8 48.8, 52.8 63.2 L 23.5 89.5 L 78.2 89.5 L 78.2 100 L 6.2 100 L 6.2 90.2 L 43.2 56.8 C 58.2 43.2, 61.8 36.5, 61.8 27.8 C 61.8 18.2, 52.5 12.2, 41.2 12.2 C 29.8 12.2, 20.8 18.5, 20.8 28.8 Z"/>' 
+  },
+  "3": { 
+    width: 80, 
+    path: '<path d="M 7.2 12.2 L 74.2 12.2 L 74.2 22.8 L 41.8 48.2 C 59.8 49.2, 75.2 60.2, 75.2 76.5 C 75.2 91.8, 61.2 102.2, 41.2 102.2 C 20.2 102.2, 6.8 90.2, 5.2 74.8 L 19.2 72.8 C 20.8 82.8, 29.5 90.8, 41.2 90.8 C 52.2 90.8, 60.2 83.8, 60.2 74.2 C 60.2 64.2, 51.8 57.2, 38.8 57.2 L 28.2 57.2 L 28.2 46.8 L 53.2 24.2 L 7.2 24.2 Z"/>' 
+  },
+  "4": { 
+    width: 68, 
+    path: '<path d="M 48.2 2.2 L 48.2 68.2 L 63.2 68.2 L 63.2 79.2 L 48.2 79.2 L 48.2 98.2 L 33.2 98.2 L 33.2 79.2 L 3.2 79.2 L 3.2 67.2 Z M 33.2 22.2 L 13.2 68.2 L 33.2 68.2 Z"/>' 
+  },
+  "5": { 
+    width: 80, 
+    path: '<path d="M 12.2 12.2 L 71.2 12.2 L 71.2 23.2 L 26.2 23.2 L 22.2 47.2 C 28.2 43.2, 36.2 41.2, 45.2 41.2 C 62.2 41.2, 75.2 52.2, 75.2 70.2 C 75.2 88.2, 61.2 100.2, 42.2 100.2 C 22.2 100.2, 8.2 88.2, 6.2 70.2 L 20.2 68.2 C 21.8 80.2, 30.2 88.2, 42.2 88.2 C 52.2 88.2, 60.2 80.2, 60.2 70.2 C 60.2 60.2, 52.2 52.2, 41.2 52.2 C 32.2 52.2, 24.2 56.2, 19.2 61.2 Z"/>' 
+  },
+  "6": { 
+    width: 78, 
+    path: '<path d="M 42.2 2.2 C 60.2 2.2, 72.2 16.2, 72.2 28.2 L 57.2 28.2 C 57.2 20.2, 49.2 13.2, 41.2 13.2 C 27.2 13.2, 18.2 25.2, 17.2 50.2 C 23.2 42.2, 32.2 38.2, 43.2 38.2 C 61.2 38.2, 74.2 50.2, 74.2 69.2 C 74.2 88.2, 60.2 100.2, 42.2 100.2 C 21.2 100.2, 4.2 82.2, 4.2 48.2 C 4.2 21.2, 21.2 2.2, 42.2 2.2 Z M 41.2 49.2 C 29.2 49.2, 20.2 57.2, 20.2 69.2 C 20.2 81.2, 29.2 89.2, 41.2 89.2 C 52.2 89.2, 59.2 81.2, 59.2 69.2 C 59.2 57.2, 51.2 49.2, 41.2 49.2 Z"/>' 
+  },
+  "7": { 
+    width: 78, 
+    path: '<path d="M 7.2 12.2 L 74.2 12.2 L 74.2 23.2 L 37.2 98.2 L 21.2 98.2 L 55.2 23.2 L 7.2 23.2 Z"/>' 
+  },
+  "8": { 
+    width: 80, 
+    path: '<path d="M 40.2 2.2 C 58.2 2.2, 71.2 12.2, 71.2 27.2 C 71.2 38.2, 62.2 46.2, 50.2 50.2 C 64.2 54.2, 75.2 63.2, 75.2 76.2 C 75.2 91.2, 61.2 102.2, 40.2 102.2 C 19.2 102.2, 5.2 91.2, 5.2 76.2 C 5.2 63.2, 16.2 54.2, 30.2 50.2 C 18.2 46.2, 9.2 38.2, 9.2 27.2 C 9.2 12.2, 22.2 2.2, 40.2 2.2 Z M 40.2 13.2 C 28.2 13.2, 23.2 20.2, 23.2 27.2 C 23.2 35.2, 29.2 41.2, 40.2 41.2 C 51.2 41.2, 57.2 35.2, 57.2 27.2 C 57.2 20.2, 52.2 13.2, 40.2 13.2 Z M 40.2 51.2 C 26.2 51.2, 19.2 59.2, 19.2 75.2 C 19.2 86.2, 27.2 91.2, 40.2 91.2 C 53.2 91.2, 61.2 86.2, 61.2 75.2 C 61.2 59.2, 54.2 51.2, 40.2 51.2 Z"/>' 
+  },
+  "9": { 
+    width: 80, 
+    path: '<path d="M 40.2 2.2 C 61.2 2.2, 76.2 19.2, 76.2 51.2 C 76.2 78.2, 59.2 98.2, 38.2 98.2 C 20.2 98.2, 8.2 83.2, 8.2 71.2 L 23.2 71.2 C 23.2 78.2, 30.2 86.2, 39.2 86.2 C 52.2 86.2, 60.2 74.2, 61.2 50.2 C 55.2 57.2, 46.2 61.2, 36.2 61.2 C 18.2 61.2, 5.2 49.2, 5.2 30.2 C 5.2 12.2, 19.2 2.2, 40.2 2.2 Z M 39.2 13.2 C 28.2 13.2, 20.2 21.2, 20.2 31.2 C 20.2 41.2, 28.2 49.2, 39.2 49.2 C 50.2 49.2, 59.2 41.2, 59.2 31.2 C 59.2 21.2, 50.2 13.2, 39.2 13.2 Z"/>' 
+  },
+  "0": { 
+    width: 80, 
+    path: '<path d="M 40.2 2.2 C 61.2 2.2, 75.2 18.2, 75.2 51.2 C 75.2 84.2, 61.2 100.2, 40.2 100.2 C 19.2 100.2, 5.2 84.2, 5.2 51.2 C 5.2 18.2, 19.2 2.2, 40.2 2.2 Z M 40.2 13.2 C 26.2 13.2, 20.2 27.2, 20.2 51.2 C 20.2 75.2, 26.2 89.2, 40.2 89.2 C 54.2 89.2, 60.2 75.2, 60.2 51.2 C 60.2 27.2, 54.2 13.2, 40.2 13.2 Z"/>' 
+  }
 };
 
 function renderRankSvg(rankNum) {
@@ -60,7 +90,7 @@ function renderRankSvg(rankNum) {
   digits.forEach((d) => {
     const digitData = DIGIT_PATHS[d] || DIGIT_PATHS["1"];
     paths += `<g transform="translate(${xOffset}, 0)">${digitData.path}</g>`;
-    xOffset += digitData.width + 12;
+    xOffset += digitData.width + 8;
   });
 
   return paths;
@@ -194,8 +224,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      // v=5 forces Vercel CDN and Stremio cache to instantly purge old styles
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=5`;
+      // v=6 parameter forces Vercel CDN & Stremio to immediately purge old image caches
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=6`;
 
       return {
         id: idToUse,
@@ -270,61 +300,51 @@ app.get("/api/poster", async (req, res) => {
     const numRank = parseInt(rank, 10) || 1;
     const digitPathsSvg = renderRankSvg(numRank);
 
-    // Apple TV Style: Clean Top-Left Position & Proportional Scale (~14% height)
-    const desiredHeight = Math.round(height * 0.14); 
-    const scale = (desiredHeight / 120).toFixed(3);
-    const xPos = Math.round(width * 0.04);
-    const yPos = Math.round(height * 0.05);
+    // Apple TV Proportional Scaling (Sleek Top-Left Corner Rank Number)
+    const desiredHeight = Math.round(height * 0.13); 
+    const scale = (desiredHeight / 100).toFixed(3);
+    const xPos = Math.round(width * 0.035);
+    const yPos = Math.round(height * 0.045);
 
-    const pillWidth = Math.max(120, formattedGenres.length * 13 + 36);
-    const pillXPos = width - pillWidth - Math.round(width * 0.04);
+    const pillWidth = Math.max(110, formattedGenres.length * 12 + 32);
+    const pillXPos = width - pillWidth - Math.round(width * 0.035);
 
     const svgOverlay = Buffer.from(`
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="topShadow" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#000000" stop-opacity="0.8" />
-            <stop offset="50%" stop-color="#000000" stop-opacity="0.3" />
-            <stop offset="100%" stop-color="#000000" stop-opacity="0" />
-          </linearGradient>
+        
+        <!-- Subtle Top Dark Gradient Vignette for Legibility -->
+        <rect width="${width}" height="${Math.round(height * 0.30)}" fill="black" opacity="0.45" />
 
-          <filter id="textShadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.85"/>
-          </filter>
-
-          <filter id="pillShadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.75"/>
-          </filter>
-        </defs>
-
-        <!-- Top Vignette for Contrast -->
-        <rect width="${width}" height="${Math.round(height * 0.35)}" fill="url(#topShadow)" />
-
-        <!-- Apple TV Top-Left Rank Number -->
-        <g filter="url(#textShadow)" transform="translate(${xPos}, ${yPos}) scale(${scale})" fill="#FFFFFF">
+        <!-- 1. Bulletproof Dual-Layer Drop Shadow (Offset Path) -->
+        <g transform="translate(${xPos + 2}, ${yPos + 3}) scale(${scale})" fill="rgba(0,0,0,0.85)">
           ${digitPathsSvg}
         </g>
 
-        <!-- Genre Pill (Top-Right) -->
+        <!-- 2. Pure White SF Pro Display Apple TV Rank Number -->
+        <g transform="translate(${xPos}, ${yPos}) scale(${scale})" fill="#FFFFFF">
+          ${digitPathsSvg}
+        </g>
+
+        <!-- Top-Right Genre Pill -->
         ${
           formattedGenres
             ? `
-        <g transform="translate(${pillXPos}, ${yPos})" filter="url(#pillShadow)">
+        <g transform="translate(${pillXPos}, ${yPos})">
           <rect 
-            rx="${Math.round(height * 0.022)}" 
-            ry="${Math.round(height * 0.022)}" 
+            rx="${Math.round(height * 0.018)}" 
+            ry="${Math.round(height * 0.018)}" 
             width="${pillWidth}" 
-            height="${Math.round(height * 0.062)}" 
-            fill="rgba(0, 0, 0, 0.78)" 
-            stroke="rgba(255, 255, 255, 0.25)" 
-            stroke-width="1.5"
+            height="${Math.round(height * 0.058)}" 
+            fill="rgba(0, 0, 0, 0.72)" 
+            stroke="rgba(255, 255, 255, 0.3)" 
+            stroke-width="1.2"
           />
           <text 
             x="${Math.round(pillWidth / 2)}" 
-            y="${Math.round(height * 0.043)}" 
-            font-family="DejaVu Sans, Arial, sans-serif" 
-            font-size="${Math.round(height * 0.028)}" 
-            font-weight="bold" 
+            y="${Math.round(height * 0.040)}" 
+            font-family="system-ui, -apple-system, sans-serif" 
+            font-size="${Math.round(height * 0.026)}" 
+            font-weight="700" 
             fill="#FFFFFF" 
             text-anchor="middle">
             ${formattedGenres}
