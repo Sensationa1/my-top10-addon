@@ -1,7 +1,7 @@
 {
   "name": "my-top10-addon",
   "version": "1.0.0",
-  "description": "Stremio Top 10 Trakt Trending Movies and Shows Addon with Apple TV style numbers and custom landscape posters",
+  "description": "Stremio Top 10 Trending Movies and Shows Addon with Apple TV style numbers and landscape posters",
   "main": "api/index.js",
   "scripts": {
     "start": "node api/index.js"
