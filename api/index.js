@@ -12,9 +12,9 @@ app.use((req, res, next) => {
 
 const manifest = {
   id: "community.mytoptenaddon",
-  version: "1.3.0",
-  name: "Live TMDB Top 10",
-  description: "Top 10 Movies & Series + custom ranked poster service",
+  version: "1.4.0",
+  name: "Live Top 10",
+  description: "Top 10 Movies & Series from MDBList with ranking numbers",
   resources: ["catalog"],
   types: ["movie", "series"],
   catalogs: [
@@ -23,7 +23,9 @@ const manifest = {
   ]
 };
 
-const TMDB_API_KEY = "dc1ae8c943c805800112762a3afbc1b6";
+// ====== CONFIG ======
+const MDBLIST_API_KEY = "84k3gqmfidzkniqojvnman7lk";   // ← put your key here
+const BASE_URL = "https://my-top10-addon.vercel.app";
 
 // ========== CUSTOM RANKED POSTER ENDPOINT ==========
 app.get('/poster', async (req, res) => {
@@ -36,43 +38,41 @@ app.get('/poster', async (req, res) => {
 
     const rankNum = parseInt(rank);
     if (isNaN(rankNum) || rankNum < 1 || rankNum > 20) {
-      return res.status(400).json({ error: 'Rank must be a number between 1 and 20' });
+      return res.status(400).json({ error: 'Rank must be between 1 and 20' });
     }
 
-    // Download original poster
     const response = await fetch(url);
     if (!response.ok) throw new Error('Failed to download poster');
     const buffer = Buffer.from(await response.arrayBuffer());
 
-    // Get image metadata
     const image = sharp(buffer);
     const metadata = await image.metadata();
     const width = metadata.width || 780;
     const height = metadata.height || 1170;
 
-    // Create ranking number as SVG (big, clean, Apple TV style)
-    const fontSize = Math.floor(Math.min(width, height) * 0.28);
+    const fontSize = Math.floor(Math.min(width, height) * 0.32);
+
     const svg = `
-      <svg width="${width}" height="${height}">
-        <style>
-          .rank { 
-            fill: rgba(255,255,255,0.92); 
-            font-family: Arial Black, Arial, sans-serif; 
-            font-weight: 900; 
-            font-size: ${fontSize}px;
-          }
-        </style>
-        <text x="40" y="${fontSize + 20}" class="rank">${rankNum}</text>
+      <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="shadow">
+            <feDropShadow dx="3" dy="3" stdDeviation="4" flood-color="black" flood-opacity="0.7"/>
+          </filter>
+        </defs>
+        <text 
+          x="50" 
+          y="${fontSize + 30}" 
+          font-family="Arial Black, Arial, sans-serif" 
+          font-weight="900" 
+          font-size="${fontSize}px" 
+          fill="white"
+          filter="url(#shadow)"
+        >${rankNum}</text>
       </svg>
     `;
 
-    // Composite the number onto the poster
     const output = await image
-      .composite([{
-        input: Buffer.from(svg),
-        top: 0,
-        left: 0
-      }])
+      .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
       .jpeg({ quality: 90 })
       .toBuffer();
 
@@ -86,29 +86,35 @@ app.get('/poster', async (req, res) => {
   }
 });
 
-// ========== CATALOG ==========
-async function getTrending(type) {
+// ========== MDBLIST HELPER ==========
+async function getMDBList(listPath, type) {
   try {
-    const tmdbType = type === 'movie' ? 'movie' : 'tv';
-    const url = `https://api.themoviedb.org/3/trending/${tmdbType}/week?api_key=${TMDB_API_KEY}&language=en-US`;
+    // listPath example: "snoak/trending-movies"
+    const url = `https://api.mdblist.com/lists/${listPath}/items?apikey=${MDBLIST_API_KEY}&limit=10&append_to_response=poster`;
 
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`TMDB ${res.status}`);
+    if (!res.ok) throw new Error(`MDBList ${res.status}`);
+
     const data = await res.json();
 
-    return data.results.slice(0, 10).map((item, index) => {
-      const rank = index + 1;
-      const id = item.id;
-      const name = item.title || item.name || "Unknown";
-      const year = (item.release_date || item.first_air_date || "").slice(0, 4);
+    // MDBList returns { movies: [...] } or { shows: [...] } or a unified array
+    let items = data.movies || data.shows || data || [];
+    if (!Array.isArray(items)) items = [];
 
-      // Use our own ranked poster endpoint
-      const originalPoster = item.poster_path
-        ? `https://image.tmdb.org/t/p/w780${item.poster_path}`
-        : null;
+    return items.slice(0, 10).map((item, index) => {
+      const rank = index + 1;
+      const id = item.id || item.ids?.tmdb || item.tmdb_id;
+      const name = item.title || item.name || "Unknown";
+      const year = item.release_year || item.year || "";
+
+      // Prefer poster from MDBList, otherwise fallback to TMDB style
+      let originalPoster = item.poster || item.poster_path;
+      if (originalPoster && !originalPoster.startsWith('http')) {
+        originalPoster = `https://image.tmdb.org/t/p/w780${originalPoster}`;
+      }
 
       const poster = originalPoster
-        ? `https://my-top10-addon.vercel.app/poster?url=${encodeURIComponent(originalPoster)}&rank=${rank}`
+        ? `${BASE_URL}/poster?url=${encodeURIComponent(originalPoster)}&rank=${rank}`
         : null;
 
       return {
@@ -117,28 +123,29 @@ async function getTrending(type) {
         name: name,
         poster: poster,
         posterShape: "landscape",
-        background: item.backdrop_path
-          ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`
-          : undefined,
-        description: item.overview || undefined,
-        releaseInfo: year || undefined,
-        imdbRating: item.vote_average ? item.vote_average.toFixed(1) : undefined
+        description: item.description || undefined,
+        releaseInfo: year ? String(year) : undefined,
+        imdbRating: item.score ? (item.score / 10).toFixed(1) : undefined
       };
     });
   } catch (err) {
-    console.error(err);
+    console.error(`MDBList error (${listPath}):`, err.message);
     return [];
   }
 }
 
+// ========== CATALOG ROUTES ==========
 app.get(['/', '/manifest.json'], (req, res) => res.json(manifest));
 
 app.get('/catalog/:type/:id*', async (req, res) => {
   const cleanId = (req.params.id || '').replace(/\.json$/, '');
   let metas = [];
 
-  if (cleanId === 'my_top_movies') metas = await getTrending('movie');
-  else if (cleanId === 'my_top_series') metas = await getTrending('series');
+  if (cleanId === 'my_top_movies') {
+    metas = await getMDBList('snoak/trending-movies', 'movie');
+  } else if (cleanId === 'my_top_series') {
+    metas = await getMDBList('snoak/trakt-s-trending-shows', 'series');
+  }
 
   res.setHeader('Content-Type', 'application/json');
   res.json({ metas });
