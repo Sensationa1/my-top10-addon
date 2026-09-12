@@ -15,8 +15,8 @@ const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
   version: "1.0.0",
-  name: "Top 10 Trending (Apple TV Style)",
-  description: "Top 10 Trending Movies & TV Shows with embedded Apple TV numbers on landscape posters.",
+  name: "Top 10 Trending (Netflix Style)",
+  description: "Top 10 Trending Movies & TV Shows with embedded Netflix-style numbers on landscape posters.",
   resources: ["catalog"],
   types: ["movie", "series"],
   catalogs: [
@@ -38,47 +38,47 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
-// High-Precision Apple SF Pro Display Bold Glyphs (Standard Box Height: 100)
+// High-Impact Netflix Condensed Typography Vectors (Height: 100)
 const DIGIT_PATHS = {
   "1": { 
-    width: 38, 
-    path: '<path d="M 8.5 25.4 C 15.2 20.8, 22.1 14.2, 26.8 7.5 L 37.5 7.5 L 37.5 92.5 L 23.8 92.5 L 23.8 26.8 L 8.5 36.2 Z"/>' 
+    width: 32, 
+    path: '<path d="M 4 22 L 20 6 L 28 6 L 28 94 L 12 94 L 12 26 L 4 26 Z"/>' 
   },
   "2": { 
-    width: 76, 
-    path: '<path d="M 5.8 28.2 C 5.8 11.5, 20.8 1.5, 40.5 1.5 C 60.2 1.5, 74.2 11.8, 74.2 26.8 C 74.2 38.5, 66.8 48.2, 50.8 62.8 L 22.8 88.5 L 75.8 88.5 L 75.8 98.5 L 5.8 98.5 L 5.8 88.8 L 41.8 55.8 C 56.8 42.2, 60.2 35.5, 60.2 26.8 C 60.2 17.5, 51.2 11.8, 40.2 11.8 C 29.2 11.8, 20.2 17.8, 20.2 28.2 Z"/>' 
+    width: 56, 
+    path: '<path d="M 4 24 C 4 10, 16 4, 32 4 C 46 4, 52 12, 52 24 C 52 36, 42 46, 28 60 L 14 74 L 54 74 L 54 94 L 4 94 L 4 78 L 28 50 C 38 40, 38 34, 38 24 C 38 18, 34 16, 28 16 C 20 16, 18 20, 18 28 Z"/>' 
   },
   "3": { 
-    width: 76, 
-    path: '<path d="M 6.8 11.5 L 72.8 11.5 L 72.8 21.8 L 40.8 47.5 C 58.8 48.5, 73.8 59.2, 73.8 75.8 C 73.8 90.8, 60.2 100.8, 40.2 100.8 C 19.8 100.8, 6.2 88.8, 4.8 73.8 L 18.8 71.8 C 20.2 81.8, 28.8 89.8, 40.2 89.8 C 50.8 89.8, 58.8 82.8, 58.8 73.5 C 58.8 63.8, 50.8 56.8, 37.8 56.8 L 27.5 56.8 L 27.5 46.2 L 51.8 23.5 L 6.8 23.5 Z"/>' 
+    width: 56, 
+    path: '<path d="M 6 8 L 52 8 L 52 22 L 30 44 C 42 44, 52 52, 52 68 C 52 82, 40 96, 26 96 C 12 96, 4 86, 4 72 L 18 72 C 18 80, 22 84, 28 84 C 34 84, 38 78, 38 68 C 38 58, 32 52, 22 52 L 16 52 L 16 38 L 34 20 L 6 20 Z"/>' 
   },
   "4": { 
-    width: 68, 
-    path: '<path d="M 46.8 1.5 L 46.8 66.8 L 61.8 66.8 L 61.8 77.8 L 46.8 77.8 L 46.8 98.5 L 32.2 98.5 L 32.2 77.8 L 2.5 77.8 L 2.5 66.2 Z M 32.2 20.8 L 13.5 66.8 L 32.2 66.8 Z"/>' 
+    width: 56, 
+    path: '<path d="M 36 6 L 36 64 L 52 64 L 52 78 L 36 78 L 36 94 L 22 94 L 22 78 L 4 78 L 4 64 L 22 6 Z M 22 24 L 12 64 L 22 64 Z"/>' 
   },
   "5": { 
-    width: 76, 
-    path: '<path d="M 11.5 11.5 L 69.8 11.5 L 69.8 22.5 L 25.5 22.5 L 21.8 46.2 C 27.8 42.2, 35.8 40.2, 44.8 40.2 C 61.8 40.2, 73.8 51.2, 73.8 69.2 C 73.8 87.2, 59.8 99.5, 41.2 99.5 C 21.5 99.5, 7.8 87.5, 5.8 69.5 L 19.8 67.5 C 21.2 79.5, 29.5 87.5, 41.2 87.5 C 50.8 87.5, 58.8 79.5, 58.8 69.2 C 58.8 59.2, 50.8 51.2, 39.8 51.2 C 31.2 51.2, 23.5 55.2, 18.8 60.2 Z"/>' 
+    width: 56, 
+    path: '<path d="M 8 8 L 50 8 L 50 22 L 22 22 L 18 42 C 24 38, 30 36, 38 36 C 48 36, 54 44, 54 64 C 54 82, 44 94, 28 94 C 14 94, 6 84, 6 68 L 20 68 C 20 78, 24 82, 28 82 C 34 82, 38 76, 38 64 C 38 52, 32 48, 26 48 C 18 48, 14 52, 10 56 Z"/>' 
   },
   "6": { 
-    width: 76, 
-    path: '<path d="M 41.2 1.5 C 59.2 1.5, 70.8 15.2, 70.8 27.2 L 56.2 27.2 C 56.2 19.2, 48.5 12.5, 40.5 12.5 C 26.8 12.5, 17.8 24.2, 16.8 49.2 C 22.8 41.2, 31.8 37.2, 42.5 37.2 C 60.2 37.2, 72.8 49.2, 72.8 68.2 C 72.8 87.2, 58.8 99.5, 41.2 99.5 C 20.5 99.5, 3.8 81.5, 3.8 47.5 C 3.8 20.5, 20.5 1.5, 41.2 1.5 Z M 40.2 48.2 C 28.5 48.2, 19.8 56.2, 19.8 68.2 C 19.8 80.2, 28.5 88.2, 40.2 88.2 C 50.8 88.2, 57.8 80.2, 57.8 68.2 C 57.8 56.2, 50.2 48.2, 40.2 48.2 Z"/>' 
+    width: 56, 
+    path: '<path d="M 32 4 C 46 4, 52 16, 52 26 L 38 26 C 38 18, 34 16, 28 16 C 18 16, 18 30, 16 44 C 22 38, 28 36, 36 36 C 48 36, 54 46, 54 66 C 54 84, 44 96, 28 96 C 12 96, 4 80, 4 46 C 4 18, 16 4, 32 4 Z M 28 48 C 20 48, 18 56, 18 66 C 18 76, 22 84, 28 84 C 34 84, 38 76, 38 66 C 38 56, 34 48, 28 48 Z"/>' 
   },
   "7": { 
-    width: 74, 
-    path: '<path d="M 6.5 11.5 L 72.5 11.5 L 72.5 22.2 L 36.2 98.5 L 20.8 98.5 L 53.8 22.2 L 6.5 22.2 Z"/>' 
+    width: 52, 
+    path: '<path d="M 4 8 L 50 8 L 50 20 L 22 94 L 8 94 L 34 20 L 4 20 Z"/>' 
   },
   "8": { 
-    width: 76, 
-    path: '<path d="M 39.2 1.5 C 57.2 1.5, 69.8 11.2, 69.8 26.2 C 69.8 37.2, 60.8 45.2, 49.2 49.2 C 63.2 53.2, 73.8 62.2, 73.8 75.2 C 73.8 90.2, 59.8 100.8, 39.2 100.8 C 18.8 100.8, 4.8 90.2, 4.8 75.2 C 4.8 62.2, 15.5 53.2, 29.5 49.2 C 17.8 45.2, 8.8 37.2, 8.8 26.2 C 8.8 11.2, 21.5 1.5, 39.2 1.5 Z M 39.2 12.2 C 27.8 12.2, 22.8 19.2, 22.8 26.2 C 22.8 34.2, 28.8 40.2, 39.2 40.2 C 49.8 40.2, 55.8 34.2, 55.8 26.2 C 55.8 19.2, 50.8 12.2, 39.2 12.2 Z M 39.2 50.2 C 25.8 50.2, 18.8 58.2, 18.8 74.2 C 18.8 85.2, 26.8 90.2, 39.2 90.2 C 51.8 90.2, 59.8 85.2, 59.8 74.2 C 59.8 58.2, 52.8 50.2, 39.2 50.2 Z"/>' 
+    width: 56, 
+    path: '<path d="M 28 4 C 42 4, 52 12, 52 26 C 52 36, 44 44, 36 46 C 46 48, 54 58, 54 72 C 54 86, 44 96, 28 96 C 12 96, 2 86, 2 72 C 2 58, 10 48, 20 46 C 12 44, 4 36, 4 26 C 4 12, 14 4, 28 4 Z M 28 16 C 20 16, 18 20, 18 26 C 18 32, 22 36, 28 36 C 34 36, 38 32, 38 26 C 38 20, 36 16, 28 16 Z M 28 48 C 20 48, 16 54, 16 72 C 16 80, 20 84, 28 84 C 36 84, 40 80, 40 72 C 40 54, 36 48, 28 48 Z"/>' 
   },
   "9": { 
-    width: 76, 
-    path: '<path d="M 39.2 1.5 C 59.8 1.5, 74.8 18.2, 74.8 49.8 C 74.8 76.8, 58.2 97.5, 37.2 97.5 C 19.5 97.5, 7.8 82.5, 7.8 70.5 L 22.5 70.5 C 22.5 77.5, 29.5 85.5, 38.2 85.5 C 50.8 85.5, 58.8 73.5, 59.8 49.5 C 53.8 56.5, 45.2 60.2, 35.2 60.2 C 17.8 60.2, 4.8 48.2, 4.8 29.5 C 4.8 11.8, 18.5 1.5, 39.2 1.5 Z M 38.2 12.2 C 27.5 12.2, 19.8 20.2, 19.8 30.2 C 19.8 40.2, 27.5 48.2, 38.2 48.2 C 49.2 48.2, 57.8 40.2, 57.8 30.2 C 57.8 20.2, 49.2 12.2, 38.2 12.2 Z"/>' 
+    width: 56, 
+    path: '<path d="M 28 4 C 44 4, 54 18, 54 50 C 54 78, 42 96, 26 96 C 14 96, 6 84, 6 72 L 20 72 C 20 80, 22 84, 28 84 C 38 84, 38 70, 40 52 C 34 58, 28 60, 20 60 C 8 60, 2 48, 2 30 C 2 12, 14 4, 28 4 Z M 28 16 C 22 16, 16 22, 16 32 C 16 42, 20 48, 28 48 C 34 48, 38 42, 38 32 C 38 22, 34 16, 28 16 Z"/>' 
   },
   "0": { 
-    width: 76, 
-    path: '<path d="M 39.2 1.5 C 59.8 1.5, 73.8 17.5, 73.8 49.8 C 73.8 82.5, 59.8 99.5, 39.2 99.5 C 18.8 99.5, 4.8 82.5, 4.8 49.8 C 4.8 17.5, 18.8 1.5, 39.2 1.5 Z M 39.2 12.5 C 25.8 12.5, 19.8 26.2, 19.8 49.8 C 19.8 73.5, 25.8 87.5, 39.2 87.5 C 52.8 87.5, 58.8 73.5, 58.8 49.8 C 58.8 26.2, 52.8 12.5, 39.2 12.5 Z"/>' 
+    width: 56, 
+    path: '<path d="M 28 4 C 44 4, 54 18, 54 50 C 54 82, 44 96, 28 96 C 12 96, 2 82, 2 50 C 2 18, 12 4, 28 4 Z M 28 16 C 18 16, 16 28, 16 50 C 16 72, 18 84, 28 84 C 38 84, 40 72, 40 50 C 40 28, 38 16, 28 16 Z"/>' 
   }
 };
 
@@ -90,7 +90,7 @@ function renderRankSvg(rankNum) {
   digits.forEach((d) => {
     const digitData = DIGIT_PATHS[d] || DIGIT_PATHS["1"];
     paths += `<g transform="translate(${xOffset}, 0)">${digitData.path}</g>`;
-    xOffset += digitData.width + 6;
+    xOffset += digitData.width - 4; // Tight kerning for Netflix bold numbers
   });
 
   return paths;
@@ -111,7 +111,7 @@ app.get("/", (req, res) => {
       <head><title>Top 10 Trending Addon</title></head>
       <body style="font-family: system-ui, sans-serif; text-align: center; padding: 50px; background: #0f0f12; color: #fff;">
         <h1>Top 10 Trending Addon</h1>
-        <p>Landscape posters with embedded Apple TV numbers & genre tags.</p>
+        <p>Landscape posters with embedded Netflix-style numbers & genre tags.</p>
         <a href="stremio://${req.headers.host}/manifest.json" style="background: #e50914; color: white; padding: 14px 28px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 6px; display: inline-block; margin-top: 20px;">Install in Stremio</a>
         <p style="margin-top: 20px; font-size: 13px; color: #888;">Manifest URL: ${hostUrl}/manifest.json</p>
       </body>
@@ -224,8 +224,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      // v=7 parameter forces Vercel CDN & Stremio to immediately purge old image caches
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=7`;
+      // v=8 forces Vercel CDN & Stremio to immediately refresh cached images
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=8`;
 
       return {
         id: idToUse,
@@ -257,7 +257,7 @@ app.get("/api/poster", async (req, res) => {
     let backdropBuffer = null;
     const cleanImdbId = id.startsWith("tt") ? id : null;
 
-    // 1. Try Primary ExtendedRatings
+    // 1. Primary Backdrop Source
     if (cleanImdbId) {
       try {
         const extUrl = `https://extendedratings.com/backdrop/${cleanImdbId}?config=russel&key=Kolkko11&v=fd3ce853`;
@@ -266,7 +266,7 @@ app.get("/api/poster", async (req, res) => {
       } catch (e) {}
     }
 
-    // 2. Secondary Fallback: TMDB Backdrop
+    // 2. TMDB Fallback
     if (!backdropBuffer && cleanImdbId) {
       const tmdbInfo = await getTmdbData(cleanImdbId, type);
       if (tmdbInfo.backdropUrl) {
@@ -277,7 +277,7 @@ app.get("/api/poster", async (req, res) => {
       }
     }
 
-    // 3. Fallback: Dark Neutral Canvas
+    // 3. Neutral Fallback Canvas
     if (!backdropBuffer) {
       backdropBuffer = await sharp({
         create: {
@@ -300,52 +300,64 @@ app.get("/api/poster", async (req, res) => {
     const numRank = parseInt(rank, 10) || 1;
     const digitPathsSvg = renderRankSvg(numRank);
 
-    // Apple TV Proportional Scale (~13% height)
-    const desiredHeight = Math.round(height * 0.13); 
+    // Netflix Size Proportions: ~72% total poster height, left-aligned
+    const desiredHeight = Math.round(height * 0.72); 
     const scale = (desiredHeight / 100).toFixed(3);
-    const xPos = Math.round(width * 0.04);
-    const yPos = Math.round(height * 0.05);
+    const xPos = Math.round(width * 0.025);
+    const yPos = Math.round(height * 0.22);
 
     const pillWidth = Math.max(110, formattedGenres.length * 12 + 32);
     const pillXPos = width - pillWidth - Math.round(width * 0.04);
+    const pillYPos = Math.round(height * 0.05);
 
     const svgOverlay = Buffer.from(`
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <!-- Localized Soft Radial Dark Shadow behind Top-Left Rank Number -->
-          <radialGradient id="numberHalo" cx="5%" cy="8%" r="18%">
-            <stop offset="0%" stop-color="#000000" stop-opacity="0.75" />
-            <stop offset="50%" stop-color="#000000" stop-opacity="0.3" />
-            <stop offset="100%" stop-color="#000000" stop-opacity="0" />
-          </radialGradient>
+          <!-- Left side shadow gradient for dramatic contrast -->
+          <linearGradient id="netflixGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#000000" stop-opacity="0.85" />
+            <stop offset="35%" stop-color="#000000" stop-opacity="0.50" />
+            <stop offset="70%" stop-color="#000000" stop-opacity="0.0" />
+          </linearGradient>
         </defs>
 
-        <!-- Localized Halo (Zero top black bars across full image) -->
-        <rect width="${width}" height="${height}" fill="url(#numberHalo)" />
+        <!-- Subtle Left-Side Vignette for Rank Contrast -->
+        <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#netflixGradient)" />
 
-        <!-- 5-Layer Stacked Soft Ambient Shadow for High-Fidelity Depth -->
-        <g transform="translate(${xPos + 4}, ${yPos + 5}) scale(${scale})" fill="rgba(0,0,0,0.12)">${digitPathsSvg}</g>
-        <g transform="translate(${xPos + 3}, ${yPos + 4}) scale(${scale})" fill="rgba(0,0,0,0.22)">${digitPathsSvg}</g>
-        <g transform="translate(${xPos + 2}, ${yPos + 3}) scale(${scale})" fill="rgba(0,0,0,0.35)">${digitPathsSvg}</g>
-        <g transform="translate(${xPos + 1}, ${yPos + 2}) scale(${scale})" fill="rgba(0,0,0,0.55)">${digitPathsSvg}</g>
-        <g transform="translate(${xPos + 0.5}, ${yPos + 1}) scale(${scale})" fill="rgba(0,0,0,0.70)">${digitPathsSvg}</g>
-
-        <!-- Crisp Pure White SF Pro Display Apple TV Rank Number -->
-        <g transform="translate(${xPos}, ${yPos}) scale(${scale})" fill="#FFFFFF">
+        <!-- 1. Deep Netflix Outer Shadow (Drop Shadow Layer) -->
+        <g transform="translate(${xPos + 8}, ${yPos + 8}) scale(${scale})" 
+           fill="#000000" 
+           stroke="#000000" 
+           stroke-width="6" 
+           stroke-linejoin="round">
           ${digitPathsSvg}
         </g>
 
-        <!-- Top-Right Genre Pill -->
+        <!-- 2. Netflix Outer White Border Outline -->
+        <g transform="translate(${xPos}, ${yPos}) scale(${scale})" 
+           fill="#141414" 
+           stroke="#FFFFFF" 
+           stroke-width="4.5" 
+           stroke-linejoin="round">
+          ${digitPathsSvg}
+        </g>
+
+        <!-- 3. Clean Inner Core Fill -->
+        <g transform="translate(${xPos}, ${yPos}) scale(${scale})" fill="#181818">
+          ${digitPathsSvg}
+        </g>
+
+        <!-- Top-Right Genre Badge -->
         ${
           formattedGenres
             ? `
-        <g transform="translate(${pillXPos}, ${yPos})">
+        <g transform="translate(${pillXPos}, ${pillYPos})">
           <rect 
             rx="${Math.round(height * 0.018)}" 
             ry="${Math.round(height * 0.018)}" 
             width="${pillWidth}" 
             height="${Math.round(height * 0.058)}" 
-            fill="rgba(0, 0, 0, 0.72)" 
+            fill="rgba(0, 0, 0, 0.75)" 
             stroke="rgba(255, 255, 255, 0.3)" 
             stroke-width="1.2"
           />
