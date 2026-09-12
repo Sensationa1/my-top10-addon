@@ -7,25 +7,30 @@ require("dotenv").config();
 const app = express();
 app.use(cors());
 
+// Snoak MDBList & Trakt Sources
+const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
+const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
+const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
+
 const MANIFEST = {
-  id: "com.sensationa1.top10.trakt",
+  id: "com.sensationa1.top10.cloud",
   version: "1.0.0",
-  name: "Top 10 Trakt Trending",
-  description: "Top 10 Trakt Trending Movies & Shows with Apple TV style numbers on ExtendedRatings landscape posters.",
+  name: "Top 10 Trending (Apple TV Style)",
+  description: "Top 10 Trending Movies & TV Shows with embedded Apple TV numbers on landscape posters.",
   resources: ["catalog"],
   types: ["movie", "series"],
   catalogs: [
     {
-      id: "trakt_top10_movies",
+      id: "top10_trending_movies",
       type: "movie",
-      name: "Top 10 Trakt Trending Movies",
+      name: "Top 10 Trending Movies",
       extraSupported: [],
       posterShape: "landscape"
     },
     {
-      id: "trakt_top10_shows",
-      type: "series",
-      name: "Top 10 Trakt Trending Shows",
+      id: "top10_trending_shows",
+      type: "series", // MUST be 'series' for Stremio TV shows
+      name: "Top 10 Trending Shows",
       extraSupported: [],
       posterShape: "landscape"
     }
@@ -33,17 +38,24 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
-// Landing page / Redirect to Stremio
+// Helper to get base host URL in Vercel Cloud environment
+function getHostUrl(req) {
+  const protocol = req.headers["x-forwarded-proto"] || "https";
+  const host = req.headers.host;
+  return `${protocol}://${host}`;
+}
+
+// Landing Page
 app.get("/", (req, res) => {
-  const host = `${req.protocol}://${req.get("host")}`;
+  const hostUrl = getHostUrl(req);
   res.send(`
     <html>
-      <head><title>Top 10 Trakt Trending Addon</title></head>
-      <body style="font-family: sans-serif; text-align: center; padding: 50px; background: #121212; color: #fff;">
-        <h1>Top 10 Trakt Trending Addon</h1>
-        <p>Landscape posters with embedded Apple TV style numbers & genre tags.</p>
-        <a href="stremio://${req.get("host")}/manifest.json" style="background: #e50914; color: white; padding: 12px 24px; text-decoration: none; font-size: 18px; border-radius: 5px; display: inline-block; margin-top: 20px;">Install in Stremio</a>
-        <p style="margin-top: 15px; font-size: 12px; color: #aaa;">Manifest URL: ${host}/manifest.json</p>
+      <head><title>Top 10 Trending Addon</title></head>
+      <body style="font-family: system-ui, sans-serif; text-align: center; padding: 50px; background: #0f0f12; color: #fff;">
+        <h1>Top 10 Trending Addon</h1>
+        <p>Landscape posters with embedded Apple TV numbers & genre tags.</p>
+        <a href="stremio://${req.headers.host}/manifest.json" style="background: #e50914; color: white; padding: 14px 28px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 6px; display: inline-block; margin-top: 20px;">Install in Stremio</a>
+        <p style="margin-top: 20px; font-size: 13px; color: #888;">Manifest URL: ${hostUrl}/manifest.json</p>
       </body>
     </html>
   `);
@@ -53,89 +65,165 @@ app.get("/", (req, res) => {
 app.get("/manifest.json", (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
+  res.setHeader("Cache-Control", "max-age=86400, public");
   res.json(MANIFEST);
 });
 
-// Helper function to fetch Trakt trending list
-async function fetchTraktTrending(mediaType) {
-  const apiKey = process.env.TRAKT_CLIENT_ID || "3a2a4b8df4838db99cbce24db49b18361b7fbb978d3eb663ff9e3b432a5dfb0a";
-  const url = `https://api.trakt.tv/${mediaType}/trending?limit=10&extended=full`;
+// TMDB Backdrop Lookup Helper
+async function getTmdbData(imdbId, type) {
+  const apiKey = process.env.TMDB_API_KEY;
+  if (!apiKey) return { backdropUrl: null, genres: "" };
 
-  const response = await axios.get(url, {
-    headers: {
-      "Content-Type": "application/json",
-      "trakt-api-version": "2",
-      "trakt-api-key": apiKey
-    },
-    timeout: 8000
-  });
+  try {
+    const findRes = await axios.get(
+      `https://api.themoviedb.org/3/find/${imdbId}?api_key=${apiKey}&external_source=imdb_id`,
+      { timeout: 4000 }
+    );
+    
+    const isSeries = type === "series";
+    const results = isSeries ? findRes.data.tv_results : findRes.data.movie_results;
+    const match = results && results[0];
 
-  return response.data || [];
+    if (match) {
+      const backdropUrl = match.backdrop_path ? `https://image.tmdb.org/t/p/w1280${match.backdrop_path}` : null;
+      return { backdropUrl };
+    }
+  } catch (err) {
+    console.error(`TMDB lookup error for ${imdbId}:`, err.message);
+  }
+  return { backdropUrl: null };
 }
 
-// Catalog Endpoint
+// Fetch Trending Items (MDBList with Trakt/TMDB Fallbacks)
+async function fetchTrendingList(type) {
+  let rawItems = [];
+  const apiKey = process.env.TMDB_API_KEY;
+
+  if (type === "movie") {
+    try {
+      const res = await axios.get(SNOAK_MOVIES_URL, { timeout: 6000 });
+      if (Array.isArray(res.data)) rawItems = res.data;
+    } catch (e) {
+      console.warn("MDBList movies failed, fetching TMDB trending fallback...");
+    }
+
+    if (rawItems.length === 0 && apiKey) {
+      const tmdbRes = await axios.get(`https://api.themoviedb.org/3/trending/movie/day?api_key=${apiKey}`, { timeout: 5000 });
+      rawItems = tmdbRes.data.results || [];
+    }
+  } else if (type === "series") {
+    try {
+      const res = await axios.get(SNOAK_SHOWS_URL, { timeout: 6000 });
+      if (Array.isArray(res.data)) rawItems = res.data;
+    } catch (e) {
+      try {
+        const resAlt = await axios.get(SNOAK_SHOWS_ALT_URL, { timeout: 6000 });
+        if (Array.isArray(resAlt.data)) rawItems = resAlt.data;
+      } catch (err) {
+        console.warn("MDBList TV shows failed, fetching TMDB trending fallback...");
+      }
+    }
+
+    if (rawItems.length === 0 && apiKey) {
+      const tmdbRes = await axios.get(`https://api.themoviedb.org/3/trending/tv/day?api_key=${apiKey}`, { timeout: 5000 });
+      rawItems = tmdbRes.data.results || [];
+    }
+  }
+
+  return rawItems;
+}
+
+// Catalog Handler
 app.get("/catalog/:type/:id.json", async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
 
   const { type, id } = req.params;
-  const host = `${req.protocol}://${req.get("host")}`;
+  const hostUrl = getHostUrl(req);
+
+  // Validate type (must be 'movie' or 'series')
+  if (type !== "movie" && type !== "series") {
+    return res.json({ metas: [] });
+  }
 
   try {
-    let items = [];
-    if (id === "trakt_top10_movies" && type === "movie") {
-      items = await fetchTraktTrending("movies");
-    } else if (id === "trakt_top10_shows" && type === "series") {
-      items = await fetchTraktTrending("shows");
-    }
+    const rawItems = await fetchTrendingList(type);
+    const top10 = rawItems.slice(0, 10);
 
-    const metas = items.slice(0, 10).map((item, index) => {
-      const media = item.movie || item.show;
-      const imdbId = media?.ids?.imdb;
-      const title = media?.title || "Unknown";
+    const metas = top10.map((item, index) => {
+      const imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id);
+      const tmdbId = item.id || item.tmdb_id || item.tmdbid;
+      const idToUse = imdbId || (tmdbId ? `tmdb:${tmdbId}` : null);
+
+      if (!idToUse) return null;
+
+      const title = item.title || item.name || "Unknown";
       const rank = index + 1;
-      const genres = Array.isArray(media?.genres) ? media.genres.slice(0, 2).join(",") : "";
 
-      const posterUrl = `${host}/api/poster?id=${imdbId}&rank=${rank}&genres=${encodeURIComponent(genres)}`;
+      // Extract genres if present in raw list
+      let genres = "";
+      if (Array.isArray(item.genres)) {
+        genres = item.genres.slice(0, 2).join(",");
+      } else if (typeof item.genres === "string") {
+        genres = item.genres;
+      }
+
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}`;
 
       return {
-        id: imdbId,
-        type: type,
+        id: idToUse,
+        type: type, // 'movie' or 'series'
         name: `${rank}. ${title}`,
         poster: posterUrl,
         posterShape: "landscape",
-        description: media?.overview || ""
+        description: item.description || item.overview || ""
       };
-    });
+    }).filter(Boolean);
 
-    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
     res.json({ metas });
   } catch (err) {
-    console.error("Error serving catalog:", err.message);
+    console.error(`Catalog Error (${type}):`, err.message);
     res.json({ metas: [] });
   }
 });
 
-// Dynamic Landscape Poster Generator
+// Dynamic Image Composite Generator
 app.get("/api/poster", async (req, res) => {
-  const { id, rank, genres } = req.query;
+  const { id, rank, type, genres } = req.query;
 
   if (!id) {
-    return res.status(400).send("Missing IMDb ID parameter");
+    return res.status(400).send("Missing ID parameter");
   }
 
   try {
-    const backdropUrl = `https://extendedratings.com/backdrop/${id}?config=russel&key=Kolkko11&v=fd3ce853`;
+    let backdropBuffer = null;
+    const cleanImdbId = id.startsWith("tt") ? id : null;
 
-    let backdropBuffer;
-    try {
-      const response = await axios.get(backdropUrl, {
-        responseType: "arraybuffer",
-        timeout: 6000
-      });
-      backdropBuffer = Buffer.from(response.data);
-    } catch (e) {
-      // Dark fallback backdrop canvas if main backdrop fetch fails
+    // 1. Try Primary ExtendedRatings
+    if (cleanImdbId) {
+      try {
+        const extUrl = `https://extendedratings.com/backdrop/${cleanImdbId}?config=russel&key=Kolkko11&v=fd3ce853`;
+        const response = await axios.get(extUrl, { responseType: "arraybuffer", timeout: 4500 });
+        backdropBuffer = Buffer.from(response.data);
+      } catch (e) {
+        // Fallback to TMDB
+      }
+    }
+
+    // 2. Secondary Fallback: TMDB Backdrop
+    if (!backdropBuffer && cleanImdbId) {
+      const tmdbInfo = await getTmdbData(cleanImdbId, type);
+      if (tmdbInfo.backdropUrl) {
+        try {
+          const tmdbRes = await axios.get(tmdbInfo.backdropUrl, { responseType: "arraybuffer", timeout: 4500 });
+          backdropBuffer = Buffer.from(tmdbRes.data);
+        } catch (e) {}
+      }
+    }
+
+    // 3. Fallback: Dark Neutral Canvas
+    if (!backdropBuffer) {
       backdropBuffer = await sharp({
         create: {
           width: 1280,
@@ -177,11 +265,10 @@ app.get("/api/poster", async (req, res) => {
           </filter>
         </defs>
 
-        <!-- Gradient Scrims for Legibility -->
         <rect width="${width}" height="${height}" fill="url(#leftShadow)" />
         <rect width="${width}" height="${height}" fill="url(#bottomShadow)" />
 
-        <!-- Apple TV Style Embedded Rank Number -->
+        <!-- Apple TV Style Rank Number -->
         <g filter="url(#dropShadow)">
           <text 
             x="${Math.round(width * 0.04)}" 
@@ -196,7 +283,7 @@ app.get("/api/poster", async (req, res) => {
           </text>
         </g>
 
-        <!-- Genre Tag Pill -->
+        <!-- Genre Pill -->
         ${
           formattedGenres
             ? `
@@ -230,21 +317,16 @@ app.get("/api/poster", async (req, res) => {
 
     const result = await sharp(backdropBuffer)
       .composite([{ input: svgOverlay, top: 0, left: 0 }])
-      .jpeg({ quality: 90 })
+      .jpeg({ quality: 88 })
       .toBuffer();
 
     res.setHeader("Content-Type", "image/jpeg");
     res.setHeader("Cache-Control", "public, max-age=86400, s-maxage=86400");
     return res.send(result);
   } catch (err) {
-    console.error("Poster Generation Error:", err);
-    return res.status(500).send("Error generating poster");
+    console.error("Poster rendering error:", err.message);
+    return res.status(500).send("Error rendering poster image");
   }
 });
-
-const PORT = process.env.PORT || 7000;
-if (process.env.NODE_ENV !== "production") {
-  app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
-}
 
 module.exports = app;
