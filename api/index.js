@@ -46,50 +46,50 @@ app.get('/poster', async (req, res) => {
     if (!response.ok) throw new Error('Failed to download poster');
     const buffer = Buffer.from(await response.arrayBuffer());
 
-    const image = sharp(buffer);
-    const metadata = await image.metadata();
+    const metadata = await sharp(buffer).metadata();
     const width = metadata.width || 780;
     const height = metadata.height || 1170;
 
-    // Create a big ranking number using SVG (more reliable method)
-    const fontSize = Math.round(Math.min(width, height) * 0.35);
-    const padding = Math.round(fontSize * 0.25);
+    // Bigger number for better visibility
+    const fontSize = Math.round(Math.min(width, height) * 0.38);
+    const x = Math.round(width * 0.06);
+    const y = Math.round(fontSize * 1.15);
 
-    const svgText = `
-      <svg width="${width}" height="${height}">
-        <style>
-          .title { 
-            fill: white; 
-            font-size: ${fontSize}px; 
-            font-weight: 900; 
-            font-family: Arial Black, Impact, sans-serif;
-          }
-        </style>
-        <!-- Shadow -->
-        <text x="${padding + 4}" y="${fontSize + padding + 4}" class="title" fill="rgba(0,0,0,0.6)">${rankNum}</text>
-        <!-- Main number -->
-        <text x="${padding}" y="${fontSize + padding}" class="title">${rankNum}</text>
+    // Create SVG with stronger styling
+    const svg = Buffer.from(`
+      <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="4" dy="4" stdDeviation="5" flood-color="#000" flood-opacity="0.75"/>
+          </filter>
+        </defs>
+        <text 
+          x="${x}" 
+          y="${y}" 
+          font-family="Arial, Helvetica, sans-serif" 
+          font-size="${fontSize}" 
+          font-weight="900"
+          fill="#FFFFFF"
+          filter="url(#s)"
+        >${rankNum}</text>
       </svg>
-    `;
+    `);
 
     const output = await sharp(buffer)
-      .composite([
-        {
-          input: Buffer.from(svgText),
-          top: 0,
-          left: 0
-        }
-      ])
-      .jpeg({ quality: 88 })
+      .composite([{ input: svg, top: 0, left: 0 }])
+      .jpeg({ quality: 90 })
       .toBuffer();
 
-    res.set('Content-Type', 'image/jpeg');
-    res.set('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
     res.send(output);
 
   } catch (err) {
-    console.error('Poster error:', err.message);
-    res.status(500).json({ error: 'Failed to generate ranked poster', details: err.message });
+    console.error('Poster generation error:', err);
+    res.status(500).json({ 
+      error: 'Failed to generate ranked poster', 
+      message: err.message 
+    });
   }
 });
 
