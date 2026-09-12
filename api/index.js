@@ -38,47 +38,47 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
-// Authentic Apple SF Pro Display Vector Glyphs (Height Box: 100)
+// High-Precision Apple SF Pro Display Bold Glyphs (Standard Box Height: 100)
 const DIGIT_PATHS = {
   "1": { 
-    width: 44, 
-    path: '<path d="M 12.5 23.6 C 18.2 19.2, 24.3 13.8, 28.5 8.2 L 41.2 8.2 L 41.2 91.8 L 26.2 91.8 L 26.2 25.8 L 12.5 35.2 Z"/>' 
+    width: 38, 
+    path: '<path d="M 8.5 25.4 C 15.2 20.8, 22.1 14.2, 26.8 7.5 L 37.5 7.5 L 37.5 92.5 L 23.8 92.5 L 23.8 26.8 L 8.5 36.2 Z"/>' 
   },
   "2": { 
-    width: 82, 
-    path: '<path d="M 6.2 28.8 C 6.2 12.2, 21.2 2.2, 41.5 2.2 C 61.8 2.2, 76.2 12.5, 76.2 27.8 C 76.2 39.2, 68.8 48.8, 52.8 63.2 L 23.5 89.5 L 78.2 89.5 L 78.2 100 L 6.2 100 L 6.2 90.2 L 43.2 56.8 C 58.2 43.2, 61.8 36.5, 61.8 27.8 C 61.8 18.2, 52.5 12.2, 41.2 12.2 C 29.8 12.2, 20.8 18.5, 20.8 28.8 Z"/>' 
+    width: 76, 
+    path: '<path d="M 5.8 28.2 C 5.8 11.5, 20.8 1.5, 40.5 1.5 C 60.2 1.5, 74.2 11.8, 74.2 26.8 C 74.2 38.5, 66.8 48.2, 50.8 62.8 L 22.8 88.5 L 75.8 88.5 L 75.8 98.5 L 5.8 98.5 L 5.8 88.8 L 41.8 55.8 C 56.8 42.2, 60.2 35.5, 60.2 26.8 C 60.2 17.5, 51.2 11.8, 40.2 11.8 C 29.2 11.8, 20.2 17.8, 20.2 28.2 Z"/>' 
   },
   "3": { 
-    width: 80, 
-    path: '<path d="M 7.2 12.2 L 74.2 12.2 L 74.2 22.8 L 41.8 48.2 C 59.8 49.2, 75.2 60.2, 75.2 76.5 C 75.2 91.8, 61.2 102.2, 41.2 102.2 C 20.2 102.2, 6.8 90.2, 5.2 74.8 L 19.2 72.8 C 20.8 82.8, 29.5 90.8, 41.2 90.8 C 52.2 90.8, 60.2 83.8, 60.2 74.2 C 60.2 64.2, 51.8 57.2, 38.8 57.2 L 28.2 57.2 L 28.2 46.8 L 53.2 24.2 L 7.2 24.2 Z"/>' 
+    width: 76, 
+    path: '<path d="M 6.8 11.5 L 72.8 11.5 L 72.8 21.8 L 40.8 47.5 C 58.8 48.5, 73.8 59.2, 73.8 75.8 C 73.8 90.8, 60.2 100.8, 40.2 100.8 C 19.8 100.8, 6.2 88.8, 4.8 73.8 L 18.8 71.8 C 20.2 81.8, 28.8 89.8, 40.2 89.8 C 50.8 89.8, 58.8 82.8, 58.8 73.5 C 58.8 63.8, 50.8 56.8, 37.8 56.8 L 27.5 56.8 L 27.5 46.2 L 51.8 23.5 L 6.8 23.5 Z"/>' 
   },
   "4": { 
     width: 68, 
-    path: '<path d="M 48.2 2.2 L 48.2 68.2 L 63.2 68.2 L 63.2 79.2 L 48.2 79.2 L 48.2 98.2 L 33.2 98.2 L 33.2 79.2 L 3.2 79.2 L 3.2 67.2 Z M 33.2 22.2 L 13.2 68.2 L 33.2 68.2 Z"/>' 
+    path: '<path d="M 46.8 1.5 L 46.8 66.8 L 61.8 66.8 L 61.8 77.8 L 46.8 77.8 L 46.8 98.5 L 32.2 98.5 L 32.2 77.8 L 2.5 77.8 L 2.5 66.2 Z M 32.2 20.8 L 13.5 66.8 L 32.2 66.8 Z"/>' 
   },
   "5": { 
-    width: 80, 
-    path: '<path d="M 12.2 12.2 L 71.2 12.2 L 71.2 23.2 L 26.2 23.2 L 22.2 47.2 C 28.2 43.2, 36.2 41.2, 45.2 41.2 C 62.2 41.2, 75.2 52.2, 75.2 70.2 C 75.2 88.2, 61.2 100.2, 42.2 100.2 C 22.2 100.2, 8.2 88.2, 6.2 70.2 L 20.2 68.2 C 21.8 80.2, 30.2 88.2, 42.2 88.2 C 52.2 88.2, 60.2 80.2, 60.2 70.2 C 60.2 60.2, 52.2 52.2, 41.2 52.2 C 32.2 52.2, 24.2 56.2, 19.2 61.2 Z"/>' 
+    width: 76, 
+    path: '<path d="M 11.5 11.5 L 69.8 11.5 L 69.8 22.5 L 25.5 22.5 L 21.8 46.2 C 27.8 42.2, 35.8 40.2, 44.8 40.2 C 61.8 40.2, 73.8 51.2, 73.8 69.2 C 73.8 87.2, 59.8 99.5, 41.2 99.5 C 21.5 99.5, 7.8 87.5, 5.8 69.5 L 19.8 67.5 C 21.2 79.5, 29.5 87.5, 41.2 87.5 C 50.8 87.5, 58.8 79.5, 58.8 69.2 C 58.8 59.2, 50.8 51.2, 39.8 51.2 C 31.2 51.2, 23.5 55.2, 18.8 60.2 Z"/>' 
   },
   "6": { 
-    width: 78, 
-    path: '<path d="M 42.2 2.2 C 60.2 2.2, 72.2 16.2, 72.2 28.2 L 57.2 28.2 C 57.2 20.2, 49.2 13.2, 41.2 13.2 C 27.2 13.2, 18.2 25.2, 17.2 50.2 C 23.2 42.2, 32.2 38.2, 43.2 38.2 C 61.2 38.2, 74.2 50.2, 74.2 69.2 C 74.2 88.2, 60.2 100.2, 42.2 100.2 C 21.2 100.2, 4.2 82.2, 4.2 48.2 C 4.2 21.2, 21.2 2.2, 42.2 2.2 Z M 41.2 49.2 C 29.2 49.2, 20.2 57.2, 20.2 69.2 C 20.2 81.2, 29.2 89.2, 41.2 89.2 C 52.2 89.2, 59.2 81.2, 59.2 69.2 C 59.2 57.2, 51.2 49.2, 41.2 49.2 Z"/>' 
+    width: 76, 
+    path: '<path d="M 41.2 1.5 C 59.2 1.5, 70.8 15.2, 70.8 27.2 L 56.2 27.2 C 56.2 19.2, 48.5 12.5, 40.5 12.5 C 26.8 12.5, 17.8 24.2, 16.8 49.2 C 22.8 41.2, 31.8 37.2, 42.5 37.2 C 60.2 37.2, 72.8 49.2, 72.8 68.2 C 72.8 87.2, 58.8 99.5, 41.2 99.5 C 20.5 99.5, 3.8 81.5, 3.8 47.5 C 3.8 20.5, 20.5 1.5, 41.2 1.5 Z M 40.2 48.2 C 28.5 48.2, 19.8 56.2, 19.8 68.2 C 19.8 80.2, 28.5 88.2, 40.2 88.2 C 50.8 88.2, 57.8 80.2, 57.8 68.2 C 57.8 56.2, 50.2 48.2, 40.2 48.2 Z"/>' 
   },
   "7": { 
-    width: 78, 
-    path: '<path d="M 7.2 12.2 L 74.2 12.2 L 74.2 23.2 L 37.2 98.2 L 21.2 98.2 L 55.2 23.2 L 7.2 23.2 Z"/>' 
+    width: 74, 
+    path: '<path d="M 6.5 11.5 L 72.5 11.5 L 72.5 22.2 L 36.2 98.5 L 20.8 98.5 L 53.8 22.2 L 6.5 22.2 Z"/>' 
   },
   "8": { 
-    width: 80, 
-    path: '<path d="M 40.2 2.2 C 58.2 2.2, 71.2 12.2, 71.2 27.2 C 71.2 38.2, 62.2 46.2, 50.2 50.2 C 64.2 54.2, 75.2 63.2, 75.2 76.2 C 75.2 91.2, 61.2 102.2, 40.2 102.2 C 19.2 102.2, 5.2 91.2, 5.2 76.2 C 5.2 63.2, 16.2 54.2, 30.2 50.2 C 18.2 46.2, 9.2 38.2, 9.2 27.2 C 9.2 12.2, 22.2 2.2, 40.2 2.2 Z M 40.2 13.2 C 28.2 13.2, 23.2 20.2, 23.2 27.2 C 23.2 35.2, 29.2 41.2, 40.2 41.2 C 51.2 41.2, 57.2 35.2, 57.2 27.2 C 57.2 20.2, 52.2 13.2, 40.2 13.2 Z M 40.2 51.2 C 26.2 51.2, 19.2 59.2, 19.2 75.2 C 19.2 86.2, 27.2 91.2, 40.2 91.2 C 53.2 91.2, 61.2 86.2, 61.2 75.2 C 61.2 59.2, 54.2 51.2, 40.2 51.2 Z"/>' 
+    width: 76, 
+    path: '<path d="M 39.2 1.5 C 57.2 1.5, 69.8 11.2, 69.8 26.2 C 69.8 37.2, 60.8 45.2, 49.2 49.2 C 63.2 53.2, 73.8 62.2, 73.8 75.2 C 73.8 90.2, 59.8 100.8, 39.2 100.8 C 18.8 100.8, 4.8 90.2, 4.8 75.2 C 4.8 62.2, 15.5 53.2, 29.5 49.2 C 17.8 45.2, 8.8 37.2, 8.8 26.2 C 8.8 11.2, 21.5 1.5, 39.2 1.5 Z M 39.2 12.2 C 27.8 12.2, 22.8 19.2, 22.8 26.2 C 22.8 34.2, 28.8 40.2, 39.2 40.2 C 49.8 40.2, 55.8 34.2, 55.8 26.2 C 55.8 19.2, 50.8 12.2, 39.2 12.2 Z M 39.2 50.2 C 25.8 50.2, 18.8 58.2, 18.8 74.2 C 18.8 85.2, 26.8 90.2, 39.2 90.2 C 51.8 90.2, 59.8 85.2, 59.8 74.2 C 59.8 58.2, 52.8 50.2, 39.2 50.2 Z"/>' 
   },
   "9": { 
-    width: 80, 
-    path: '<path d="M 40.2 2.2 C 61.2 2.2, 76.2 19.2, 76.2 51.2 C 76.2 78.2, 59.2 98.2, 38.2 98.2 C 20.2 98.2, 8.2 83.2, 8.2 71.2 L 23.2 71.2 C 23.2 78.2, 30.2 86.2, 39.2 86.2 C 52.2 86.2, 60.2 74.2, 61.2 50.2 C 55.2 57.2, 46.2 61.2, 36.2 61.2 C 18.2 61.2, 5.2 49.2, 5.2 30.2 C 5.2 12.2, 19.2 2.2, 40.2 2.2 Z M 39.2 13.2 C 28.2 13.2, 20.2 21.2, 20.2 31.2 C 20.2 41.2, 28.2 49.2, 39.2 49.2 C 50.2 49.2, 59.2 41.2, 59.2 31.2 C 59.2 21.2, 50.2 13.2, 39.2 13.2 Z"/>' 
+    width: 76, 
+    path: '<path d="M 39.2 1.5 C 59.8 1.5, 74.8 18.2, 74.8 49.8 C 74.8 76.8, 58.2 97.5, 37.2 97.5 C 19.5 97.5, 7.8 82.5, 7.8 70.5 L 22.5 70.5 C 22.5 77.5, 29.5 85.5, 38.2 85.5 C 50.8 85.5, 58.8 73.5, 59.8 49.5 C 53.8 56.5, 45.2 60.2, 35.2 60.2 C 17.8 60.2, 4.8 48.2, 4.8 29.5 C 4.8 11.8, 18.5 1.5, 39.2 1.5 Z M 38.2 12.2 C 27.5 12.2, 19.8 20.2, 19.8 30.2 C 19.8 40.2, 27.5 48.2, 38.2 48.2 C 49.2 48.2, 57.8 40.2, 57.8 30.2 C 57.8 20.2, 49.2 12.2, 38.2 12.2 Z"/>' 
   },
   "0": { 
-    width: 80, 
-    path: '<path d="M 40.2 2.2 C 61.2 2.2, 75.2 18.2, 75.2 51.2 C 75.2 84.2, 61.2 100.2, 40.2 100.2 C 19.2 100.2, 5.2 84.2, 5.2 51.2 C 5.2 18.2, 19.2 2.2, 40.2 2.2 Z M 40.2 13.2 C 26.2 13.2, 20.2 27.2, 20.2 51.2 C 20.2 75.2, 26.2 89.2, 40.2 89.2 C 54.2 89.2, 60.2 75.2, 60.2 51.2 C 60.2 27.2, 54.2 13.2, 40.2 13.2 Z"/>' 
+    width: 76, 
+    path: '<path d="M 39.2 1.5 C 59.8 1.5, 73.8 17.5, 73.8 49.8 C 73.8 82.5, 59.8 99.5, 39.2 99.5 C 18.8 99.5, 4.8 82.5, 4.8 49.8 C 4.8 17.5, 18.8 1.5, 39.2 1.5 Z M 39.2 12.5 C 25.8 12.5, 19.8 26.2, 19.8 49.8 C 19.8 73.5, 25.8 87.5, 39.2 87.5 C 52.8 87.5, 58.8 73.5, 58.8 49.8 C 58.8 26.2, 52.8 12.5, 39.2 12.5 Z"/>' 
   }
 };
 
@@ -90,7 +90,7 @@ function renderRankSvg(rankNum) {
   digits.forEach((d) => {
     const digitData = DIGIT_PATHS[d] || DIGIT_PATHS["1"];
     paths += `<g transform="translate(${xOffset}, 0)">${digitData.path}</g>`;
-    xOffset += digitData.width + 8;
+    xOffset += digitData.width + 6;
   });
 
   return paths;
@@ -224,8 +224,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      // v=6 parameter forces Vercel CDN & Stremio to immediately purge old image caches
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=6`;
+      // v=7 parameter forces Vercel CDN & Stremio to immediately purge old image caches
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=7`;
 
       return {
         id: idToUse,
@@ -300,27 +300,37 @@ app.get("/api/poster", async (req, res) => {
     const numRank = parseInt(rank, 10) || 1;
     const digitPathsSvg = renderRankSvg(numRank);
 
-    // Apple TV Proportional Scaling (Sleek Top-Left Corner Rank Number)
+    // Apple TV Proportional Scale (~13% height)
     const desiredHeight = Math.round(height * 0.13); 
     const scale = (desiredHeight / 100).toFixed(3);
-    const xPos = Math.round(width * 0.035);
-    const yPos = Math.round(height * 0.045);
+    const xPos = Math.round(width * 0.04);
+    const yPos = Math.round(height * 0.05);
 
     const pillWidth = Math.max(110, formattedGenres.length * 12 + 32);
-    const pillXPos = width - pillWidth - Math.round(width * 0.035);
+    const pillXPos = width - pillWidth - Math.round(width * 0.04);
 
     const svgOverlay = Buffer.from(`
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-        
-        <!-- Subtle Top Dark Gradient Vignette for Legibility -->
-        <rect width="${width}" height="${Math.round(height * 0.30)}" fill="black" opacity="0.45" />
+        <defs>
+          <!-- Localized Soft Radial Dark Shadow behind Top-Left Rank Number -->
+          <radialGradient id="numberHalo" cx="5%" cy="8%" r="18%">
+            <stop offset="0%" stop-color="#000000" stop-opacity="0.75" />
+            <stop offset="50%" stop-color="#000000" stop-opacity="0.3" />
+            <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+          </radialGradient>
+        </defs>
 
-        <!-- 1. Bulletproof Dual-Layer Drop Shadow (Offset Path) -->
-        <g transform="translate(${xPos + 2}, ${yPos + 3}) scale(${scale})" fill="rgba(0,0,0,0.85)">
-          ${digitPathsSvg}
-        </g>
+        <!-- Localized Halo (Zero top black bars across full image) -->
+        <rect width="${width}" height="${height}" fill="url(#numberHalo)" />
 
-        <!-- 2. Pure White SF Pro Display Apple TV Rank Number -->
+        <!-- 5-Layer Stacked Soft Ambient Shadow for High-Fidelity Depth -->
+        <g transform="translate(${xPos + 4}, ${yPos + 5}) scale(${scale})" fill="rgba(0,0,0,0.12)">${digitPathsSvg}</g>
+        <g transform="translate(${xPos + 3}, ${yPos + 4}) scale(${scale})" fill="rgba(0,0,0,0.22)">${digitPathsSvg}</g>
+        <g transform="translate(${xPos + 2}, ${yPos + 3}) scale(${scale})" fill="rgba(0,0,0,0.35)">${digitPathsSvg}</g>
+        <g transform="translate(${xPos + 1}, ${yPos + 2}) scale(${scale})" fill="rgba(0,0,0,0.55)">${digitPathsSvg}</g>
+        <g transform="translate(${xPos + 0.5}, ${yPos + 1}) scale(${scale})" fill="rgba(0,0,0,0.70)">${digitPathsSvg}</g>
+
+        <!-- Crisp Pure White SF Pro Display Apple TV Rank Number -->
         <g transform="translate(${xPos}, ${yPos}) scale(${scale})" fill="#FFFFFF">
           ${digitPathsSvg}
         </g>
