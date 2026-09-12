@@ -166,8 +166,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      // v=16 forces complete cache invalidation
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=16`;
+      // v=17 forces complete cache invalidation
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=17`;
 
       return {
         id: idToUse,
@@ -241,11 +241,11 @@ app.get("/api/poster", async (req, res) => {
 
     const numRank = parseInt(rank, 10) || 1;
 
-    // Real font typography settings using Linux-native DejaVu Sans Bold
-    const fontSize = Math.round(height * 0.76);
-    const textX = Math.round(width * 0.02);
-    const textY = Math.round(height * 0.86);
-    const strokeWidth = Math.round(height * 0.022);
+    // Proportional font dimensions (Fixed: no longer overflowing the canvas)
+    const fontSize = Math.round(height * 0.42); // ~300px on 720p
+    const textX = Math.round(width * 0.025);
+    const textY = Math.round(height * 0.72);
+    const strokeWidth = Math.round(fontSize * 0.06);
 
     const pillWidth = Math.max(110, formattedGenres.length * 12 + 32);
     const pillXPos = width - pillWidth - Math.round(width * 0.04);
@@ -256,8 +256,8 @@ app.get("/api/poster", async (req, res) => {
         <defs>
           <linearGradient id="netflixGradient" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stop-color="#000000" stop-opacity="0.85" />
-            <stop offset="35%" stop-color="#000000" stop-opacity="0.45" />
-            <stop offset="70%" stop-color="#000000" stop-opacity="0.0" />
+            <stop offset="40%" stop-color="#000000" stop-opacity="0.45" />
+            <stop offset="75%" stop-color="#000000" stop-opacity="0.0" />
           </linearGradient>
         </defs>
 
