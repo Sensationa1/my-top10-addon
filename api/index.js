@@ -39,11 +39,11 @@ const MANIFEST = {
 };
 
 // --------------------------------------------------------------------------------
-// HIGH-PRECISION NETFLIX CONDENSED TYPOGRAPHY PATHS (ViewBox Base Height: 300)
-// Designed specifically for high-contrast outline rendering.
+// PURE GEOMETRIC PATH GLYPHS (Base Height: 300px)
+// Zero <text> tags = Zero font lookups = Zero white dot artifacts.
 // --------------------------------------------------------------------------------
-const GLYPHS = {
-  "1": { width: 90, path: "M 15 75 L 55 15 L 90 15 L 90 285 L 35 285 L 35 240 L 55 240 L 55 60 L 15 75 Z" },
+const DIGIT_PATHS = {
+  "1": { width: 85, path: "M 15 75 L 55 15 L 90 15 L 90 285 L 35 285 L 35 240 L 55 240 L 55 60 L 15 75 Z" },
   "2": { width: 140, path: "M 15 70 C 15 25 50 10 95 10 C 140 10 170 35 170 80 C 170 120 135 160 85 210 L 35 255 L 170 255 L 170 290 L 15 290 L 15 250 L 80 185 C 120 140 125 115 125 80 C 125 45 110 38 92 38 C 70 38 58 50 58 70 Z" },
   "3": { width: 140, path: "M 20 15 L 165 15 L 165 55 L 85 130 C 125 130 165 150 165 200 C 165 250 130 290 85 290 C 35 290 15 255 15 210 L 60 210 C 60 235 70 248 85 248 C 105 248 120 232 120 200 C 120 168 105 152 75 152 L 50 152 L 50 115 L 110 55 L 20 55 Z" },
   "4": { width: 150, path: "M 95 15 L 135 15 L 135 190 L 165 190 L 165 230 L 135 230 L 135 285 L 90 285 L 90 230 L 15 230 L 15 185 Z M 90 65 L 40 190 L 90 190 Z" },
@@ -55,33 +55,29 @@ const GLYPHS = {
   "0": { width: 135, path: "M 80 15 C 35 15 15 55 15 150 C 15 245 35 285 80 285 C 125 285 145 245 145 150 C 145 55 125 15 80 15 Z M 80 55 C 98 55 100 85 100 150 C 100 215 98 245 80 245 C 62 245 60 215 60 150 C 60 85 62 55 80 55 Z" }
 };
 
-function generateNetflixNumberSvg(rank) {
+function renderVectorRank(rank) {
   const strRank = String(rank);
-  let paths = [];
+  let elements = [];
 
   if (strRank === "10") {
-    // Tight 3D overlap: '1' sits slightly in front of '0'
-    paths.push({ d: GLYPHS["1"].path, x: 0, zIndex: 2 });
-    paths.push({ d: GLYPHS["0"].path, x: 65, zIndex: 1 });
+    elements.push({ d: DIGIT_PATHS["1"].path, x: 0 });
+    elements.push({ d: DIGIT_PATHS["0"].path, x: 65 });
   } else {
-    const digitData = GLYPHS[strRank] || GLYPHS["1"];
-    paths.push({ d: digitData.path, x: 0, zIndex: 1 });
+    const digitData = DIGIT_PATHS[strRank] || DIGIT_PATHS["1"];
+    elements.push({ d: digitData.path, x: 0 });
   }
 
-  // Sort paths so back elements drop shadow first
-  paths.sort((a, b) => a.zIndex - b.zIndex);
+  let shadowLayer = "";
+  let borderLayer = "";
+  let coreLayer = "";
 
-  let shadowMarkup = "";
-  let borderMarkup = "";
-  let coreMarkup = "";
-
-  paths.forEach((p) => {
-    shadowMarkup += `<path d="${p.d}" transform="translate(${p.x + 12}, 12)" fill="#000000" opacity="0.9"/>`;
-    borderMarkup += `<path d="${p.d}" transform="translate(${p.x}, 0)" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="18" stroke-linejoin="miter"/>`;
-    coreMarkup += `<path d="${p.d}" transform="translate(${p.x}, 0)" fill="#141414"/>`;
+  elements.forEach((item) => {
+    shadowLayer += `<path d="${item.d}" transform="translate(${item.x + 12}, 12)" fill="#000000" opacity="0.88"/>`;
+    borderLayer += `<path d="${item.d}" transform="translate(${item.x}, 0)" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="16" stroke-linejoin="miter"/>`;
+    coreLayer += `<path d="${item.d}" transform="translate(${item.x}, 0)" fill="#141414"/>`;
   });
 
-  return `<g>${shadowMarkup}${borderMarkup}${coreMarkup}</g>`;
+  return `<g>${shadowLayer}${borderLayer}${coreLayer}</g>`;
 }
 
 function getHostUrl(req) {
@@ -97,7 +93,7 @@ app.get("/", (req, res) => {
       <head><title>Top 10 Trending Addon</title></head>
       <body style="font-family: system-ui, sans-serif; text-align: center; padding: 50px; background: #0f0f12; color: #fff;">
         <h1>Top 10 Trending Addon</h1>
-        <p>Landscape posters with embedded Netflix-style numbers & genre tags.</p>
+        <p>Landscape posters with embedded Netflix-style numbers.</p>
         <a href="stremio://${req.headers.host}/manifest.json" style="background: #e50914; color: white; padding: 14px 28px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 6px; display: inline-block; margin-top: 20px;">Install in Stremio</a>
         <p style="margin-top: 20px; font-size: 13px; color: #888;">Manifest URL: ${hostUrl}/manifest.json</p>
       </body>
@@ -199,15 +195,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
       const title = item.title || item.name || "Unknown";
       const rank = index + 1;
 
-      let genres = "";
-      if (Array.isArray(item.genres)) {
-        genres = item.genres.slice(0, 2).join(",");
-      } else if (typeof item.genres === "string") {
-        genres = item.genres;
-      }
-
-      // v=30 flushes cache completely across Vercel & Stremio
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=30`;
+      // v=40 flushes stale image caches completely
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&v=40`;
 
       return {
         id: idToUse,
@@ -228,7 +217,7 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 });
 
 app.get("/api/poster", async (req, res) => {
-  const { id, rank, type, genres } = req.query;
+  const { id, rank, type } = req.query;
 
   if (!id) {
     return res.status(400).send("Missing ID parameter");
@@ -271,69 +260,32 @@ app.get("/api/poster", async (req, res) => {
     const width = metadata.width || 1280;
     const height = metadata.height || 720;
 
-    const formattedGenres = genres
-      ? genres.split(",").slice(0, 2).join(" • ").toUpperCase()
-      : "";
-
     const numRank = parseInt(rank, 10) || 1;
-    const numberSvgGroup = generateNetflixNumberSvg(numRank);
+    const vectorGroup = renderVectorRank(numRank);
 
-    // Number takes up 75% of total landscape card height, flush against the bottom
-    const desiredNumHeight = Math.round(height * 0.75);
-    const scale = (desiredNumHeight / 300).toFixed(3);
+    // Number occupies 72% of landscape poster height
+    const desiredHeight = Math.round(height * 0.72);
+    const scale = (desiredHeight / 300).toFixed(3);
     const xPos = Math.round(width * 0.02);
-    const yPos = height - desiredNumHeight + Math.round(height * 0.02);
-
-    const pillWidth = Math.max(110, formattedGenres.length * 12 + 32);
-    const pillXPos = width - pillWidth - Math.round(width * 0.04);
-    const pillYPos = Math.round(height * 0.05);
+    const yPos = height - desiredHeight + Math.round(height * 0.02);
 
     const svgOverlay = Buffer.from(`
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="netflixGradient" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stop-color="#000000" stop-opacity="0.88" />
-            <stop offset="35%" stop-color="#000000" stop-opacity="0.5" />
+            <stop offset="35%" stop-color="#000000" stop-opacity="0.45" />
             <stop offset="70%" stop-color="#000000" stop-opacity="0.0" />
           </linearGradient>
         </defs>
 
-        <!-- Strong Left Vignette -->
+        <!-- Pure Vignette Layer -->
         <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#netflixGradient)" />
 
-        <!-- Oversized Netflix Vector Number -->
+        <!-- Pure Vector Number (NO TEXT TAGS) -->
         <g transform="translate(${xPos}, ${yPos}) scale(${scale})">
-          ${numberSvgGroup}
+          ${vectorGroup}
         </g>
-
-        <!-- Top-Right Genre Pill -->
-        ${
-          formattedGenres
-            ? `
-        <g transform="translate(${pillXPos}, ${pillYPos})">
-          <rect 
-            rx="${Math.round(height * 0.018)}" 
-            ry="${Math.round(height * 0.018)}" 
-            width="${pillWidth}" 
-            height="${Math.round(height * 0.058)}" 
-            fill="rgba(0, 0, 0, 0.75)" 
-            stroke="rgba(255, 255, 255, 0.3)" 
-            stroke-width="1.2"
-          />
-          <text 
-            x="${Math.round(pillWidth / 2)}" 
-            y="${Math.round(height * 0.040)}" 
-            font-family="system-ui, -apple-system, sans-serif" 
-            font-size="${Math.round(height * 0.026)}" 
-            font-weight="700" 
-            fill="#FFFFFF" 
-            text-anchor="middle">
-            ${formattedGenres}
-          </text>
-        </g>
-        `
-            : ""
-        }
       </svg>
     `);
 
