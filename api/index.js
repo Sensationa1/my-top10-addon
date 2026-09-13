@@ -39,47 +39,50 @@ const MANIFEST = {
 };
 
 // --------------------------------------------------------------------------------
-// PURE VECTOR DIGIT GLYPHS (Base Height: 150px)
-// Eliminates server font dependencies. Guarantees 100% deterministic rendering.
+// DEDICATED HIGH-PRECISION NETFLIX NUMBER VECTORS (RANKS 1 - 10)
+// Guarantees pixel-perfect rendering with zero OS/font dependencies.
 // --------------------------------------------------------------------------------
-const DIGIT_PATHS = {
-  "1": { width: 50, path: "M 12,30 L 32,10 L 48,10 L 48,150 L 12,150 L 12,126 L 26,126 L 26,30 Z" },
-  "2": { width: 80, path: "M 8,40 C 8,14 26,4 50,4 C 74,4 88,18 88,40 C 88,60 68,82 44,106 L 20,126 L 88,126 L 88,150 L 8,150 L 8,124 L 46,82 C 64,64 64,52 64,40 C 64,26 56,22 50,22 C 42,22 34,28 34,40 Z" },
-  "3": { width: 80, path: "M 10,10 L 82,10 L 82,32 L 44,70 C 66,70 84,82 84,106 C 84,132 68,150 44,150 C 20,150 10,134 10,110 L 32,110 C 32,122 38,128 44,128 C 54,128 60,120 60,106 C 60,92 52,84 38,84 L 26,84 L 26,62 L 52,32 L 10,32 Z" },
-  "4": { width: 82, path: "M 48,8 L 76,8 L 76,92 L 86,92 L 86,114 L 76,114 L 76,150 L 52,150 L 52,114 L 8,114 L 8,90 Z M 52,36 L 24,90 L 52,90 Z" },
-  "5": { width: 80, path: "M 10,10 L 80,10 L 80,32 L 32,32 L 28,62 C 38,54 48,52 58,52 C 74,52 84,64 84,98 C 84,130 68,150 44,150 C 20,150 10,132 10,108 L 32,108 C 32,120 38,128 44,128 C 54,128 60,120 60,98 C 60,82 52,74 40,74 C 30,74 22,80 18,88 L 8,80 Z" },
-  "6": { width: 80, path: "M 44,8 C 20,8 8,28 8,76 C 8,124 20,150 44,150 C 68,150 82,128 82,96 C 82,66 68,54 46,54 C 34,54 22,60 16,70 C 16,36 28,30 44,30 L 66,30 L 66,8 Z M 44,74 C 58,74 60,84 60,98 C 60,114 54,128 44,128 C 34,128 28,114 28,98 C 28,84 34,74 44,74 Z" },
-  "7": { width: 78, path: "M 8,8 L 80,8 L 80,28 L 40,150 L 16,150 L 54,28 L 8,28 Z" },
-  "8": { width: 80, path: "M 44,8 C 24,8 12,20 12,40 C 12,56 24,66 36,70 C 20,74 8,86 8,108 C 8,130 22,150 44,150 C 66,150 80,130 80,108 C 80,86 68,74 52,70 C 64,66 76,56 76,40 C 76,20 64,8 44,8 Z M 44,28 C 54,28 56,34 56,42 C 56,50 50,56 44,56 C 38,56 32,50 32,42 C 32,34 34,28 44,28 Z M 44,74 C 54,74 56,82 56,108 C 56,126 52,130 44,130 C 36,130 32,126 32,108 C 32,82 34,74 44,74 Z" },
-  "9": { width: 80, path: "M 44,8 C 20,8 8,28 8,60 C 8,92 22,102 44,102 C 56,102 68,94 74,84 C 74,118 64,128 44,128 L 24,128 L 24,150 L 44,150 C 70,150 82,128 82,80 C 82,32 70,8 44,8 Z M 44,28 C 54,28 58,38 58,58 C 58,72 52,82 44,82 C 36,82 30,72 30,58 C 30,38 34,28 44,28 Z" },
-  "0": { width: 80, path: "M 44,8 C 18,8 8,28 8,78 C 8,128 18,148 44,148 C 70,148 80,128 80,78 C 80,28 70,8 44,8 Z M 44,28 C 58,28 58,44 58,78 C 58,112 58,128 44,128 C 30,128 30,112 30,78 C 30,44 30,28 44,28 Z" }
+const RANK_VECTORS = {
+  "1": `<path d="M 35 30 L 75 10 L 105 10 L 105 230 L 55 230 L 55 195 L 70 195 L 70 45 L 35 60 Z"/>`,
+  "2": `<path d="M 20 60 C 20 20, 50 10, 85 10 C 120 10, 145 30, 145 65 C 145 95, 120 125, 80 160 L 45 195 L 145 195 L 145 230 L 20 230 L 20 190 L 80 130 C 110 100, 110 80, 110 65 C 110 45, 95 38, 82 38 C 65 38, 55 50, 55 65 Z"/>`,
+  "3": `<path d="M 25 15 L 135 15 L 135 50 L 75 110 C 110 110, 140 128, 140 168 C 140 208, 112 235, 75 235 C 38 235, 20 210, 20 175 L 55 175 C 55 192, 65 202, 75 202 C 90 202, 102 190, 102 168 C 102 145, 88 135, 65 135 L 45 135 L 45 102 L 90 50 L 25 50 Z"/>`,
+  "4": `<path d="M 85 10 L 122 10 L 122 145 L 145 145 L 145 180 L 122 180 L 122 230 L 85 230 L 85 180 L 20 180 L 20 142 Z M 85 55 L 42 145 L 85 145 Z"/>`,
+  "5": `<path d="M 25 15 L 135 15 L 135 50 L 60 50 L 55 90 C 70 80, 88 78, 105 78 C 130 78, 145 95, 145 138 C 145 190, 120 235, 75 235 C 35 235, 20 205, 20 170 L 55 170 C 55 190, 65 202, 75 202 C 92 202, 105 182, 105 138 C 105 108, 92 98, 72 98 C 55 98, 42 108, 35 118 L 22 108 Z"/>`,
+  "6": `<path d="M 75 10 C 35 10, 20 45, 20 120 C 20 195, 35 235, 75 235 C 115 235, 140 200, 140 148 C 140 100, 115 80, 78 80 C 58 80, 42 90, 32 105 C 32 52, 50 42, 75 42 L 115 42 L 115 10 Z M 75 112 C 98 112, 102 128, 102 148 C 102 175, 92 202, 75 202 C 58 202, 48 175, 48 148 C 48 128, 58 112, 75 112 Z"/>`,
+  "7": `<path d="M 20 15 L 138 15 L 138 48 L 70 230 L 32 230 L 95 48 L 20 48 Z"/>`,
+  "8": `<path d="M 75 10 C 42 10, 22 30, 22 62 C 22 88, 42 102, 60 110 C 35 118, 18 138, 18 172 C 18 208, 42 235, 75 235 C 108 235, 132 208, 132 172 C 132 138, 115 118, 90 110 C 108 102, 128 88, 128 62 C 128 30, 108 10, 75 10 Z M 75 42 C 90 42, 92 52, 92 64 C 92 78, 82 88, 75 88 C 68 88, 58 78, 58 64 C 58 52, 60 42, 75 42 Z M 75 118 C 92 118, 96 132, 96 172 C 96 198, 88 205, 75 205 C 62 205, 54 198, 54 172 C 54 132, 58 118, 75 118 Z"/>`,
+  "9": `<path d="M 75 10 C 35 10, 18 45, 18 95 C 18 148, 42 165, 75 165 C 95 165, 110 155, 120 140 C 120 192, 102 202, 75 202 L 40 202 L 40 235 L 75 235 C 118 235, 140 195, 140 120 C 140 45, 115 10, 75 10 Z M 75 42 C 92 42, 102 55, 102 95 C 102 120, 95 135, 75 135 C 58 135, 48 120, 48 95 C 48 55, 58 42, 75 42 Z"/>`,
+  "10": `
+    <g transform="translate(0, 0)">
+      <path d="M 15 30 L 45 10 L 70 10 L 70 230 L 30 230 L 30 195 L 42 195 L 42 45 L 15 60 Z"/>
+    </g>
+    <g transform="translate(50, 0)">
+      <path d="M 70 10 C 28 10, 12 45, 12 120 C 12 195, 28 235, 70 235 C 112 235, 128 195, 128 120 C 128 45, 112 10, 70 10 Z M 70 42 C 88 42, 90 68, 90 120 C 90 172, 88 202, 70 202 C 52 202, 50 172, 50 120 C 50 68, 52 42, 70 42 Z"/>
+    </g>
+  `
 };
 
-// Renders solid layered silhouettes to prevent stroke cap artifacts
-function renderRankSvg(rankNum) {
-  const digits = String(rankNum).split("");
-  let xOffset = 0;
+function buildNetflixNumberOverlay(rank) {
+  const pathData = RANK_VECTORS[String(rank)] || RANK_VECTORS["1"];
   
-  let shadowLayer = "";
-  let borderLayer = "";
-  let coreLayer = "";
+  return `
+    <g transform="translate(20, 120)">
+      <!-- Drop Shadow -->
+      <g fill="#000000" opacity="0.85" transform="translate(8, 8)">
+        ${pathData}
+      </g>
 
-  digits.forEach((d) => {
-    const digitData = DIGIT_PATHS[d] || DIGIT_PATHS["1"];
-    
-    // 1. Soft Ambient Shadow
-    shadowLayer += `<path transform="translate(${xOffset + 6}, 6)" d="${digitData.path}" fill="#000000" opacity="0.8" fill-rule="evenodd"/>`;
-    
-    // 2. Solid White Outer Silhouette Layer
-    borderLayer += `<path transform="translate(${xOffset}, 0)" d="${digitData.path}" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="10" stroke-linejoin="miter" fill-rule="evenodd"/>`;
-    
-    // 3. Dark Core Layer
-    coreLayer += `<path transform="translate(${xOffset}, 0)" d="${digitData.path}" fill="#141414" fill-rule="evenodd"/>`;
-    
-    xOffset += digitData.width - 2;
-  });
+      <!-- White Outer Border -->
+      <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round">
+        ${pathData}
+      </g>
 
-  return `<g>${shadowLayer}${borderLayer}${coreLayer}</g>`;
+      <!-- Dark Inner Core -->
+      <g fill="#141414">
+        ${pathData}
+      </g>
+    </g>
+  `;
 }
 
 function getHostUrl(req) {
@@ -204,8 +207,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      // Cache buster v=18 flushes previous missing-glyph dots
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=18`;
+      // v=20 flushes previous cached images completely
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=20`;
 
       return {
         id: idToUse,
@@ -274,13 +277,7 @@ app.get("/api/poster", async (req, res) => {
       : "";
 
     const numRank = parseInt(rank, 10) || 1;
-    const digitPathsSvg = renderRankSvg(numRank);
-
-    // Number scale: 65% of backdrop height
-    const desiredHeight = Math.round(height * 0.65); 
-    const scale = (desiredHeight / 150).toFixed(3);
-    const xPos = Math.round(width * 0.025);
-    const yPos = Math.round(height * 0.22);
+    const numberSvgOverlay = buildNetflixNumberOverlay(numRank);
 
     const pillWidth = Math.max(110, formattedGenres.length * 12 + 32);
     const pillXPos = width - pillWidth - Math.round(width * 0.04);
@@ -299,10 +296,8 @@ app.get("/api/poster", async (req, res) => {
         <!-- Left-Side Gradient Vignette -->
         <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#netflixGradient)" />
 
-        <!-- Rendered Vector Digits -->
-        <g transform="translate(${xPos}, ${yPos}) scale(${scale})">
-          ${digitPathsSvg}
-        </g>
+        <!-- Rendered Vector Number -->
+        ${numberSvgOverlay}
 
         <!-- Top-Right Genre Badge -->
         ${
