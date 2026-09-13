@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "105";
+const POSTER_CACHE_VERSION = "116";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -35,7 +35,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.9.0",
+  version: "1.9.3",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels.",
@@ -110,22 +110,24 @@ function getHostUrl(req) {
  * - Genre as small frosted pill, bottom-center
  */
 function buildOverlaySvg(width, height, rank, genre) {
-  // ===== RANK — DO NOT CHANGE (user confirmed perfect) =====
+  // ===== RANK — DO NOT CHANGE =====
   const fontSize = Math.round(height * 0.40);
   const xPos = Math.round(width * 0.022);
   const yPos = Math.round(height * 0.055 + fontSize * 0.82);
   const tracking = String(rank).length > 1 ? "-0.06em" : "0";
 
-  // ===== GENRE — Apple TV style: plain text, soft text-shadow only =====
-  // Title Case to match Apple TV ("Action", "Comedy") not ALL CAPS
+  // ===== GENRE =====
   const genreLabel = (genre || "")
     .toLowerCase()
     .split(/[\s\-]+/)
     .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : ""))
     .join(" ");
-  const badgeFont = Math.max(16, Math.round(height * 0.050));
+  const badgeFont = Math.max(20, Math.round(height * 0.068));
   const badgeCx = Math.round(width / 2);
-  const badgeCy = height - Math.round(height * 0.052);
+  const badgeCy = height - Math.round(height * 0.055);
+
+  // Faint bottom bar height (~22% of poster, very transparent)
+  const bottomBarH = Math.round(height * 0.22);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
@@ -142,17 +144,23 @@ function buildOverlaySvg(width, height, rank, genre) {
       <stop offset="40%" stop-color="#000000" stop-opacity="0.18"/>
       <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
     </linearGradient>
+    <!-- Apple TV–style faint bottom fade -->
+    <linearGradient id="bottomFade" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="35%" stop-color="#000000" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.42"/>
+    </linearGradient>
     <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
       <feDropShadow dx="3" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.50"/>
       <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.25"/>
     </filter>
-    <!-- Soft multi-layer shadow under genre text only (no pill / no blob) -->
     <filter id="genreShadow" x="-40%" y="-60%" width="180%" height="220%">
       <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000000" flood-opacity="0.70"/>
       <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000000" flood-opacity="0.45"/>
     </filter>
   </defs>
 
+  <!-- Left vignette for rank contrast -->
   <rect width="${Math.round(width * 0.48)}" height="${height}" fill="url(#vig)"/>
 
   <!-- Rank (unchanged) -->
@@ -167,7 +175,16 @@ function buildOverlaySvg(width, height, rank, genre) {
     filter="url(#rankShadow)"
   >${rank}</text>
 
-  <!-- Genre: SF Pro Display (Apple TV) + soft shadow only -->
+  <!-- Very faint black bar over bottom of poster -->
+  <rect
+    x="0"
+    y="${height - bottomBarH}"
+    width="${width}"
+    height="${bottomBarH}"
+    fill="url(#bottomFade)"
+  />
+
+  <!-- Genre: SF Pro Display + soft shadow -->
   <text
     x="${badgeCx}"
     y="${badgeCy}"
