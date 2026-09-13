@@ -12,12 +12,12 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-// Cache-bust version — bump this whenever poster design changes
-const POSTER_CACHE_VERSION = "42";
+// Cache-bust version — bump whenever poster design changes
+const POSTER_CACHE_VERSION = "55";
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.1.0",
+  version: "1.2.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with cinematic Apple TV-style rank numbers and frosted genre badges on landscape posters.",
@@ -43,7 +43,7 @@ const MANIFEST = {
 };
 
 // ---------------------------------------------------------------------------
-// TMDB genre ID → uppercase name (shared across movies & TV where IDs overlap)
+// TMDB genre ID → uppercase name
 // ---------------------------------------------------------------------------
 const GENRE_MAP = {
   28: "ACTION",
@@ -65,7 +65,6 @@ const GENRE_MAP = {
   53: "THRILLER",
   10752: "WAR",
   37: "WESTERN",
-  // TV-specific
   10759: "ACTION",
   10762: "KIDS",
   10763: "NEWS",
@@ -83,117 +82,172 @@ function getHostUrl(req) {
 }
 
 // ---------------------------------------------------------------------------
-// Apple TV style rank numbers
-// Metallic vertical gradient (white → #94A3B8), thick white stroke, deep shadow.
-// Rank 10 uses tight horizontal overlap between "1" and "0".
+// PURE VECTOR DIGITS — no fonts, works on every Vercel / librsvg image.
+// Each digit is a filled path inside a 100×160 unit box.
+// Styled with metallic gradient + thick white outline + shadow.
 // ---------------------------------------------------------------------------
-function generateRankSvg(rank, fontSize) {
+const DIGIT_W = 100;
+const DIGIT_H = 160;
+
+// Bold rounded digit paths (viewBox 0 0 100 160)
+const DIGIT_PATHS = {
+  "0": "M50 8 C22 8 8 28 8 80 C8 132 22 152 50 152 C78 152 92 132 92 80 C92 28 78 8 50 8 Z M50 28 C68 28 72 42 72 80 C72 118 68 132 50 132 C32 132 28 118 28 80 C28 42 32 28 50 28 Z",
+  "1": "M58 12 L58 140 L78 140 L78 152 L22 152 L22 140 L38 140 L38 36 L22 48 L22 28 Z",
+  "2": "M12 48 C12 28 28 12 50 12 C72 12 88 26 88 48 C88 66 78 78 58 92 L28 112 L28 140 L88 140 L88 152 L12 152 L12 128 L52 98 C66 88 72 78 72 52 C72 38 64 28 50 28 C36 28 28 36 28 48 Z",
+  "3": "M18 28 C22 16 34 12 50 12 C72 12 88 26 88 48 C88 64 78 74 64 78 C78 82 90 94 90 114 C90 138 72 152 48 152 C28 152 14 142 10 126 L28 118 C30 128 38 136 50 136 C64 136 72 126 72 114 C72 100 62 92 48 92 L36 92 L36 76 L50 76 C64 76 72 68 72 54 C72 40 64 28 50 28 C38 28 30 34 28 44 Z",
+  "4": "M62 12 L62 100 L88 100 L88 116 L62 116 L62 152 L42 152 L42 116 L10 116 L10 98 L42 12 Z M42 100 L42 36 L18 100 Z",
+  "5": "M78 12 L22 12 L18 88 L48 88 C66 88 78 100 78 118 C78 136 66 148 48 148 C30 148 20 138 18 124 L36 118 C38 128 42 132 48 132 C56 132 60 126 60 118 C60 110 56 104 48 104 L12 104 L18 12 Z",
+  "6": "M50 8 C28 8 12 28 12 80 C12 132 28 152 52 152 C76 152 90 136 90 112 C90 90 76 76 56 76 L40 76 C36 68 34 56 34 46 C34 32 40 24 52 24 C62 24 68 30 70 40 L88 34 C84 16 70 8 50 8 Z M52 92 C66 92 74 102 74 114 C74 128 66 136 52 136 C38 136 30 126 30 112 C30 100 38 92 52 92 Z",
+  "7": "M12 12 L88 12 L88 32 L48 152 L26 152 L62 36 L12 36 Z",
+  "8": "M50 8 C28 8 14 22 14 44 C14 60 24 72 38 78 C24 84 12 98 12 118 C12 140 28 152 50 152 C72 152 88 140 88 118 C88 98 76 84 62 78 C76 72 86 60 86 44 C86 22 72 8 50 8 Z M50 24 C62 24 70 32 70 44 C70 56 62 64 50 64 C38 64 30 56 30 44 C30 32 38 24 50 24 Z M50 92 C64 92 72 102 72 116 C72 130 64 140 50 140 C36 140 28 130 28 116 C28 102 36 92 50 92 Z",
+  "9": "M50 8 C26 8 12 24 12 48 C12 70 26 84 46 84 L60 84 C64 92 66 104 66 114 C66 128 60 136 48 136 C38 136 32 130 30 120 L12 126 C16 144 30 152 50 152 C72 152 88 132 88 80 C88 28 72 8 50 8 Z M50 24 C62 24 70 34 70 48 C70 62 62 72 48 72 C34 72 26 62 26 48 C26 34 34 24 50 24 Z",
+};
+
+function digitPath(d) {
+  return DIGIT_PATHS[d] || DIGIT_PATHS["1"];
+}
+
+/**
+ * Build pure-vector rank markup (no <text>, no fonts).
+ * Metallic fill + thick white outline + deep shadow.
+ * Rank 10 uses tight horizontal overlap (spacing ≈ 0.40 × digit width).
+ */
+function generateRankSvg(rank) {
   const r = String(rank);
   const isTen = r === "10";
+  // Tight overlap for 10: advance only 40% of a full digit width after "1"
+  const gap = isTen ? DIGIT_W * 0.40 : DIGIT_W * 0.12;
 
-  // Tight overlap for "10" — spacing = fontSize * 0.40
-  const letterSpacing = isTen ? fontSize * 0.40 : fontSize * 0.08;
-
-  // Approximate glyph width for positioning
-  const approxCharW = fontSize * 0.55;
-
-  // Render each digit as its own <text> so we can control x precisely
-  // for the overlapping "10" case, while still using a reliable Linux font.
-  let digitsMarkup = "";
   let x = 0;
+  let shadowPaths = "";
+  let outlinePaths = "";
+  let fillPaths = "";
 
   for (let i = 0; i < r.length; i++) {
     const ch = r[i];
-    digitsMarkup += `
-      <text
-        x="${x}"
-        y="0"
-        font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif"
-        font-size="${fontSize}"
-        font-weight="900"
-        fill="url(#metallicGrad)"
-        stroke="#ffffff"
-        stroke-width="14"
-        stroke-linejoin="round"
-        stroke-linecap="round"
-        paint-order="stroke fill"
-        dominant-baseline="hanging"
-      >${ch}</text>`;
-    x += (ch === "1" ? approxCharW * 0.55 : approxCharW) + letterSpacing;
+    const path = digitPath(ch);
+    // Shadow (offset down-right, dark)
+    shadowPaths += `<path transform="translate(${x + 10},${14})" d="${path}" fill="#000000" opacity="0.55"/>`;
+    // Thick white outline (slightly scaled up)
+    outlinePaths += `<path transform="translate(${x},0)" d="${path}" fill="#FFFFFF"/>`;
+    // Metallic fill on top
+    fillPaths += `<path transform="translate(${x},0)" d="${path}" fill="url(#metallicGrad)"/>`;
+
+    // Advance — "1" is narrower
+    const advance = ch === "1" ? DIGIT_W * 0.62 : DIGIT_W;
+    x += advance + gap;
   }
 
-  // Deep dark drop shadow
-  const shadowOffset = Math.round(fontSize * 0.06);
-  const shadowOpacity = 0.55;
-
+  // Outline is drawn by scaling the whole group slightly larger behind the fill
+  // Using a second pass with stroke is unreliable in some librsvg builds,
+  // so we draw a white enlarged silhouette then the gradient fill on top.
   return {
+    unitW: x,
+    unitH: DIGIT_H,
     markup: `
       <defs>
         <linearGradient id="metallicGrad" x1="0%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stop-color="#FFFFFF"/>
-          <stop offset="45%" stop-color="#E2E8F0"/>
+          <stop offset="40%" stop-color="#E8EEF4"/>
           <stop offset="100%" stop-color="#94A3B8"/>
         </linearGradient>
-        <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
-          <feDropShadow dx="${shadowOffset}" dy="${shadowOffset + 4}" stdDeviation="8" flood-color="#000000" flood-opacity="${shadowOpacity}"/>
-          <feDropShadow dx="2" dy="6" stdDeviation="14" flood-color="#000000" flood-opacity="0.35"/>
-        </filter>
       </defs>
-      <g filter="url(#rankShadow)">
-        ${digitsMarkup}
-      </g>
+      <!-- soft shadow -->
+      <g>${shadowPaths}</g>
+      <!-- white outline halo (scaled 1.14 around center of each digit is approximated by a second larger draw) -->
+      <g transform="translate(-7,-7) scale(1.14)" opacity="1">${outlinePaths.replace(/fill="#FFFFFF"/g, 'fill="#FFFFFF"')}</g>
+      <!-- metallic body -->
+      <g>${fillPaths}</g>
     `,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Frosted-glass genre pill (bottom center)
+// Frosted genre badge — uses ONLY shapes + a minimal 5x7 bitmap font
+// so no system font is required on Vercel.
 // ---------------------------------------------------------------------------
+const BITMAP_FONT = {
+  // 5×7 uppercase, 1 = pixel on. Each row is a 5-bit mask left-to-right.
+  A: [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+  B: [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
+  C: [0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111],
+  D: [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
+  E: [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
+  F: [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000],
+  G: [0b01111, 0b10000, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111],
+  H: [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+  I: [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111],
+  J: [0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100],
+  K: [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
+  L: [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
+  M: [0b10001, 0b11011, 0b10101, 0b10001, 0b10001, 0b10001, 0b10001],
+  N: [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
+  O: [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+  P: [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
+  Q: [0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101],
+  R: [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
+  S: [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
+  T: [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
+  U: [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+  V: [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
+  W: [0b10001, 0b10001, 0b10001, 0b10001, 0b10101, 0b11011, 0b10001],
+  X: [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
+  Y: [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
+  Z: [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
+  "-": [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+  " ": [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
+  "&": [0b01100, 0b10010, 0b10100, 0b01000, 0b10101, 0b10010, 0b01101],
+};
+
+function bitmapTextPaths(text, pixelSize) {
+  const gap = pixelSize; // 1px gap between letters
+  let x = 0;
+  let paths = "";
+  for (const ch of text.toUpperCase()) {
+    const rows = BITMAP_FONT[ch] || BITMAP_FONT[" "];
+    for (let row = 0; row < 7; row++) {
+      for (let col = 0; col < 5; col++) {
+        if (rows[row] & (1 << (4 - col))) {
+          const px = x + col * pixelSize;
+          const py = row * pixelSize;
+          paths += `<rect x="${px}" y="${py}" width="${pixelSize}" height="${pixelSize}" fill="#FFFFFF"/>`;
+        }
+      }
+    }
+    x += 5 * pixelSize + gap;
+  }
+  return { width: x - gap, height: 7 * pixelSize, paths };
+}
+
 function generateGenreBadge(genreText, width, height) {
   if (!genreText) return "";
 
-  const fontSize = Math.round(height * 0.042);
-  const paddingX = Math.round(fontSize * 1.6);
-  const paddingY = Math.round(fontSize * 0.55);
-  const badgeH = fontSize + paddingY * 2;
-  const approxTextW = genreText.length * fontSize * 0.58;
-  const badgeW = Math.ceil(approxTextW + paddingX * 2);
+  const pixelSize = Math.max(2, Math.round(height * 0.007));
+  const { width: textW, height: textH, paths } = bitmapTextPaths(genreText, pixelSize);
+
+  const paddingX = Math.round(pixelSize * 4);
+  const paddingY = Math.round(pixelSize * 2.5);
+  const badgeW = textW + paddingX * 2;
+  const badgeH = textH + paddingY * 2;
   const rx = Math.round(badgeH / 2);
 
   const cx = Math.round(width / 2);
-  const cy = height - Math.round(height * 0.075);
-  const x = cx - Math.round(badgeW / 2);
-  const y = cy - Math.round(badgeH / 2);
+  const cy = height - Math.round(height * 0.08);
+  const bx = cx - Math.round(badgeW / 2);
+  const by = cy - Math.round(badgeH / 2);
+  const tx = bx + paddingX;
+  const ty = by + paddingY;
 
   return `
-    <defs>
-      <filter id="badgeShadow" x="-20%" y="-20%" width="140%" height="140%">
-        <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000000" flood-opacity="0.45"/>
-      </filter>
-    </defs>
-    <g filter="url(#badgeShadow)">
-      <rect
-        x="${x}"
-        y="${y}"
-        width="${badgeW}"
-        height="${badgeH}"
-        rx="${rx}"
-        ry="${rx}"
-        fill="rgba(25, 25, 32, 0.75)"
-        stroke="rgba(255,255,255,0.4)"
-        stroke-width="1.5"
-      />
-      <text
-        x="${cx}"
-        y="${cy + Math.round(fontSize * 0.35)}"
-        font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif"
-        font-size="${fontSize}"
-        font-weight="700"
-        fill="#FFFFFF"
-        text-anchor="middle"
-        dominant-baseline="middle"
-      >${genreText}</text>
-    </g>
+    <!-- soft shadow under badge -->
+    <rect x="${bx + 2}" y="${by + 3}" width="${badgeW}" height="${badgeH}"
+          rx="${rx}" ry="${rx}" fill="#000000" opacity="0.45"/>
+    <rect x="${bx}" y="${by}" width="${badgeW}" height="${badgeH}"
+          rx="${rx}" ry="${rx}"
+          fill="rgba(25, 25, 32, 0.78)"
+          stroke="rgba(255,255,255,0.45)"
+          stroke-width="1.5"/>
+    <g transform="translate(${tx},${ty})">${paths}</g>
   `;
 }
 
@@ -233,7 +287,6 @@ async function getTmdbData(imdbId, type) {
       if (primary) genre = primary;
     }
 
-    // If find endpoint didn't give genres, fetch full details
     if (!genre && match.id) {
       try {
         const detailPath = isSeries ? `tv/${match.id}` : `movie/${match.id}`;
@@ -358,7 +411,6 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         const title = item.title || item.name || "Unknown";
         const rank = index + 1;
 
-        // Poster endpoint resolves genre via TMDB; cache-bust with v=
         const posterUrl = `${hostUrl}/api/poster?id=${encodeURIComponent(
           imdbId || idToUse
         )}&rank=${rank}&type=${type}&v=${POSTER_CACHE_VERSION}`;
@@ -394,7 +446,7 @@ app.get("/api/poster", async (req, res) => {
     const cleanImdbId = id.startsWith("tt") ? id : null;
     let resolvedGenre = null;
 
-    // 1) Prefer ExtendedRatings landscape backdrop
+    // 1) ExtendedRatings landscape backdrop
     if (cleanImdbId) {
       try {
         const extUrl = `https://extendedratings.com/backdrop/${cleanImdbId}?config=russel&key=Kolkko11&v=fd3ce853`;
@@ -406,7 +458,7 @@ app.get("/api/poster", async (req, res) => {
       } catch (_) {}
     }
 
-    // 2) TMDB fallback (also resolves primary genre)
+    // 2) TMDB (backdrop + genre)
     const tmdbInfo = await getTmdbData(cleanImdbId, type || "movie");
     if (tmdbInfo.genre) resolvedGenre = tmdbInfo.genre;
 
@@ -438,18 +490,18 @@ app.get("/api/poster", async (req, res) => {
     const width = metadata.width || 1280;
     const height = metadata.height || 720;
 
-    // Fallback genre label
     if (!resolvedGenre) {
       resolvedGenre = type === "series" ? "SERIES" : "MOVIE";
     }
 
     const numRank = parseInt(rank, 10) || 1;
-    // Rank numbers sit in the top-left, roughly 30 % of poster height
-    const fontSize = Math.round(height * 0.30);
-    const rankSvg = generateRankSvg(numRank, fontSize);
+    const rankSvg = generateRankSvg(numRank);
 
-    const xPos = Math.round(width * 0.035);
-    const yPos = Math.round(height * 0.06);
+    // Scale rank so it occupies ~32% of poster height
+    const targetH = height * 0.32;
+    const scale = targetH / DIGIT_H;
+    const xPos = Math.round(width * 0.03);
+    const yPos = Math.round(height * 0.05);
 
     const genreBadge = generateGenreBadge(resolvedGenre, width, height);
 
@@ -457,24 +509,23 @@ app.get("/api/poster", async (req, res) => {
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
            xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <!-- Left-side vignette covering ~55 % of the poster -->
           <linearGradient id="leftVignette" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stop-color="#000000" stop-opacity="0.82"/>
-            <stop offset="45%"  stop-color="#000000" stop-opacity="0.45"/>
+            <stop offset="0%"   stop-color="#000000" stop-opacity="0.80"/>
+            <stop offset="50%"  stop-color="#000000" stop-opacity="0.40"/>
             <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
           </linearGradient>
         </defs>
 
-        <!-- Left vignette -->
+        <!-- Left vignette (~55%) -->
         <rect width="${Math.round(width * 0.55)}" height="${height}"
               fill="url(#leftVignette)"/>
 
-        <!-- Cinematic rank number (top-left) -->
-        <g transform="translate(${xPos}, ${yPos})">
+        <!-- Cinematic rank number (top-left) — pure vector, no fonts -->
+        <g transform="translate(${xPos}, ${yPos}) scale(${scale.toFixed(4)})">
           ${rankSvg.markup}
         </g>
 
-        <!-- Frosted genre badge (bottom center) -->
+        <!-- Frosted genre badge (bottom center) — bitmap font, no system fonts -->
         ${genreBadge}
       </svg>
     `);
