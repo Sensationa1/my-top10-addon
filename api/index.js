@@ -15,8 +15,8 @@ const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
   version: "1.0.0",
-  name: "Top 10 Trending (Apple TV / Netflix Style)",
-  description: "Top 10 Trending Posters with cinematic numbers and Apple TV UI badges.",
+  name: "Top 10 Trending (Apple TV Style)",
+  description: "Top 10 Trending Posters with Apple TV gradient numbers and UI genre badges.",
   resources: ["catalog"],
   types: ["movie", "series"],
   catalogs: [
@@ -38,7 +38,7 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
-// TMDB Genre ID maps to ensure reliable badge text
+// TMDB Genre ID maps for reliable badge text
 const GENRE_MAP = {
   28: "ACTION", 12: "ADVENTURE", 16: "ANIMATION", 35: "COMEDY", 80: "CRIME",
   99: "DOCUMENTARY", 18: "DRAMA", 10751: "FAMILY", 14: "FANTASY", 36: "HISTORY",
@@ -61,7 +61,7 @@ app.get("/", (req, res) => {
       <head><title>Top 10 Trending Addon</title></head>
       <body style="font-family: system-ui, sans-serif; text-align: center; padding: 50px; background: #0f0f12; color: #fff;">
         <h1>Top 10 Trending Addon</h1>
-        <p>Landscape posters with cinematic numbers and Apple TV style UI badges.</p>
+        <p>Landscape posters with Apple TV style gradient numbers and UI genre badges.</p>
         <a href="stremio://${req.headers.host}/manifest.json" style="background: #e50914; color: white; padding: 14px 28px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 6px; display: inline-block; margin-top: 20px;">Install in Stremio</a>
         <p style="margin-top: 20px; font-size: 13px; color: #888;">Manifest URL: ${hostUrl}/manifest.json</p>
       </body>
@@ -171,8 +171,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
       const title = item.title || item.name || "Unknown";
       const rank = index + 1;
 
-      // v=70 forces instant cache refresh
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&v=70`;
+      // v=80 forces instant cache refresh
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&v=80`;
 
       return {
         id: idToUse,
@@ -212,7 +212,6 @@ app.get("/api/poster", async (req, res) => {
       } catch (e) {}
     }
 
-    // Fetch TMDB backdrop and precise genre badge text
     const tmdbMeta = await getTmdbMetadata(cleanImdbId || id, type);
     if (!backdropBuffer && tmdbMeta.backdropUrl) {
       try {
@@ -243,39 +242,44 @@ app.get("/api/poster", async (req, res) => {
     const rankStr = String(numRank);
 
     // Cinematic Typography Dimensions
-    const fontSize = Math.round(height * 0.70);
-    const yPos = height - Math.round(height * 0.04);
-    const xPos = Math.round(width * 0.02);
+    const fontSize = Math.round(height * 0.72);
+    const yPos = height - Math.round(height * 0.03);
+    const xPos = Math.round(width * 0.025);
 
     let textMarkup = "";
-    // Uses DejaVu Sans which is natively supported on Vercel Linux environments
-    const fontStack = 'font-family="DejaVu Sans, Liberation Sans, sans-serif" font-weight="900" font-style="italic"';
+    const fontAttr = 'font-family="sans-serif" font-weight="900" font-style="italic"';
 
     if (rankStr === "10") {
       const digitOneX = xPos;
-      const digitZeroX = xPos + Math.round(fontSize * 0.38); // Tight overlap for 10
+      const digitZeroX = xPos + Math.round(fontSize * 0.40);
       
       textMarkup = `
-        <!-- Zero Background & Foreground Layers -->
-        <text x="${digitZeroX + 12}" y="${yPos + 12}" ${fontStack} font-size="${fontSize}" fill="rgba(0,0,0,0.85)">0</text>
-        <text x="${digitZeroX}" y="${yPos}" ${fontStack} font-size="${fontSize}" fill="#141414" stroke="#ffffff" stroke-width="16" stroke-linejoin="round">0</text>
+        <!-- Zero: Shadow, Stroke & Gradient Core -->
+        <text x="${digitZeroX + 10}" y="${yPos + 10}" ${fontAttr} font-size="${fontSize}" fill="#000000" fill-opacity="0.8">0</text>
+        <text x="${digitZeroX}" y="${yPos}" ${fontAttr} font-size="${fontSize}" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round">0</text>
+        <text x="${digitZeroX}" y="${yPos}" ${fontAttr} font-size="${fontSize}" fill="url(#appleTvGradient)">0</text>
         
-        <!-- One Background & Foreground Layers -->
-        <text x="${digitOneX + 12}" y="${yPos + 12}" ${fontStack} font-size="${fontSize}" fill="rgba(0,0,0,0.85)">1</text>
-        <text x="${digitOneX}" y="${yPos}" ${fontStack} font-size="${fontSize}" fill="#141414" stroke="#ffffff" stroke-width="16" stroke-linejoin="round">1</text>
+        <!-- One: Shadow, Stroke & Gradient Core -->
+        <text x="${digitOneX + 10}" y="${yPos + 10}" ${fontAttr} font-size="${fontSize}" fill="#000000" fill-opacity="0.8">1</text>
+        <text x="${digitOneX}" y="${yPos}" ${fontAttr} font-size="${fontSize}" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round">1</text>
+        <text x="${digitOneX}" y="${yPos}" ${fontAttr} font-size="${fontSize}" fill="url(#appleTvGradient)">1</text>
       `;
     } else {
       textMarkup = `
-        <text x="${xPos + 12}" y="${yPos + 12}" ${fontStack} font-size="${fontSize}" fill="rgba(0,0,0,0.85)">${rankStr}</text>
-        <text x="${xPos}" y="${yPos}" ${fontStack} font-size="${fontSize}" fill="#141414" stroke="#ffffff" stroke-width="16" stroke-linejoin="round">${rankStr}</text>
+        <!-- Drop Shadow -->
+        <text x="${xPos + 10}" y="${yPos + 10}" ${fontAttr} font-size="${fontSize}" fill="#000000" fill-opacity="0.8">${rankStr}</text>
+        <!-- White Stroke Outline -->
+        <text x="${xPos}" y="${yPos}" ${fontAttr} font-size="${fontSize}" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round">${rankStr}</text>
+        <!-- Gradient Fill Core -->
+        <text x="${xPos}" y="${yPos}" ${fontAttr} font-size="${fontSize}" fill="url(#appleTvGradient)">${rankStr}</text>
       `;
     }
 
     // Apple TV Style Genre Badge (Top Right)
-    const badgeHeight = Math.round(height * 0.07);
-    const fontSizeBadge = Math.round(badgeHeight * 0.52);
+    const badgeHeight = Math.round(height * 0.08);
+    const fontSizeBadge = Math.round(badgeHeight * 0.48);
     const charWidthEst = fontSizeBadge * 0.65; 
-    const badgeWidth = Math.max(125, genreBadgeText.length * charWidthEst + 44);
+    const badgeWidth = Math.max(130, genreBadgeText.length * charWidthEst + 48);
     
     const badgeX = width - badgeWidth - Math.round(width * 0.03);
     const badgeY = Math.round(height * 0.04);
@@ -284,26 +288,34 @@ app.get("/api/poster", async (req, res) => {
 
     const badgeMarkup = `
       <g>
-        <!-- tvOS Frosted Glass Pill -->
-        <rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${Math.round(badgeHeight/2)}" ry="${Math.round(badgeHeight/2)}" fill="rgba(20, 20, 25, 0.72)" stroke="rgba(255,255,255,0.45)" stroke-width="1.5" />
-        <text x="${textX}" y="${textY}" font-family="DejaVu Sans, Liberation Sans, sans-serif" font-weight="bold" font-size="${fontSizeBadge}" fill="#ffffff" text-anchor="middle" letter-spacing="1.5">${genreBadgeText}</text>
+        <!-- Frosted Glass Pill Background -->
+        <rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${Math.round(badgeHeight/2)}" ry="${Math.round(badgeHeight/2)}" fill="rgba(25, 25, 32, 0.75)" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" />
+        <text x="${textX}" y="${textY}" font-family="sans-serif" font-weight="bold" font-size="${fontSizeBadge}" fill="#ffffff" text-anchor="middle" letter-spacing="1.5">${genreBadgeText}</text>
       </g>
     `;
 
     const svgOverlay = Buffer.from(`
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <linearGradient id="netflixGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <linearGradient id="vignetteGradient" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stop-color="#000000" stop-opacity="0.88" />
             <stop offset="35%" stop-color="#000000" stop-opacity="0.45" />
             <stop offset="70%" stop-color="#000000" stop-opacity="0.0" />
           </linearGradient>
+
+          <!-- Apple TV Style Metallic Gradient Core -->
+          <linearGradient id="appleTvGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#FFFFFF" />
+            <stop offset="45%" stop-color="#E2E8F0" />
+            <stop offset="55%" stop-color="#CBD5E1" />
+            <stop offset="100%" stop-color="#94A3B8" />
+          </linearGradient>
         </defs>
 
-        <!-- Vignette Shadow -->
-        <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#netflixGradient)" />
+        <!-- Vignette Shadow Layer -->
+        <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#vignetteGradient)" />
 
-        <!-- Cinematic Numbers -->
+        <!-- Gradient Numbers with Drop Shadows -->
         ${textMarkup}
 
         <!-- Apple TV Genre Badge -->
