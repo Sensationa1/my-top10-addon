@@ -39,14 +39,14 @@ const MANIFEST = {
 };
 
 // Pure vector rounded-block digits — no font dependency, renders identically everywhere.
-// Each digit is built from 7 segments (like a scoreboard display) inside a 60x100 box.
-const SEG = { W: 60, H: 100, T: 13, R: 4 };
+// Each digit is 7 segments (scoreboard style) inside a 60x100 box.
+const SEG = { W: 60, H: 100, T: 13, R: 5 };
 
 function seg(x, y, w, h) {
   return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${SEG.R}"/>`;
 }
 
-function digitSegments(d) {
+function digitBody(d) {
   const { W, H, T } = SEG;
   const midY = (H - T) / 2;
   const vH = midY - T;
@@ -77,26 +77,42 @@ function digitSegments(d) {
   return (map[d] || map["1"]).map((k) => parts[k]).join("");
 }
 
+// Halo trick: draw the digit body twice — a slightly enlarged solid-white copy
+// behind, then the normal-size dark copy on top. This produces a clean thick
+// outline around the WHOLE numeral silhouette, with no per-segment stroke
+// artifacts (stroking each tiny rect individually caused segments to balloon
+// and merge into unrecognizable blobs — this avoids that entirely).
+function digitWithHalo(d) {
+  const body = digitBody(d);
+  const cx = SEG.W / 2;
+  const cy = SEG.H / 2;
+  const haloScale = 1.22;
+
+  return `
+    <g transform="translate(${cx},${cy}) scale(${haloScale}) translate(${-cx},${-cy})" fill="#ffffff">${body}</g>
+    <g fill="#111114">${body}</g>
+  `;
+}
+
 function generateNetflixNumberSvg(rank) {
   const digits = String(rank).split("");
-  const gap = 10;
+  const gap = 14;
   let x = 0;
-  let shadow = "", stroke = "", core = "";
+  let shadow = "", digitsMarkup = "";
 
   digits.forEach((d) => {
-    const inner = digitSegments(d);
-    shadow += `<g transform="translate(${x + 8},8)" fill="#000" opacity="0.55">${inner}</g>`;
-    stroke += `<g transform="translate(${x},0)" fill="#fff" stroke="#fff" stroke-width="16" stroke-linejoin="round">${inner}</g>`;
-    core   += `<g transform="translate(${x},0)" fill="#111">${inner}</g>`;
+    const body = digitBody(d);
+    shadow += `<g transform="translate(${x + 7},7)" fill="#000" opacity="0.45">${body}</g>`;
+    digitsMarkup += `<g transform="translate(${x},0)">${digitWithHalo(d)}</g>`;
     x += SEG.W + gap;
   });
 
-  return `<g>${shadow}${stroke}${core}</g>`;
+  return `<g>${shadow}${digitsMarkup}</g>`;
 }
 
 function numberGroupWidth(rank) {
   const digits = String(rank).length;
-  return digits * SEG.W + (digits - 1) * 10;
+  return digits * SEG.W + (digits - 1) * 14;
 }
 
 function getHostUrl(req) {
