@@ -39,50 +39,46 @@ const MANIFEST = {
 };
 
 // --------------------------------------------------------------------------------
-// DEDICATED HIGH-PRECISION NETFLIX NUMBER VECTORS (RANKS 1 - 10)
-// Guarantees pixel-perfect rendering with zero OS/font dependencies.
+// HIGH-PRECISION CONDENSED TYPOGRAPHY VECTOR PATHS (Base ViewBox Height: 205)
+// Zero font dependencies. Guarantees 100% sharp rendering across all environments.
 // --------------------------------------------------------------------------------
-const RANK_VECTORS = {
-  "1": `<path d="M 35 30 L 75 10 L 105 10 L 105 230 L 55 230 L 55 195 L 70 195 L 70 45 L 35 60 Z"/>`,
-  "2": `<path d="M 20 60 C 20 20, 50 10, 85 10 C 120 10, 145 30, 145 65 C 145 95, 120 125, 80 160 L 45 195 L 145 195 L 145 230 L 20 230 L 20 190 L 80 130 C 110 100, 110 80, 110 65 C 110 45, 95 38, 82 38 C 65 38, 55 50, 55 65 Z"/>`,
-  "3": `<path d="M 25 15 L 135 15 L 135 50 L 75 110 C 110 110, 140 128, 140 168 C 140 208, 112 235, 75 235 C 38 235, 20 210, 20 175 L 55 175 C 55 192, 65 202, 75 202 C 90 202, 102 190, 102 168 C 102 145, 88 135, 65 135 L 45 135 L 45 102 L 90 50 L 25 50 Z"/>`,
-  "4": `<path d="M 85 10 L 122 10 L 122 145 L 145 145 L 145 180 L 122 180 L 122 230 L 85 230 L 85 180 L 20 180 L 20 142 Z M 85 55 L 42 145 L 85 145 Z"/>`,
-  "5": `<path d="M 25 15 L 135 15 L 135 50 L 60 50 L 55 90 C 70 80, 88 78, 105 78 C 130 78, 145 95, 145 138 C 145 190, 120 235, 75 235 C 35 235, 20 205, 20 170 L 55 170 C 55 190, 65 202, 75 202 C 92 202, 105 182, 105 138 C 105 108, 92 98, 72 98 C 55 98, 42 108, 35 118 L 22 108 Z"/>`,
-  "6": `<path d="M 75 10 C 35 10, 20 45, 20 120 C 20 195, 35 235, 75 235 C 115 235, 140 200, 140 148 C 140 100, 115 80, 78 80 C 58 80, 42 90, 32 105 C 32 52, 50 42, 75 42 L 115 42 L 115 10 Z M 75 112 C 98 112, 102 128, 102 148 C 102 175, 92 202, 75 202 C 58 202, 48 175, 48 148 C 48 128, 58 112, 75 112 Z"/>`,
-  "7": `<path d="M 20 15 L 138 15 L 138 48 L 70 230 L 32 230 L 95 48 L 20 48 Z"/>`,
-  "8": `<path d="M 75 10 C 42 10, 22 30, 22 62 C 22 88, 42 102, 60 110 C 35 118, 18 138, 18 172 C 18 208, 42 235, 75 235 C 108 235, 132 208, 132 172 C 132 138, 115 118, 90 110 C 108 102, 128 88, 128 62 C 128 30, 108 10, 75 10 Z M 75 42 C 90 42, 92 52, 92 64 C 92 78, 82 88, 75 88 C 68 88, 58 78, 58 64 C 58 52, 60 42, 75 42 Z M 75 118 C 92 118, 96 132, 96 172 C 96 198, 88 205, 75 205 C 62 205, 54 198, 54 172 C 54 132, 58 118, 75 118 Z"/>`,
-  "9": `<path d="M 75 10 C 35 10, 18 45, 18 95 C 18 148, 42 165, 75 165 C 95 165, 110 155, 120 140 C 120 192, 102 202, 75 202 L 40 202 L 40 235 L 75 235 C 118 235, 140 195, 140 120 C 140 45, 115 10, 75 10 Z M 75 42 C 92 42, 102 55, 102 95 C 102 120, 95 135, 75 135 C 58 135, 48 120, 48 95 C 48 55, 58 42, 75 42 Z"/>`,
-  "10": `
-    <g transform="translate(0, 0)">
-      <path d="M 15 30 L 45 10 L 70 10 L 70 230 L 30 230 L 30 195 L 42 195 L 42 45 L 15 60 Z"/>
-    </g>
-    <g transform="translate(50, 0)">
-      <path d="M 70 10 C 28 10, 12 45, 12 120 C 12 195, 28 235, 70 235 C 112 235, 128 195, 128 120 C 128 45, 112 10, 70 10 Z M 70 42 C 88 42, 90 68, 90 120 C 90 172, 88 202, 70 202 C 52 202, 50 172, 50 120 C 50 68, 52 42, 70 42 Z"/>
-    </g>
-  `
+const GLYPHS = {
+  "1": { w: 75, path: "M 15 45 L 42 10 L 72 10 L 72 200 L 25 200 L 25 168 L 42 168 L 42 45 Z" },
+  "2": { w: 105, path: "M 10 50 C 10 15 35 5 62 5 C 90 5 105 25 105 55 C 105 85 80 115 48 148 L 22 172 L 105 172 L 105 200 L 10 200 L 10 170 L 52 125 C 75 100 75 80 75 58 C 75 35 62 28 50 28 C 38 28 32 38 32 50 Z" },
+  "3": { w: 105, path: "M 15 10 L 105 10 L 105 42 L 55 95 C 80 95 105 110 105 148 C 105 182 82 205 50 205 C 20 205 10 182 10 150 L 38 150 C 38 168 44 178 52 178 C 62 178 72 168 72 148 C 72 128 62 118 45 118 L 30 118 L 30 90 L 68 42 L 15 42 Z" },
+  "4": { w: 115, path: "M 62 10 L 92 10 L 92 135 L 115 135 L 115 165 L 92 165 L 92 200 L 62 200 L 62 165 L 10 165 L 10 130 Z M 62 48 L 30 135 L 62 135 Z" },
+  "5": { w: 115, path: "M 18 10 L 105 10 L 105 40 L 45 40 L 40 75 C 55 65 72 62 88 62 C 108 62 120 78 120 115 C 120 162 98 205 55 205 C 22 205 10 178 10 142 L 38 142 C 38 165 45 178 55 178 C 68 178 88 160 88 115 C 88 88 78 78 58 78 C 45 78 35 85 30 95 L 18 88 Z" },
+  "6": { w: 110, path: "M 60 10 C 28 10 12 40 12 110 C 12 175 28 205 60 205 C 92 205 110 178 110 132 C 110 88 90 70 60 70 C 42 70 28 80 22 95 C 22 50 38 38 60 38 L 92 38 L 92 10 Z M 60 98 C 76 98 80 112 80 132 C 80 158 72 178 60 178 C 48 178 40 158 40 132 C 40 112 44 98 60 98 Z" },
+  "7": { w: 105, path: "M 12 10 L 105 10 L 105 38 L 52 200 L 20 200 L 72 38 L 12 38 Z" },
+  "8": { w: 110, path: "M 58 10 C 30 10 15 28 15 55 C 15 78 30 92 45 98 C 28 105 12 122 12 152 C 12 185 30 205 58 205 C 86 205 104 185 104 152 C 104 122 88 105 71 98 C 86 92 101 78 101 55 C 101 28 86 10 58 10 Z M 58 35 C 68 35 72 45 72 55 C 72 68 65 75 58 75 C 51 75 44 68 44 55 C 44 45 48 35 58 35 Z M 58 98 C 68 98 74 112 74 152 C 74 175 68 180 58 180 C 48 180 42 175 42 152 C 42 112 48 98 58 98 Z" },
+  "9": { w: 115, path: "M 58 10 C 28 10 10 38 10 82 C 10 128 28 145 58 145 C 74 145 88 135 94 122 C 94 165 80 178 58 178 L 28 178 L 28 205 L 58 205 C 92 205 120 175 120 108 C 120 40 92 10 58 10 Z M 58 35 C 72 35 88 48 88 82 C 88 105 80 120 58 120 C 42 120 38 105 38 82 C 38 48 44 35 58 35 Z" },
+  "0": { w: 100, path: "M 55 10 C 22 10 10 40 10 105 C 10 170 22 200 55 200 C 88 200 100 170 100 105 C 100 40 88 10 55 10 Z M 55 38 C 68 38 70 60 70 105 C 70 150 68 172 55 172 C 42 172 40 150 40 105 C 40 60 42 38 55 38 Z" }
 };
 
-function buildNetflixNumberOverlay(rank) {
-  const pathData = RANK_VECTORS[String(rank)] || RANK_VECTORS["1"];
-  
-  return `
-    <g transform="translate(20, 120)">
-      <!-- Drop Shadow -->
-      <g fill="#000000" opacity="0.85" transform="translate(8, 8)">
-        ${pathData}
-      </g>
+function generateNetflixNumberSvg(rank) {
+  const strRank = String(rank);
+  let paths = [];
 
-      <!-- White Outer Border -->
-      <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round">
-        ${pathData}
-      </g>
+  if (strRank === "10") {
+    // Tight overlap spacing for rank 10
+    paths.push({ d: GLYPHS["1"].path, x: 0 });
+    paths.push({ d: GLYPHS["0"].path, x: 55 });
+  } else {
+    const digitData = GLYPHS[strRank] || GLYPHS["1"];
+    paths.push({ d: digitData.path, x: 0 });
+  }
 
-      <!-- Dark Inner Core -->
-      <g fill="#141414">
-        ${pathData}
-      </g>
-    </g>
-  `;
+  let shadowMarkup = "";
+  let borderMarkup = "";
+  let coreMarkup = "";
+
+  paths.forEach((p) => {
+    shadowMarkup += `<path d="${p.d}" transform="translate(${p.x + 8}, 8)" fill="#000000" opacity="0.85"/>`;
+    borderMarkup += `<path d="${p.d}" transform="translate(${p.x}, 0)" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="12" stroke-linejoin="round"/>`;
+    coreMarkup += `<path d="${p.d}" transform="translate(${p.x}, 0)" fill="#111111"/>`;
+  });
+
+  return `<g>${shadowMarkup}${borderMarkup}${coreMarkup}</g>`;
 }
 
 function getHostUrl(req) {
@@ -207,8 +203,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         genres = item.genres;
       }
 
-      // v=20 flushes previous cached images completely
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=20`;
+      // v=21 forces complete cache invalidation
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=21`;
 
       return {
         id: idToUse,
@@ -277,7 +273,13 @@ app.get("/api/poster", async (req, res) => {
       : "";
 
     const numRank = parseInt(rank, 10) || 1;
-    const numberSvgOverlay = buildNetflixNumberOverlay(numRank);
+    const numberSvgGroup = generateNetflixNumberSvg(numRank);
+
+    // Number takes up 58% of poster height, anchored to bottom-left
+    const desiredNumHeight = Math.round(height * 0.58);
+    const scale = (desiredNumHeight / 205).toFixed(3);
+    const xPos = Math.round(width * 0.03);
+    const yPos = height - desiredNumHeight - Math.round(height * 0.03);
 
     const pillWidth = Math.max(110, formattedGenres.length * 12 + 32);
     const pillXPos = width - pillWidth - Math.round(width * 0.04);
@@ -293,13 +295,15 @@ app.get("/api/poster", async (req, res) => {
           </linearGradient>
         </defs>
 
-        <!-- Left-Side Gradient Vignette -->
+        <!-- Left Vignette -->
         <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#netflixGradient)" />
 
-        <!-- Rendered Vector Number -->
-        ${numberSvgOverlay}
+        <!-- Netflix Vector Rank Number -->
+        <g transform="translate(${xPos}, ${yPos}) scale(${scale})">
+          ${numberSvgGroup}
+        </g>
 
-        <!-- Top-Right Genre Badge -->
+        <!-- Top-Right Genre Pill -->
         ${
           formattedGenres
             ? `
