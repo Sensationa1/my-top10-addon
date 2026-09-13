@@ -1,12 +1,13 @@
 {
   "name": "my-top10-addon",
-  "version": "1.0.0",
-  "description": "Stremio Top 10 Trending Movies and Shows Addon with Apple TV style numbers and landscape posters",
+  "version": "1.4.0",
+  "description": "Stremio Top 10 Trending with Apple TV-style Inter fonts via resvg",
   "main": "api/index.js",
   "scripts": {
     "start": "node api/index.js"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "axios": "^1.7.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
