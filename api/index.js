@@ -7,17 +7,15 @@ require("dotenv").config();
 const app = express();
 app.use(cors());
 
-// Snoak MDBList sources (public JSON endpoints)
 const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-// Cache-bust version — bump whenever poster design changes
-const POSTER_CACHE_VERSION = "55";
+const POSTER_CACHE_VERSION = "70";
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.2.0",
+  version: "1.3.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with cinematic Apple TV-style rank numbers and frosted genre badges on landscape posters.",
@@ -42,37 +40,14 @@ const MANIFEST = {
   idPrefixes: ["tt"],
 };
 
-// ---------------------------------------------------------------------------
-// TMDB genre ID → uppercase name
-// ---------------------------------------------------------------------------
 const GENRE_MAP = {
-  28: "ACTION",
-  12: "ADVENTURE",
-  16: "ANIMATION",
-  35: "COMEDY",
-  80: "CRIME",
-  99: "DOCUMENTARY",
-  18: "DRAMA",
-  10751: "FAMILY",
-  14: "FANTASY",
-  36: "HISTORY",
-  27: "HORROR",
-  10402: "MUSIC",
-  9648: "MYSTERY",
-  10749: "ROMANCE",
-  878: "SCI-FI",
-  10770: "TV MOVIE",
-  53: "THRILLER",
-  10752: "WAR",
-  37: "WESTERN",
-  10759: "ACTION",
-  10762: "KIDS",
-  10763: "NEWS",
-  10764: "REALITY",
-  10765: "SCI-FI",
-  10766: "SOAP",
-  10767: "TALK",
-  10768: "WAR",
+  28: "ACTION", 12: "ADVENTURE", 16: "ANIMATION", 35: "COMEDY",
+  80: "CRIME", 99: "DOCUMENTARY", 18: "DRAMA", 10751: "FAMILY",
+  14: "FANTASY", 36: "HISTORY", 27: "HORROR", 10402: "MUSIC",
+  9648: "MYSTERY", 10749: "ROMANCE", 878: "SCI-FI", 10770: "TV MOVIE",
+  53: "THRILLER", 10752: "WAR", 37: "WESTERN",
+  10759: "ACTION", 10762: "KIDS", 10763: "NEWS", 10764: "REALITY",
+  10765: "SCI-FI", 10766: "SOAP", 10767: "TALK", 10768: "WAR",
 };
 
 function getHostUrl(req) {
@@ -81,200 +56,171 @@ function getHostUrl(req) {
   return `${protocol}://${host}`;
 }
 
-// ---------------------------------------------------------------------------
-// PURE VECTOR DIGITS — no fonts, works on every Vercel / librsvg image.
-// Each digit is a filled path inside a 100×160 unit box.
-// Styled with metallic gradient + thick white outline + shadow.
-// ---------------------------------------------------------------------------
-const DIGIT_W = 100;
-const DIGIT_H = 160;
+// Bold digit paths (unit box ~ 80 × 120) — no fonts
+const DW = 80;
+const DH = 120;
 
-// Bold rounded digit paths (viewBox 0 0 100 160)
-const DIGIT_PATHS = {
-  "0": "M50 8 C22 8 8 28 8 80 C8 132 22 152 50 152 C78 152 92 132 92 80 C92 28 78 8 50 8 Z M50 28 C68 28 72 42 72 80 C72 118 68 132 50 132 C32 132 28 118 28 80 C28 42 32 28 50 28 Z",
-  "1": "M58 12 L58 140 L78 140 L78 152 L22 152 L22 140 L38 140 L38 36 L22 48 L22 28 Z",
-  "2": "M12 48 C12 28 28 12 50 12 C72 12 88 26 88 48 C88 66 78 78 58 92 L28 112 L28 140 L88 140 L88 152 L12 152 L12 128 L52 98 C66 88 72 78 72 52 C72 38 64 28 50 28 C36 28 28 36 28 48 Z",
-  "3": "M18 28 C22 16 34 12 50 12 C72 12 88 26 88 48 C88 64 78 74 64 78 C78 82 90 94 90 114 C90 138 72 152 48 152 C28 152 14 142 10 126 L28 118 C30 128 38 136 50 136 C64 136 72 126 72 114 C72 100 62 92 48 92 L36 92 L36 76 L50 76 C64 76 72 68 72 54 C72 40 64 28 50 28 C38 28 30 34 28 44 Z",
-  "4": "M62 12 L62 100 L88 100 L88 116 L62 116 L62 152 L42 152 L42 116 L10 116 L10 98 L42 12 Z M42 100 L42 36 L18 100 Z",
-  "5": "M78 12 L22 12 L18 88 L48 88 C66 88 78 100 78 118 C78 136 66 148 48 148 C30 148 20 138 18 124 L36 118 C38 128 42 132 48 132 C56 132 60 126 60 118 C60 110 56 104 48 104 L12 104 L18 12 Z",
-  "6": "M50 8 C28 8 12 28 12 80 C12 132 28 152 52 152 C76 152 90 136 90 112 C90 90 76 76 56 76 L40 76 C36 68 34 56 34 46 C34 32 40 24 52 24 C62 24 68 30 70 40 L88 34 C84 16 70 8 50 8 Z M52 92 C66 92 74 102 74 114 C74 128 66 136 52 136 C38 136 30 126 30 112 C30 100 38 92 52 92 Z",
-  "7": "M12 12 L88 12 L88 32 L48 152 L26 152 L62 36 L12 36 Z",
-  "8": "M50 8 C28 8 14 22 14 44 C14 60 24 72 38 78 C24 84 12 98 12 118 C12 140 28 152 50 152 C72 152 88 140 88 118 C88 98 76 84 62 78 C76 72 86 60 86 44 C86 22 72 8 50 8 Z M50 24 C62 24 70 32 70 44 C70 56 62 64 50 64 C38 64 30 56 30 44 C30 32 38 24 50 24 Z M50 92 C64 92 72 102 72 116 C72 130 64 140 50 140 C36 140 28 130 28 116 C28 102 36 92 50 92 Z",
-  "9": "M50 8 C26 8 12 24 12 48 C12 70 26 84 46 84 L60 84 C64 92 66 104 66 114 C66 128 60 136 48 136 C38 136 32 130 30 120 L12 126 C16 144 30 152 50 152 C72 152 88 132 88 80 C88 28 72 8 50 8 Z M50 24 C62 24 70 34 70 48 C70 62 62 72 48 72 C34 72 26 62 26 48 C26 34 34 24 50 24 Z",
+const DIGITS = {
+  "0": {
+    outer: "M40 6C18 6 6 26 6 60C6 94 18 114 40 114C62 114 74 94 74 60C74 26 62 6 40 6Z",
+    hole:  "M40 22C52 22 58 34 58 60C58 86 52 98 40 98C28 98 22 86 22 60C22 34 28 22 40 22Z",
+  },
+  "1": {
+    outer: "M48 8L48 104H64V114H16V104H32V28L18 36V20L48 8Z",
+  },
+  "2": {
+    outer: "M10 36C10 18 24 8 42 8C60 8 72 20 72 38C72 54 62 64 46 76L26 92V104H70V114H10V88L42 62C54 52 58 46 58 38C58 28 52 22 42 22C32 22 26 28 26 36H10Z",
+  },
+  "3": {
+    outer: "M14 24C18 14 28 8 42 8C58 8 72 20 72 38C72 50 64 58 52 62C66 66 76 76 76 92C76 110 60 114 42 114C24 114 12 104 8 90L24 84C26 94 34 100 42 100C54 100 60 92 60 84C60 74 52 68 40 68H30V56H42C52 56 58 50 58 40C58 30 52 22 42 22C32 22 26 28 24 36L14 30Z",
+  },
+  "4": {
+    outer: "M52 8L52 76H72V90H52V114H36V90H8V74L36 8H52ZM36 76V30L16 76H36Z",
+  },
+  "5": {
+    outer: "M66 8H16L12 70H42C56 70 66 80 66 94C66 108 56 114 42 114C28 114 18 106 16 94L32 88C34 96 38 100 42 100C48 100 52 96 52 90C52 84 48 80 42 80H10L16 8H66Z",
+  },
+  "6": {
+    outer: "M42 6C22 6 8 26 8 60C8 94 22 114 44 114C64 114 76 100 76 82C76 64 64 54 48 54H34C32 46 30 38 30 32C30 22 36 16 44 16C52 16 58 22 60 30L76 24C72 10 60 6 42 6Z",
+    hole:  "M44 68C54 68 60 76 60 86C60 96 54 102 44 102C34 102 28 96 28 86C28 76 34 68 44 68Z",
+  },
+  "7": {
+    outer: "M10 8H70V26L36 114H18L50 26H10V8Z",
+  },
+  "8": {
+    outer: "M40 6C22 6 10 18 10 34C10 46 18 56 30 60C16 64 6 76 6 92C6 110 20 114 40 114C60 114 74 110 74 92C74 76 64 64 50 60C62 56 70 46 70 34C70 18 58 6 40 6Z",
+    hole1: "M40 18C50 18 56 24 56 34C56 44 50 50 40 50C30 50 24 44 24 34C24 24 30 18 40 18Z",
+    hole2: "M40 72C52 72 58 80 58 90C58 100 52 106 40 106C28 106 22 100 22 90C22 80 28 72 40 72Z",
+  },
+  "9": {
+    outer: "M40 6C20 6 8 22 8 42C8 60 20 72 38 72H50C52 80 54 88 54 96C54 106 48 110 40 110C32 110 28 104 26 96L10 102C14 114 26 118 40 118C60 118 74 102 74 60C74 22 60 6 40 6Z",
+    hole:  "M40 18C50 18 56 26 56 40C56 54 50 60 40 60C30 60 24 54 24 40C24 26 30 18 40 18Z",
+  },
 };
 
-function digitPath(d) {
-  return DIGIT_PATHS[d] || DIGIT_PATHS["1"];
-}
-
-/**
- * Build pure-vector rank markup (no <text>, no fonts).
- * Metallic fill + thick white outline + deep shadow.
- * Rank 10 uses tight horizontal overlap (spacing ≈ 0.40 × digit width).
- */
-function generateRankSvg(rank) {
+function generateRankGroup(rank) {
   const r = String(rank);
   const isTen = r === "10";
-  // Tight overlap for 10: advance only 40% of a full digit width after "1"
-  const gap = isTen ? DIGIT_W * 0.40 : DIGIT_W * 0.12;
+  const gap = isTen ? DW * 0.38 : DW * 0.10;
 
   let x = 0;
-  let shadowPaths = "";
-  let outlinePaths = "";
-  let fillPaths = "";
+  const parts = [];
 
   for (let i = 0; i < r.length; i++) {
     const ch = r[i];
-    const path = digitPath(ch);
-    // Shadow (offset down-right, dark)
-    shadowPaths += `<path transform="translate(${x + 10},${14})" d="${path}" fill="#000000" opacity="0.55"/>`;
-    // Thick white outline (slightly scaled up)
-    outlinePaths += `<path transform="translate(${x},0)" d="${path}" fill="#FFFFFF"/>`;
-    // Metallic fill on top
-    fillPaths += `<path transform="translate(${x},0)" d="${path}" fill="url(#metallicGrad)"/>`;
+    const d = DIGITS[ch] || DIGITS["1"];
 
-    // Advance — "1" is narrower
-    const advance = ch === "1" ? DIGIT_W * 0.62 : DIGIT_W;
-    x += advance + gap;
+    let combined = d.outer || "";
+    if (d.hole) combined += " " + d.hole;
+    if (d.hole1) combined += " " + d.hole1;
+    if (d.hole2) combined += " " + d.hole2;
+
+    // shadow
+    parts.push(
+      `<path transform="translate(${x + 8},${10})" d="${combined}" fill="#000000" fill-rule="evenodd" opacity="0.50"/>`
+    );
+    // white outline
+    parts.push(
+      `<path transform="translate(${x},0)" d="${combined}" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd"/>`
+    );
+    // metallic fill
+    parts.push(
+      `<path transform="translate(${x},0)" d="${combined}" fill="url(#metal)" fill-rule="evenodd"/>`
+    );
+
+    const adv = ch === "1" ? DW * 0.58 : DW;
+    x += adv + gap;
   }
 
-  // Outline is drawn by scaling the whole group slightly larger behind the fill
-  // Using a second pass with stroke is unreliable in some librsvg builds,
-  // so we draw a white enlarged silhouette then the gradient fill on top.
-  return {
-    unitW: x,
-    unitH: DIGIT_H,
-    markup: `
-      <defs>
-        <linearGradient id="metallicGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stop-color="#FFFFFF"/>
-          <stop offset="40%" stop-color="#E8EEF4"/>
-          <stop offset="100%" stop-color="#94A3B8"/>
-        </linearGradient>
-      </defs>
-      <!-- soft shadow -->
-      <g>${shadowPaths}</g>
-      <!-- white outline halo (scaled 1.14 around center of each digit is approximated by a second larger draw) -->
-      <g transform="translate(-7,-7) scale(1.14)" opacity="1">${outlinePaths.replace(/fill="#FFFFFF"/g, 'fill="#FFFFFF"')}</g>
-      <!-- metallic body -->
-      <g>${fillPaths}</g>
-    `,
-  };
+  return { width: x, height: DH, markup: parts.join("\n") };
 }
 
-// ---------------------------------------------------------------------------
-// Frosted genre badge — uses ONLY shapes + a minimal 5x7 bitmap font
-// so no system font is required on Vercel.
-// ---------------------------------------------------------------------------
-const BITMAP_FONT = {
-  // 5×7 uppercase, 1 = pixel on. Each row is a 5-bit mask left-to-right.
-  A: [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-  B: [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
-  C: [0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111],
-  D: [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
-  E: [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
-  F: [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000],
-  G: [0b01111, 0b10000, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111],
-  H: [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-  I: [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111],
-  J: [0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100],
-  K: [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
-  L: [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
-  M: [0b10001, 0b11011, 0b10101, 0b10001, 0b10001, 0b10001, 0b10001],
-  N: [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
-  O: [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-  P: [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
-  Q: [0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101],
-  R: [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
-  S: [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
-  T: [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
-  U: [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-  V: [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
-  W: [0b10001, 0b10001, 0b10001, 0b10001, 0b10101, 0b11011, 0b10001],
-  X: [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
-  Y: [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
-  Z: [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
-  "-": [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
-  " ": [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
-  "&": [0b01100, 0b10010, 0b10100, 0b01000, 0b10101, 0b10010, 0b01101],
+// 7×9 bitmap font for genre (no system fonts needed)
+const FONT = {
+  A: ["01110","10001","10001","11111","10001","10001","10001","10001","00000"],
+  B: ["11110","10001","10001","11110","10001","10001","10001","11110","00000"],
+  C: ["01111","10000","10000","10000","10000","10000","10000","01111","00000"],
+  D: ["11110","10001","10001","10001","10001","10001","10001","11110","00000"],
+  E: ["11111","10000","10000","11110","10000","10000","10000","11111","00000"],
+  F: ["11111","10000","10000","11110","10000","10000","10000","10000","00000"],
+  G: ["01111","10000","10000","10000","10011","10001","10001","01111","00000"],
+  H: ["10001","10001","10001","11111","10001","10001","10001","10001","00000"],
+  I: ["11111","00100","00100","00100","00100","00100","00100","11111","00000"],
+  J: ["00111","00010","00010","00010","00010","00010","10010","01100","00000"],
+  K: ["10001","10010","10100","11000","10100","10010","10001","10001","00000"],
+  L: ["10000","10000","10000","10000","10000","10000","10000","11111","00000"],
+  M: ["10001","11011","10101","10001","10001","10001","10001","10001","00000"],
+  N: ["10001","11001","10101","10011","10001","10001","10001","10001","00000"],
+  O: ["01110","10001","10001","10001","10001","10001","10001","01110","00000"],
+  P: ["11110","10001","10001","11110","10000","10000","10000","10000","00000"],
+  Q: ["01110","10001","10001","10001","10001","10101","10010","01101","00000"],
+  R: ["11110","10001","10001","11110","10100","10010","10001","10001","00000"],
+  S: ["01111","10000","10000","01110","00001","00001","00001","11110","00000"],
+  T: ["11111","00100","00100","00100","00100","00100","00100","00100","00000"],
+  U: ["10001","10001","10001","10001","10001","10001","10001","01110","00000"],
+  V: ["10001","10001","10001","10001","10001","10001","01010","00100","00000"],
+  W: ["10001","10001","10001","10001","10001","10101","11011","10001","00000"],
+  X: ["10001","10001","01010","00100","00100","01010","10001","10001","00000"],
+  Y: ["10001","10001","01010","00100","00100","00100","00100","00100","00000"],
+  Z: ["11111","00001","00010","00100","01000","10000","10000","11111","00000"],
+  "-":["00000","00000","00000","11111","00000","00000","00000","00000","00000"],
+  " ":["00000","00000","00000","00000","00000","00000","00000","00000","00000"],
+  "&":["01100","10010","10100","01000","10101","10010","10010","01101","00000"],
 };
 
-function bitmapTextPaths(text, pixelSize) {
-  const gap = pixelSize; // 1px gap between letters
+function renderBitmapText(text, px) {
   let x = 0;
-  let paths = "";
-  for (const ch of text.toUpperCase()) {
-    const rows = BITMAP_FONT[ch] || BITMAP_FONT[" "];
-    for (let row = 0; row < 7; row++) {
-      for (let col = 0; col < 5; col++) {
-        if (rows[row] & (1 << (4 - col))) {
-          const px = x + col * pixelSize;
-          const py = row * pixelSize;
-          paths += `<rect x="${px}" y="${py}" width="${pixelSize}" height="${pixelSize}" fill="#FFFFFF"/>`;
+  const gap = Math.max(1, Math.round(px * 0.35));
+  let rects = "";
+  for (const raw of text.toUpperCase()) {
+    const rows = FONT[raw] || FONT[" "];
+    for (let r = 0; r < rows.length; r++) {
+      for (let c = 0; c < 5; c++) {
+        if (rows[r][c] === "1") {
+          rects += `<rect x="${x + c * px}" y="${r * px}" width="${px}" height="${px}" fill="#fff"/>`;
         }
       }
     }
-    x += 5 * pixelSize + gap;
+    x += 5 * px + gap;
   }
-  return { width: x - gap, height: 7 * pixelSize, paths };
+  return { w: Math.max(0, x - gap), h: 9 * px, rects };
 }
 
-function generateGenreBadge(genreText, width, height) {
-  if (!genreText) return "";
-
-  const pixelSize = Math.max(2, Math.round(height * 0.007));
-  const { width: textW, height: textH, paths } = bitmapTextPaths(genreText, pixelSize);
-
-  const paddingX = Math.round(pixelSize * 4);
-  const paddingY = Math.round(pixelSize * 2.5);
-  const badgeW = textW + paddingX * 2;
-  const badgeH = textH + paddingY * 2;
-  const rx = Math.round(badgeH / 2);
-
-  const cx = Math.round(width / 2);
-  const cy = height - Math.round(height * 0.08);
-  const bx = cx - Math.round(badgeW / 2);
-  const by = cy - Math.round(badgeH / 2);
-  const tx = bx + paddingX;
-  const ty = by + paddingY;
+function generateGenreBadge(genre, W, H) {
+  if (!genre) return "";
+  const px = Math.max(3, Math.round(H * 0.0085));
+  const { w: tw, h: th, rects } = renderBitmapText(genre, px);
+  const padX = Math.round(px * 3.2);
+  const padY = Math.round(px * 2.2);
+  const bw = tw + padX * 2;
+  const bh = th + padY * 2;
+  const rx = Math.round(bh / 2);
+  const cx = Math.round(W / 2);
+  const cy = H - Math.round(H * 0.075);
+  const bx = cx - Math.round(bw / 2);
+  const by = cy - Math.round(bh / 2);
 
   return `
-    <!-- soft shadow under badge -->
-    <rect x="${bx + 2}" y="${by + 3}" width="${badgeW}" height="${badgeH}"
-          rx="${rx}" ry="${rx}" fill="#000000" opacity="0.45"/>
-    <rect x="${bx}" y="${by}" width="${badgeW}" height="${badgeH}"
-          rx="${rx}" ry="${rx}"
-          fill="rgba(25, 25, 32, 0.78)"
-          stroke="rgba(255,255,255,0.45)"
-          stroke-width="1.5"/>
-    <g transform="translate(${tx},${ty})">${paths}</g>
+    <rect x="${bx + 3}" y="${by + 4}" width="${bw}" height="${bh}" rx="${rx}" ry="${rx}" fill="#000" opacity="0.4"/>
+    <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="${rx}" ry="${rx}"
+          fill="rgba(22,22,28,0.82)" stroke="rgba(255,255,255,0.42)" stroke-width="1.5"/>
+    <g transform="translate(${bx + padX},${by + padY})">${rects}</g>
   `;
 }
 
-// ---------------------------------------------------------------------------
-// TMDB helpers
-// ---------------------------------------------------------------------------
 async function getTmdbData(imdbId, type) {
   const apiKey = process.env.TMDB_API_KEY;
   if (!apiKey || !imdbId || !imdbId.startsWith("tt")) {
     return { backdropUrl: null, genre: null };
   }
-
   try {
-    const findRes = await axios.get(
-      `https://api.themoviedb.org/3/find/${imdbId}`,
-      {
-        params: { api_key: apiKey, external_source: "imdb_id" },
-        timeout: 4500,
-      }
-    );
-
+    const findRes = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
+      params: { api_key: apiKey, external_source: "imdb_id" },
+      timeout: 4500,
+    });
     const isSeries = type === "series";
-    const results = isSeries
-      ? findRes.data.tv_results
-      : findRes.data.movie_results;
+    const results = isSeries ? findRes.data.tv_results : findRes.data.movie_results;
     const match = results && results[0];
-
     if (!match) return { backdropUrl: null, genre: null };
 
     const backdropUrl = match.backdrop_path
@@ -282,97 +228,74 @@ async function getTmdbData(imdbId, type) {
       : null;
 
     let genre = null;
-    if (Array.isArray(match.genre_ids) && match.genre_ids.length > 0) {
-      const primary = GENRE_MAP[match.genre_ids[0]];
-      if (primary) genre = primary;
+    if (Array.isArray(match.genre_ids) && match.genre_ids.length) {
+      genre = GENRE_MAP[match.genre_ids[0]] || null;
     }
-
     if (!genre && match.id) {
       try {
-        const detailPath = isSeries ? `tv/${match.id}` : `movie/${match.id}`;
-        const detailRes = await axios.get(
-          `https://api.themoviedb.org/3/${detailPath}`,
-          { params: { api_key: apiKey }, timeout: 4000 }
-        );
-        if (detailRes.data.genres && detailRes.data.genres[0]) {
-          genre = detailRes.data.genres[0].name.toUpperCase();
+        const path = isSeries ? `tv/${match.id}` : `movie/${match.id}`;
+        const det = await axios.get(`https://api.themoviedb.org/3/${path}`, {
+          params: { api_key: apiKey },
+          timeout: 4000,
+        });
+        if (det.data.genres && det.data.genres[0]) {
+          genre = det.data.genres[0].name.toUpperCase();
         }
       } catch (_) {}
     }
-
     return { backdropUrl, genre };
   } catch (err) {
-    console.error(`TMDB lookup error for ${imdbId}:`, err.message);
+    console.error(`TMDB ${imdbId}:`, err.message);
     return { backdropUrl: null, genre: null };
   }
 }
 
 async function fetchTrendingList(type) {
-  let rawItems = [];
+  let raw = [];
   const apiKey = process.env.TMDB_API_KEY;
 
   if (type === "movie") {
     try {
       const res = await axios.get(SNOAK_MOVIES_URL, { timeout: 6000 });
-      if (Array.isArray(res.data)) rawItems = res.data;
-    } catch (e) {
-      console.warn("MDBList movies failed, falling back to TMDB trending…");
+      if (Array.isArray(res.data)) raw = res.data;
+    } catch (_) {}
+    if (!raw.length && apiKey) {
+      const r = await axios.get(`https://api.themoviedb.org/3/trending/movie/day`, {
+        params: { api_key: apiKey }, timeout: 5000,
+      });
+      raw = r.data.results || [];
     }
-
-    if (rawItems.length === 0 && apiKey) {
-      const tmdbRes = await axios.get(
-        `https://api.themoviedb.org/3/trending/movie/day`,
-        { params: { api_key: apiKey }, timeout: 5000 }
-      );
-      rawItems = tmdbRes.data.results || [];
-    }
-  } else if (type === "series") {
+  } else {
     try {
       const res = await axios.get(SNOAK_SHOWS_URL, { timeout: 6000 });
-      if (Array.isArray(res.data)) rawItems = res.data;
-    } catch (e) {
+      if (Array.isArray(res.data)) raw = res.data;
+    } catch (_) {
       try {
-        const resAlt = await axios.get(SNOAK_SHOWS_ALT_URL, { timeout: 6000 });
-        if (Array.isArray(resAlt.data)) rawItems = resAlt.data;
-      } catch (err) {
-        console.warn("MDBList TV shows failed, falling back to TMDB trending…");
-      }
+        const res = await axios.get(SNOAK_SHOWS_ALT_URL, { timeout: 6000 });
+        if (Array.isArray(res.data)) raw = res.data;
+      } catch (_) {}
     }
-
-    if (rawItems.length === 0 && apiKey) {
-      const tmdbRes = await axios.get(
-        `https://api.themoviedb.org/3/trending/tv/day`,
-        { params: { api_key: apiKey }, timeout: 5000 }
-      );
-      rawItems = tmdbRes.data.results || [];
+    if (!raw.length && apiKey) {
+      const r = await axios.get(`https://api.themoviedb.org/3/trending/tv/day`, {
+        params: { api_key: apiKey }, timeout: 5000,
+      });
+      raw = r.data.results || [];
     }
   }
-
-  return rawItems;
+  return raw;
 }
 
-// ---------------------------------------------------------------------------
-// Routes
-// ---------------------------------------------------------------------------
 app.get("/", (req, res) => {
   const hostUrl = getHostUrl(req);
-  res.send(`
-    <html>
-      <head><title>Top 10 Trending Addon</title></head>
-      <body style="font-family: system-ui, sans-serif; text-align: center; padding: 50px; background: #0f0f12; color: #fff;">
-        <h1>Top 10 Trending Addon</h1>
-        <p>Landscape posters with Apple TV-style metallic rank numbers &amp; frosted genre badges.</p>
-        <a href="stremio://${req.headers.host}/manifest.json"
-           style="background: #e50914; color: white; padding: 14px 28px; text-decoration: none;
-                  font-size: 18px; font-weight: bold; border-radius: 6px; display: inline-block; margin-top: 20px;">
-          Install in Stremio
-        </a>
-        <p style="margin-top: 20px; font-size: 13px; color: #888;">
-          Manifest URL: ${hostUrl}/manifest.json
-        </p>
-      </body>
-    </html>
-  `);
+  res.send(`<!DOCTYPE html><html><head><title>Top 10 Trending</title></head>
+<body style="font-family:system-ui;text-align:center;padding:50px;background:#0f0f12;color:#fff">
+<h1>Top 10 Trending Addon</h1>
+<p>Apple TV-style metallic ranks + frosted genre badges</p>
+<a href="stremio://${req.headers.host}/manifest.json"
+   style="background:#e50914;color:#fff;padding:14px 28px;text-decoration:none;font-size:18px;font-weight:700;border-radius:6px;display:inline-block;margin-top:20px">
+Install in Stremio</a>
+<p style="margin-top:20px;font-size:13px;color:#888">Manifest: ${hostUrl}/manifest.json</p>
+</body></html>`);
 });
 
 app.get("/manifest.json", (req, res) => {
@@ -385,165 +308,123 @@ app.get("/manifest.json", (req, res) => {
 app.get("/catalog/:type/:id.json", async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
-
   const { type } = req.params;
   const hostUrl = getHostUrl(req);
-
-  if (type !== "movie" && type !== "series") {
-    return res.json({ metas: [] });
-  }
+  if (type !== "movie" && type !== "series") return res.json({ metas: [] });
 
   try {
-    const rawItems = await fetchTrendingList(type);
-    const top10 = rawItems.slice(0, 10);
-
-    const metas = top10
-      .map((item, index) => {
-        const imdbId =
-          item.imdb_id ||
-          item.imdbid ||
-          (item.external_ids && item.external_ids.imdb_id);
-        const tmdbId = item.id || item.tmdb_id || item.tmdbid;
-        const idToUse = imdbId || (tmdbId ? `tmdb:${tmdbId}` : null);
-
-        if (!idToUse) return null;
-
-        const title = item.title || item.name || "Unknown";
-        const rank = index + 1;
-
-        const posterUrl = `${hostUrl}/api/poster?id=${encodeURIComponent(
-          imdbId || idToUse
-        )}&rank=${rank}&type=${type}&v=${POSTER_CACHE_VERSION}`;
-
-        return {
-          id: idToUse,
-          type,
-          name: `${rank}. ${title}`,
-          poster: posterUrl,
-          posterShape: "landscape",
-          description: item.description || item.overview || "",
-        };
-      })
-      .filter(Boolean);
+    const raw = await fetchTrendingList(type);
+    const metas = raw.slice(0, 10).map((item, i) => {
+      const imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id);
+      const tmdbId = item.id || item.tmdb_id || item.tmdbid;
+      const idToUse = imdbId || (tmdbId ? `tmdb:${tmdbId}` : null);
+      if (!idToUse) return null;
+      const title = item.title || item.name || "Unknown";
+      const rank = i + 1;
+      return {
+        id: idToUse,
+        type,
+        name: `${rank}. ${title}`,
+        poster: `${hostUrl}/api/poster?id=${encodeURIComponent(imdbId || idToUse)}&rank=${rank}&type=${type}&v=${POSTER_CACHE_VERSION}`,
+        posterShape: "landscape",
+        description: item.description || item.overview || "",
+      };
+    }).filter(Boolean);
 
     res.setHeader("Cache-Control", "public, max-age=1800, s-maxage=1800");
     res.json({ metas });
   } catch (err) {
-    console.error(`Catalog Error (${type}):`, err.message);
+    console.error(`Catalog (${type}):`, err.message);
     res.json({ metas: [] });
   }
 });
 
 app.get("/api/poster", async (req, res) => {
   const { id, rank, type } = req.query;
-
-  if (!id) {
-    return res.status(400).send("Missing ID parameter");
-  }
+  if (!id) return res.status(400).send("Missing ID");
 
   try {
     let backdropBuffer = null;
-    const cleanImdbId = id.startsWith("tt") ? id : null;
-    let resolvedGenre = null;
+    const cleanImdb = id.startsWith("tt") ? id : null;
+    let genre = null;
 
-    // 1) ExtendedRatings landscape backdrop
-    if (cleanImdbId) {
+    if (cleanImdb) {
       try {
-        const extUrl = `https://extendedratings.com/backdrop/${cleanImdbId}?config=russel&key=Kolkko11&v=fd3ce853`;
-        const response = await axios.get(extUrl, {
-          responseType: "arraybuffer",
-          timeout: 4500,
-        });
-        backdropBuffer = Buffer.from(response.data);
+        const r = await axios.get(
+          `https://extendedratings.com/backdrop/${cleanImdb}?config=russel&key=Kolkko11&v=fd3ce853`,
+          { responseType: "arraybuffer", timeout: 4500 }
+        );
+        backdropBuffer = Buffer.from(r.data);
       } catch (_) {}
     }
 
-    // 2) TMDB (backdrop + genre)
-    const tmdbInfo = await getTmdbData(cleanImdbId, type || "movie");
-    if (tmdbInfo.genre) resolvedGenre = tmdbInfo.genre;
+    const tmdb = await getTmdbData(cleanImdb, type || "movie");
+    if (tmdb.genre) genre = tmdb.genre;
 
-    if (!backdropBuffer && tmdbInfo.backdropUrl) {
+    if (!backdropBuffer && tmdb.backdropUrl) {
       try {
-        const tmdbRes = await axios.get(tmdbInfo.backdropUrl, {
-          responseType: "arraybuffer",
-          timeout: 4500,
+        const r = await axios.get(tmdb.backdropUrl, {
+          responseType: "arraybuffer", timeout: 4500,
         });
-        backdropBuffer = Buffer.from(tmdbRes.data);
+        backdropBuffer = Buffer.from(r.data);
       } catch (_) {}
     }
 
-    // 3) Solid fallback
     if (!backdropBuffer) {
       backdropBuffer = await sharp({
-        create: {
-          width: 1280,
-          height: 720,
-          channels: 3,
-          background: { r: 20, g: 20, b: 28 },
-        },
-      })
-        .jpeg()
-        .toBuffer();
+        create: { width: 1280, height: 720, channels: 3, background: { r: 18, g: 18, b: 24 } },
+      }).jpeg().toBuffer();
     }
 
-    const metadata = await sharp(backdropBuffer).metadata();
-    const width = metadata.width || 1280;
-    const height = metadata.height || 720;
+    const meta = await sharp(backdropBuffer).metadata();
+    const W = meta.width || 1280;
+    const H = meta.height || 720;
+    if (!genre) genre = type === "series" ? "SERIES" : "MOVIE";
 
-    if (!resolvedGenre) {
-      resolvedGenre = type === "series" ? "SERIES" : "MOVIE";
-    }
+    const num = parseInt(rank, 10) || 1;
+    const rankGroup = generateRankGroup(num);
 
-    const numRank = parseInt(rank, 10) || 1;
-    const rankSvg = generateRankSvg(numRank);
+    const scale = (H * 0.34) / DH;
+    const xPos = Math.round(W * 0.028);
+    const yPos = Math.round(H * 0.045);
+    const badge = generateGenreBadge(genre, W, H);
 
-    // Scale rank so it occupies ~32% of poster height
-    const targetH = height * 0.32;
-    const scale = targetH / DIGIT_H;
-    const xPos = Math.round(width * 0.03);
-    const yPos = Math.round(height * 0.05);
+    const svg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="metal" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="35%" stop-color="#F1F5F9"/>
+      <stop offset="70%" stop-color="#CBD5E1"/>
+      <stop offset="100%" stop-color="#94A3B8"/>
+    </linearGradient>
+    <linearGradient id="vig" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.78"/>
+      <stop offset="45%" stop-color="#000" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
 
-    const genreBadge = generateGenreBadge(resolvedGenre, width, height);
+  <rect width="${Math.round(W * 0.55)}" height="${H}" fill="url(#vig)"/>
 
-    const svgOverlay = Buffer.from(`
-      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
-           xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="leftVignette" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stop-color="#000000" stop-opacity="0.80"/>
-            <stop offset="50%"  stop-color="#000000" stop-opacity="0.40"/>
-            <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-          </linearGradient>
-        </defs>
+  <g transform="translate(${xPos},${yPos}) scale(${scale.toFixed(5)})">
+    ${rankGroup.markup}
+  </g>
 
-        <!-- Left vignette (~55%) -->
-        <rect width="${Math.round(width * 0.55)}" height="${height}"
-              fill="url(#leftVignette)"/>
+  ${badge}
+</svg>`);
 
-        <!-- Cinematic rank number (top-left) — pure vector, no fonts -->
-        <g transform="translate(${xPos}, ${yPos}) scale(${scale.toFixed(4)})">
-          ${rankSvg.markup}
-        </g>
-
-        <!-- Frosted genre badge (bottom center) — bitmap font, no system fonts -->
-        ${genreBadge}
-      </svg>
-    `);
-
-    const result = await sharp(backdropBuffer)
-      .composite([{ input: svgOverlay, top: 0, left: 0 }])
-      .jpeg({ quality: 90 })
+    const out = await sharp(backdropBuffer)
+      .composite([{ input: svg, top: 0, left: 0 }])
+      .jpeg({ quality: 91 })
       .toBuffer();
 
     res.setHeader("Content-Type", "image/jpeg");
-    res.setHeader(
-      "Cache-Control",
-      "public, max-age=86400, s-maxage=86400"
-    );
-    return res.send(result);
+    res.setHeader("Cache-Control", "public, max-age=86400, s-maxage=86400");
+    return res.send(out);
   } catch (err) {
-    console.error("Poster rendering error:", err.message);
-    return res.status(500).send("Error rendering poster image");
+    console.error("Poster error:", err.message);
+    return res.status(500).send("Error rendering poster");
   }
 });
 
