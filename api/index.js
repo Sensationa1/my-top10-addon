@@ -14,22 +14,28 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "95";
+const POSTER_CACHE_VERSION = "105";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
+const FONT_SF_MED = path.join(process.cwd(), "fonts", "SFPRODISPLAYMEDIUM.OTF");
+const FONT_SF_BOLD = path.join(process.cwd(), "fonts", "SFPRODISPLAYBOLD.OTF");
 const FONT_BLACK_ALT = path.join(__dirname, "..", "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI_ALT = path.join(__dirname, "..", "fonts", "Inter-SemiBold.ttf");
+const FONT_SF_MED_ALT = path.join(__dirname, "..", "fonts", "SFPRODISPLAYMEDIUM.OTF");
+const FONT_SF_BOLD_ALT = path.join(__dirname, "..", "fonts", "SFPRODISPLAYBOLD.OTF");
 
 function resolveFonts() {
   const black = fs.existsSync(FONT_BLACK) ? FONT_BLACK : FONT_BLACK_ALT;
   const semi = fs.existsSync(FONT_SEMI) ? FONT_SEMI : FONT_SEMI_ALT;
-  return { black, semi };
+  const sfMed = fs.existsSync(FONT_SF_MED) ? FONT_SF_MED : FONT_SF_MED_ALT;
+  const sfBold = fs.existsSync(FONT_SF_BOLD) ? FONT_SF_BOLD : FONT_SF_BOLD_ALT;
+  return { black, semi, sfMed, sfBold };
 }
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.7.0",
+  version: "1.9.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels.",
@@ -117,9 +123,9 @@ function buildOverlaySvg(width, height, rank, genre) {
     .split(/[\s\-]+/)
     .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : ""))
     .join(" ");
-  const badgeFont = Math.max(12, Math.round(height * 0.036));
+  const badgeFont = Math.max(16, Math.round(height * 0.050));
   const badgeCx = Math.round(width / 2);
-  const badgeCy = height - Math.round(height * 0.048);
+  const badgeCy = height - Math.round(height * 0.052);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
@@ -161,14 +167,14 @@ function buildOverlaySvg(width, height, rank, genre) {
     filter="url(#rankShadow)"
   >${rank}</text>
 
-  <!-- Genre: plain text + soft shadow only -->
+  <!-- Genre: SF Pro Display (Apple TV) + soft shadow only -->
   <text
     x="${badgeCx}"
     y="${badgeCy}"
-    font-family="Inter"
-    font-weight="600"
+    font-family="SF Pro Display"
+    font-weight="500"
     font-size="${badgeFont}"
-    fill="rgba(255,255,255,0.90)"
+    fill="rgba(255,255,255,0.95)"
     text-anchor="middle"
     dominant-baseline="middle"
     filter="url(#genreShadow)"
@@ -177,14 +183,15 @@ function buildOverlaySvg(width, height, rank, genre) {
 }
 
 function renderSvgToPng(svgString, width) {
-  const { black, semi } = resolveFonts();
-  const files = [black, semi].filter((p) => fs.existsSync(p));
+  const { black, semi, sfMed, sfBold } = resolveFonts();
+  const files = [black, semi, sfMed, sfBold].filter((p) => fs.existsSync(p));
   const resvg = new Resvg(svgString, {
     fitTo: { mode: "width", value: width },
     font: {
       fontFiles: files,
       loadSystemFonts: false,
-      defaultFontFamily: "Inter",
+      // Prefer SF Pro Display when requested in SVG; Inter remains fallback for ranks
+      defaultFontFamily: "SF Pro Display",
     },
   });
   return resvg.render().asPng();
