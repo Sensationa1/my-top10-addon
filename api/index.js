@@ -7,16 +7,20 @@ require("dotenv").config();
 const app = express();
 app.use(cors());
 
-// Snoak MDBList & Trakt Sources
+// Snoak MDBList sources (public JSON endpoints)
 const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
+// Cache-bust version — bump this whenever poster design changes
+const POSTER_CACHE_VERSION = "42";
+
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.0.0",
-  name: "Top 10 Trending (Netflix Style)",
-  description: "Top 10 Trending Movies & TV Shows with embedded Netflix-style numbers on landscape posters.",
+  version: "1.1.0",
+  name: "Top 10 Trending (Apple TV Style)",
+  description:
+    "Top 10 Trending Movies & TV Shows with cinematic Apple TV-style rank numbers and frosted genre badges on landscape posters.",
   resources: ["catalog"],
   types: ["movie", "series"],
   catalogs: [
@@ -25,96 +29,52 @@ const MANIFEST = {
       type: "movie",
       name: "Top 10 Trending Movies",
       extraSupported: [],
-      posterShape: "landscape"
+      posterShape: "landscape",
     },
     {
       id: "top10_trending_shows",
       type: "series",
       name: "Top 10 Trending Shows",
       extraSupported: [],
-      posterShape: "landscape"
-    }
+      posterShape: "landscape",
+    },
   ],
-  idPrefixes: ["tt"]
+  idPrefixes: ["tt"],
 };
 
-// Dot-matrix digit rendering — classic 5x7 LED/scoreboard pattern.
-// Each digit is a fixed bitmap of 1s and 0s; every "1" becomes a solid square.
-// This is a decades-old, universally correct pattern with zero font dependency
-// and zero risk of shapes merging or distorting — every pixel is an independent,
-// non-overlapping square.
-const DOT_PATTERNS = {
-  "0": ["01110","10001","10011","10101","11001","10001","01110"],
-  "1": ["00100","01100","00100","00100","00100","00100","01110"],
-  "2": ["01110","10001","00001","00010","00100","01000","11111"],
-  "3": ["11111","00010","00100","00010","00001","10001","01110"],
-  "4": ["00010","00110","01010","10010","11111","00010","00010"],
-  "5": ["11111","10000","11110","00001","00001","10001","01110"],
-  "6": ["00110","01000","10000","11110","10001","10001","01110"],
-  "7": ["11111","00001","00010","00100","01000","01000","01000"],
-  "8": ["01110","10001","10001","01110","10001","10001","01110"],
-  "9": ["01110","10001","10001","01111","00001","00010","01100"],
+// ---------------------------------------------------------------------------
+// TMDB genre ID → uppercase name (shared across movies & TV where IDs overlap)
+// ---------------------------------------------------------------------------
+const GENRE_MAP = {
+  28: "ACTION",
+  12: "ADVENTURE",
+  16: "ANIMATION",
+  35: "COMEDY",
+  80: "CRIME",
+  99: "DOCUMENTARY",
+  18: "DRAMA",
+  10751: "FAMILY",
+  14: "FANTASY",
+  36: "HISTORY",
+  27: "HORROR",
+  10402: "MUSIC",
+  9648: "MYSTERY",
+  10749: "ROMANCE",
+  878: "SCI-FI",
+  10770: "TV MOVIE",
+  53: "THRILLER",
+  10752: "WAR",
+  37: "WESTERN",
+  // TV-specific
+  10759: "ACTION",
+  10762: "KIDS",
+  10763: "NEWS",
+  10764: "REALITY",
+  10765: "SCI-FI",
+  10766: "SOAP",
+  10767: "TALK",
+  10768: "WAR",
 };
-
-const DOT = { CELL: 20, GAP: 3, COLS: 5, ROWS: 7 };
-
-function digitBody(d, fillColor) {
-  const pattern = DOT_PATTERNS[d] || DOT_PATTERNS["1"];
-  const cellSize = DOT.CELL - DOT.GAP;
-  let rects = "";
-  for (let row = 0; row < DOT.ROWS; row++) {
-    for (let col = 0; col < DOT.COLS; col++) {
-      if (pattern[row][col] === "1") {
-        const x = col * DOT.CELL;
-        const y = row * DOT.CELL;
-        rects += `<rect x="${x}" y="${y}" width="${cellSize}" height="${cellSize}" rx="3" fill="${fillColor}"/>`;
-      }
-    }
-  }
-  return rects;
-}
-
-function digitWidth() { return DOT.COLS * DOT.CELL - DOT.GAP; }
-function digitHeight() { return DOT.ROWS * DOT.CELL - DOT.GAP; }
-
-function generateNetflixNumberSvg(rank) {
-  const digits = String(rank).split("");
-  const spacing = DOT.CELL * 1.4;
-  let x = 0;
-  let shadow = "", white = "";
-
-  digits.forEach((d) => {
-    shadow += `<g transform="translate(${x + 6},6)">${digitBody(d, "#000000")}</g>`;
-    white  += `<g transform="translate(${x},0)" opacity="1">${digitBody(d, "#ffffff")}</g>`;
-    x += digitWidth() + spacing;
-  });
-
-  return `<g><g opacity="0.5">${shadow}</g>${white}</g>`;
-}
-
-function numberGroupWidth(rank) {
-  const n = String(rank).length;
-  const spacing = DOT.CELL * 1.4;
-  return n * digitWidth() + (n - 1) * spacing;
-}
-
-function numberGroupHeight() { return digitHeight(); }
-
-// TMDB genre ID → name (movie + tv IDs merged)
-const GENRE_NAMES = {
-  28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime",
-  99: "Documentary", 18: "Drama", 10751: "Family", 14: "Fantasy", 36: "History",
-  27: "Horror", 10402: "Music", 9648: "Mystery", 10749: "Romance", 878: "Sci-Fi",
-  10770: "TV Movie", 53: "Thriller", 10752: "War", 37: "Western",
-  10759: "Action", 10762: "Kids", 10763: "News", 10764: "Reality",
-  10765: "Sci-Fi", 10766: "Soap", 10767: "Talk", 10768: "War",
-};
-
-function genreLabel(genreIds) {
-  if (!Array.isArray(genreIds) || genreIds.length === 0) return "";
-  const name = GENRE_NAMES[genreIds[0]];
-  return name || "";
-}
 
 function getHostUrl(req) {
   const protocol = req.headers["x-forwarded-proto"] || "https";
@@ -122,6 +82,225 @@ function getHostUrl(req) {
   return `${protocol}://${host}`;
 }
 
+// ---------------------------------------------------------------------------
+// Apple TV style rank numbers
+// Metallic vertical gradient (white → #94A3B8), thick white stroke, deep shadow.
+// Rank 10 uses tight horizontal overlap between "1" and "0".
+// ---------------------------------------------------------------------------
+function generateRankSvg(rank, fontSize) {
+  const r = String(rank);
+  const isTen = r === "10";
+
+  // Tight overlap for "10" — spacing = fontSize * 0.40
+  const letterSpacing = isTen ? fontSize * 0.40 : fontSize * 0.08;
+
+  // Approximate glyph width for positioning
+  const approxCharW = fontSize * 0.55;
+
+  // Render each digit as its own <text> so we can control x precisely
+  // for the overlapping "10" case, while still using a reliable Linux font.
+  let digitsMarkup = "";
+  let x = 0;
+
+  for (let i = 0; i < r.length; i++) {
+    const ch = r[i];
+    digitsMarkup += `
+      <text
+        x="${x}"
+        y="0"
+        font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif"
+        font-size="${fontSize}"
+        font-weight="900"
+        fill="url(#metallicGrad)"
+        stroke="#ffffff"
+        stroke-width="14"
+        stroke-linejoin="round"
+        stroke-linecap="round"
+        paint-order="stroke fill"
+        dominant-baseline="hanging"
+      >${ch}</text>`;
+    x += (ch === "1" ? approxCharW * 0.55 : approxCharW) + letterSpacing;
+  }
+
+  // Deep dark drop shadow
+  const shadowOffset = Math.round(fontSize * 0.06);
+  const shadowOpacity = 0.55;
+
+  return {
+    markup: `
+      <defs>
+        <linearGradient id="metallicGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#FFFFFF"/>
+          <stop offset="45%" stop-color="#E2E8F0"/>
+          <stop offset="100%" stop-color="#94A3B8"/>
+        </linearGradient>
+        <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow dx="${shadowOffset}" dy="${shadowOffset + 4}" stdDeviation="8" flood-color="#000000" flood-opacity="${shadowOpacity}"/>
+          <feDropShadow dx="2" dy="6" stdDeviation="14" flood-color="#000000" flood-opacity="0.35"/>
+        </filter>
+      </defs>
+      <g filter="url(#rankShadow)">
+        ${digitsMarkup}
+      </g>
+    `,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Frosted-glass genre pill (bottom center)
+// ---------------------------------------------------------------------------
+function generateGenreBadge(genreText, width, height) {
+  if (!genreText) return "";
+
+  const fontSize = Math.round(height * 0.042);
+  const paddingX = Math.round(fontSize * 1.6);
+  const paddingY = Math.round(fontSize * 0.55);
+  const badgeH = fontSize + paddingY * 2;
+  const approxTextW = genreText.length * fontSize * 0.58;
+  const badgeW = Math.ceil(approxTextW + paddingX * 2);
+  const rx = Math.round(badgeH / 2);
+
+  const cx = Math.round(width / 2);
+  const cy = height - Math.round(height * 0.075);
+  const x = cx - Math.round(badgeW / 2);
+  const y = cy - Math.round(badgeH / 2);
+
+  return `
+    <defs>
+      <filter id="badgeShadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000000" flood-opacity="0.45"/>
+      </filter>
+    </defs>
+    <g filter="url(#badgeShadow)">
+      <rect
+        x="${x}"
+        y="${y}"
+        width="${badgeW}"
+        height="${badgeH}"
+        rx="${rx}"
+        ry="${rx}"
+        fill="rgba(25, 25, 32, 0.75)"
+        stroke="rgba(255,255,255,0.4)"
+        stroke-width="1.5"
+      />
+      <text
+        x="${cx}"
+        y="${cy + Math.round(fontSize * 0.35)}"
+        font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif"
+        font-size="${fontSize}"
+        font-weight="700"
+        fill="#FFFFFF"
+        text-anchor="middle"
+        dominant-baseline="middle"
+      >${genreText}</text>
+    </g>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// TMDB helpers
+// ---------------------------------------------------------------------------
+async function getTmdbData(imdbId, type) {
+  const apiKey = process.env.TMDB_API_KEY;
+  if (!apiKey || !imdbId || !imdbId.startsWith("tt")) {
+    return { backdropUrl: null, genre: null };
+  }
+
+  try {
+    const findRes = await axios.get(
+      `https://api.themoviedb.org/3/find/${imdbId}`,
+      {
+        params: { api_key: apiKey, external_source: "imdb_id" },
+        timeout: 4500,
+      }
+    );
+
+    const isSeries = type === "series";
+    const results = isSeries
+      ? findRes.data.tv_results
+      : findRes.data.movie_results;
+    const match = results && results[0];
+
+    if (!match) return { backdropUrl: null, genre: null };
+
+    const backdropUrl = match.backdrop_path
+      ? `https://image.tmdb.org/t/p/w1280${match.backdrop_path}`
+      : null;
+
+    let genre = null;
+    if (Array.isArray(match.genre_ids) && match.genre_ids.length > 0) {
+      const primary = GENRE_MAP[match.genre_ids[0]];
+      if (primary) genre = primary;
+    }
+
+    // If find endpoint didn't give genres, fetch full details
+    if (!genre && match.id) {
+      try {
+        const detailPath = isSeries ? `tv/${match.id}` : `movie/${match.id}`;
+        const detailRes = await axios.get(
+          `https://api.themoviedb.org/3/${detailPath}`,
+          { params: { api_key: apiKey }, timeout: 4000 }
+        );
+        if (detailRes.data.genres && detailRes.data.genres[0]) {
+          genre = detailRes.data.genres[0].name.toUpperCase();
+        }
+      } catch (_) {}
+    }
+
+    return { backdropUrl, genre };
+  } catch (err) {
+    console.error(`TMDB lookup error for ${imdbId}:`, err.message);
+    return { backdropUrl: null, genre: null };
+  }
+}
+
+async function fetchTrendingList(type) {
+  let rawItems = [];
+  const apiKey = process.env.TMDB_API_KEY;
+
+  if (type === "movie") {
+    try {
+      const res = await axios.get(SNOAK_MOVIES_URL, { timeout: 6000 });
+      if (Array.isArray(res.data)) rawItems = res.data;
+    } catch (e) {
+      console.warn("MDBList movies failed, falling back to TMDB trending…");
+    }
+
+    if (rawItems.length === 0 && apiKey) {
+      const tmdbRes = await axios.get(
+        `https://api.themoviedb.org/3/trending/movie/day`,
+        { params: { api_key: apiKey }, timeout: 5000 }
+      );
+      rawItems = tmdbRes.data.results || [];
+    }
+  } else if (type === "series") {
+    try {
+      const res = await axios.get(SNOAK_SHOWS_URL, { timeout: 6000 });
+      if (Array.isArray(res.data)) rawItems = res.data;
+    } catch (e) {
+      try {
+        const resAlt = await axios.get(SNOAK_SHOWS_ALT_URL, { timeout: 6000 });
+        if (Array.isArray(resAlt.data)) rawItems = resAlt.data;
+      } catch (err) {
+        console.warn("MDBList TV shows failed, falling back to TMDB trending…");
+      }
+    }
+
+    if (rawItems.length === 0 && apiKey) {
+      const tmdbRes = await axios.get(
+        `https://api.themoviedb.org/3/trending/tv/day`,
+        { params: { api_key: apiKey }, timeout: 5000 }
+      );
+      rawItems = tmdbRes.data.results || [];
+    }
+  }
+
+  return rawItems;
+}
+
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
 app.get("/", (req, res) => {
   const hostUrl = getHostUrl(req);
   res.send(`
@@ -129,9 +308,15 @@ app.get("/", (req, res) => {
       <head><title>Top 10 Trending Addon</title></head>
       <body style="font-family: system-ui, sans-serif; text-align: center; padding: 50px; background: #0f0f12; color: #fff;">
         <h1>Top 10 Trending Addon</h1>
-        <p>Landscape posters with embedded Netflix-style numbers & genre tags.</p>
-        <a href="stremio://${req.headers.host}/manifest.json" style="background: #e50914; color: white; padding: 14px 28px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 6px; display: inline-block; margin-top: 20px;">Install in Stremio</a>
-        <p style="margin-top: 20px; font-size: 13px; color: #888;">Manifest URL: ${hostUrl}/manifest.json</p>
+        <p>Landscape posters with Apple TV-style metallic rank numbers &amp; frosted genre badges.</p>
+        <a href="stremio://${req.headers.host}/manifest.json"
+           style="background: #e50914; color: white; padding: 14px 28px; text-decoration: none;
+                  font-size: 18px; font-weight: bold; border-radius: 6px; display: inline-block; margin-top: 20px;">
+          Install in Stremio
+        </a>
+        <p style="margin-top: 20px; font-size: 13px; color: #888;">
+          Manifest URL: ${hostUrl}/manifest.json
+        </p>
       </body>
     </html>
   `);
@@ -144,74 +329,11 @@ app.get("/manifest.json", (req, res) => {
   res.json(MANIFEST);
 });
 
-async function getTmdbData(imdbId, type) {
-  const apiKey = process.env.TMDB_API_KEY;
-  if (!apiKey) return { backdropUrl: null, genreIds: [] };
-
-  try {
-    const findRes = await axios.get(
-      `https://api.themoviedb.org/3/find/${imdbId}?api_key=${apiKey}&external_source=imdb_id`,
-      { timeout: 4000 }
-    );
-    
-    const isSeries = type === "series";
-    const results = isSeries ? findRes.data.tv_results : findRes.data.movie_results;
-    const match = results && results[0];
-
-    if (match) {
-      const backdropUrl = match.backdrop_path ? `https://image.tmdb.org/t/p/w1280${match.backdrop_path}` : null;
-      const genreIds = match.genre_ids || [];
-      return { backdropUrl, genreIds };
-    }
-  } catch (err) {
-    console.error(`TMDB lookup error for ${imdbId}:`, err.message);
-  }
-  return { backdropUrl: null, genreIds: [] };
-}
-
-async function fetchTrendingList(type) {
-  let rawItems = [];
-  const apiKey = process.env.TMDB_API_KEY;
-
-  if (type === "movie") {
-    try {
-      const res = await axios.get(SNOAK_MOVIES_URL, { timeout: 6000 });
-      if (Array.isArray(res.data)) rawItems = res.data;
-    } catch (e) {
-      console.warn("MDBList movies failed, fetching TMDB trending fallback...");
-    }
-
-    if (rawItems.length === 0 && apiKey) {
-      const tmdbRes = await axios.get(`https://api.themoviedb.org/3/trending/movie/day?api_key=${apiKey}`, { timeout: 5000 });
-      rawItems = tmdbRes.data.results || [];
-    }
-  } else if (type === "series") {
-    try {
-      const res = await axios.get(SNOAK_SHOWS_URL, { timeout: 6000 });
-      if (Array.isArray(res.data)) rawItems = res.data;
-    } catch (e) {
-      try {
-        const resAlt = await axios.get(SNOAK_SHOWS_ALT_URL, { timeout: 6000 });
-        if (Array.isArray(resAlt.data)) rawItems = resAlt.data;
-      } catch (err) {
-        console.warn("MDBList TV shows failed, fetching TMDB trending fallback...");
-      }
-    }
-
-    if (rawItems.length === 0 && apiKey) {
-      const tmdbRes = await axios.get(`https://api.themoviedb.org/3/trending/tv/day?api_key=${apiKey}`, { timeout: 5000 });
-      rawItems = tmdbRes.data.results || [];
-    }
-  }
-
-  return rawItems;
-}
-
 app.get("/catalog/:type/:id.json", async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
 
-  const { type, id } = req.params;
+  const { type } = req.params;
   const hostUrl = getHostUrl(req);
 
   if (type !== "movie" && type !== "series") {
@@ -222,35 +344,35 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
     const rawItems = await fetchTrendingList(type);
     const top10 = rawItems.slice(0, 10);
 
-    const metas = top10.map((item, index) => {
-      const imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id);
-      const tmdbId = item.id || item.tmdb_id || item.tmdbid;
-      const idToUse = imdbId || (tmdbId ? `tmdb:${tmdbId}` : null);
+    const metas = top10
+      .map((item, index) => {
+        const imdbId =
+          item.imdb_id ||
+          item.imdbid ||
+          (item.external_ids && item.external_ids.imdb_id);
+        const tmdbId = item.id || item.tmdb_id || item.tmdbid;
+        const idToUse = imdbId || (tmdbId ? `tmdb:${tmdbId}` : null);
 
-      if (!idToUse) return null;
+        if (!idToUse) return null;
 
-      const title = item.title || item.name || "Unknown";
-      const rank = index + 1;
+        const title = item.title || item.name || "Unknown";
+        const rank = index + 1;
 
-      let genres = "";
-      if (Array.isArray(item.genres)) {
-        genres = item.genres.slice(0, 2).join(",");
-      } else if (typeof item.genres === "string") {
-        genres = item.genres;
-      }
+        // Poster endpoint resolves genre via TMDB; cache-bust with v=
+        const posterUrl = `${hostUrl}/api/poster?id=${encodeURIComponent(
+          imdbId || idToUse
+        )}&rank=${rank}&type=${type}&v=${POSTER_CACHE_VERSION}`;
 
-      // v=30 flushes cache completely across Vercel & Stremio
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=30`;
-
-      return {
-        id: idToUse,
-        type: type,
-        name: `${rank}. ${title}`,
-        poster: posterUrl,
-        posterShape: "landscape",
-        description: item.description || item.overview || ""
-      };
-    }).filter(Boolean);
+        return {
+          id: idToUse,
+          type,
+          name: `${rank}. ${title}`,
+          poster: posterUrl,
+          posterShape: "landscape",
+          description: item.description || item.overview || "",
+        };
+      })
+      .filter(Boolean);
 
     res.setHeader("Cache-Control", "public, max-age=1800, s-maxage=1800");
     res.json({ metas });
@@ -270,85 +392,90 @@ app.get("/api/poster", async (req, res) => {
   try {
     let backdropBuffer = null;
     const cleanImdbId = id.startsWith("tt") ? id : null;
+    let resolvedGenre = null;
 
-    // Always fetch TMDB data (for genre) in parallel with the xrdb attempt
-    const tmdbInfoPromise = cleanImdbId
-      ? getTmdbData(cleanImdbId, type)
-      : Promise.resolve({ backdropUrl: null, genreIds: [] });
-
+    // 1) Prefer ExtendedRatings landscape backdrop
     if (cleanImdbId) {
       try {
         const extUrl = `https://extendedratings.com/backdrop/${cleanImdbId}?config=russel&key=Kolkko11&v=fd3ce853`;
-        const response = await axios.get(extUrl, { responseType: "arraybuffer", timeout: 4500 });
+        const response = await axios.get(extUrl, {
+          responseType: "arraybuffer",
+          timeout: 4500,
+        });
         backdropBuffer = Buffer.from(response.data);
-      } catch (e) {}
+      } catch (_) {}
     }
 
-    const tmdbInfo = await tmdbInfoPromise;
+    // 2) TMDB fallback (also resolves primary genre)
+    const tmdbInfo = await getTmdbData(cleanImdbId, type || "movie");
+    if (tmdbInfo.genre) resolvedGenre = tmdbInfo.genre;
 
     if (!backdropBuffer && tmdbInfo.backdropUrl) {
       try {
-        const tmdbRes = await axios.get(tmdbInfo.backdropUrl, { responseType: "arraybuffer", timeout: 4500 });
+        const tmdbRes = await axios.get(tmdbInfo.backdropUrl, {
+          responseType: "arraybuffer",
+          timeout: 4500,
+        });
         backdropBuffer = Buffer.from(tmdbRes.data);
-      } catch (e) {}
+      } catch (_) {}
     }
 
+    // 3) Solid fallback
     if (!backdropBuffer) {
       backdropBuffer = await sharp({
         create: {
           width: 1280,
           height: 720,
           channels: 3,
-          background: { r: 20, g: 20, b: 28 }
-        }
-      }).jpeg().toBuffer();
+          background: { r: 20, g: 20, b: 28 },
+        },
+      })
+        .jpeg()
+        .toBuffer();
     }
 
     const metadata = await sharp(backdropBuffer).metadata();
     const width = metadata.width || 1280;
     const height = metadata.height || 720;
 
-    const formattedGenres = genreLabel(tmdbInfo.genreIds).toUpperCase();
+    // Fallback genre label
+    if (!resolvedGenre) {
+      resolvedGenre = type === "series" ? "SERIES" : "MOVIE";
+    }
 
     const numRank = parseInt(rank, 10) || 1;
-    const numberSvgGroup = generateNetflixNumberSvg(numRank);
+    // Rank numbers sit in the top-left, roughly 30 % of poster height
+    const fontSize = Math.round(height * 0.30);
+    const rankSvg = generateRankSvg(numRank, fontSize);
 
-    // Number takes up 78% of total landscape card height, flush against the bottom
-    const desiredNumHeight = Math.round(height * 0.78);
-    const scale = (desiredNumHeight / SEG.H).toFixed(4);
-    const xPos = Math.round(width * 0.025);
-    const yPos = height - desiredNumHeight + Math.round(height * 0.015);
+    const xPos = Math.round(width * 0.035);
+    const yPos = Math.round(height * 0.06);
+
+    const genreBadge = generateGenreBadge(resolvedGenre, width, height);
 
     const svgOverlay = Buffer.from(`
-      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
+           xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <linearGradient id="netflixGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#000000" stop-opacity="0.88" />
-            <stop offset="35%" stop-color="#000000" stop-opacity="0.5" />
-            <stop offset="70%" stop-color="#000000" stop-opacity="0.0" />
+          <!-- Left-side vignette covering ~55 % of the poster -->
+          <linearGradient id="leftVignette" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%"   stop-color="#000000" stop-opacity="0.82"/>
+            <stop offset="45%"  stop-color="#000000" stop-opacity="0.45"/>
+            <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
           </linearGradient>
         </defs>
 
-        <!-- Strong Left Vignette -->
-        <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#netflixGradient)" />
+        <!-- Left vignette -->
+        <rect width="${Math.round(width * 0.55)}" height="${height}"
+              fill="url(#leftVignette)"/>
 
-        <!-- Oversized Netflix Vector Number -->
-        <g transform="translate(${xPos}, ${yPos}) scale(${scale})">
-          ${numberSvgGroup}
+        <!-- Cinematic rank number (top-left) -->
+        <g transform="translate(${xPos}, ${yPos})">
+          ${rankSvg.markup}
         </g>
 
-        <!-- Apple TV style genre label - bottom of card -->
-        ${formattedGenres ? `
-        <text
-          x="${width - Math.round(width * 0.04)}"
-          y="${height - Math.round(height * 0.06)}"
-          font-family="system-ui, -apple-system, sans-serif"
-          font-size="${Math.round(height * 0.055)}"
-          font-weight="600"
-          fill="rgba(255,255,255,0.90)"
-          text-anchor="end"
-        >${formattedGenres}</text>
-        ` : ""}
+        <!-- Frosted genre badge (bottom center) -->
+        ${genreBadge}
       </svg>
     `);
 
@@ -358,7 +485,10 @@ app.get("/api/poster", async (req, res) => {
       .toBuffer();
 
     res.setHeader("Content-Type", "image/jpeg");
-    res.setHeader("Cache-Control", "public, max-age=86400, s-maxage=86400");
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=86400, s-maxage=86400"
+    );
     return res.send(result);
   } catch (err) {
     console.error("Poster rendering error:", err.message);
