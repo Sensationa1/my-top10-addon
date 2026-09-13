@@ -16,7 +16,7 @@ const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
   version: "1.0.0",
   name: "Top 10 Trending (Apple TV / Netflix Style)",
-  description: "Top 10 Trending Posters with ultra-smooth cinematic numbers and Apple TV UI badges.",
+  description: "Top 10 Trending Posters with cinematic numbers and Apple TV UI badges.",
   resources: ["catalog"],
   types: ["movie", "series"],
   catalogs: [
@@ -38,55 +38,15 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
-// --------------------------------------------------------------------------------
-// SKELETON STROKE VECTORS (Base Grid: 150x280)
-// Uses mathematically perfect bezier curves (C) layered with massive stroke weights.
-// Guarantees ultra-smooth, premium typography without relying on Vercel's text engine.
-// --------------------------------------------------------------------------------
-const SKELETONS = {
-  "1": "M 40 80 L 80 30 L 80 250",
-  "2": "M 30 80 C 30 10, 130 10, 130 80 C 130 140, 30 190, 30 250 L 130 250",
-  "3": "M 30 60 C 30 10, 120 10, 120 60 C 120 90, 80 120, 80 120 C 80 120, 130 140, 130 190 C 130 250, 30 250, 30 200",
-  "4": "M 110 250 L 110 30 L 30 170 L 140 170",
-  "5": "M 120 40 L 40 40 L 40 110 C 40 110, 130 80, 130 170 C 130 250, 30 250, 30 190",
-  "6": "M 110 40 C 60 10, 40 60, 40 140 C 40 230, 120 240, 120 180 C 120 130, 40 130, 40 180",
-  "7": "M 30 30 L 130 30 L 60 250",
-  "8": "M 80 140 C 130 140, 130 30, 80 30 C 30 30, 30 140, 80 140 C 130 140, 130 250, 80 250 C 30 250, 30 140, 80 140 Z",
-  "9": "M 50 240 C 100 270, 120 220, 120 140 C 120 50, 40 40, 40 100 C 40 150, 120 150, 120 100",
-  "0": "M 80 30 C 20 30, 20 250, 80 250 C 140 250, 140 30, 80 30 Z"
+// TMDB Genre ID maps to ensure reliable badge text
+const GENRE_MAP = {
+  28: "ACTION", 12: "ADVENTURE", 16: "ANIMATION", 35: "COMEDY", 80: "CRIME",
+  99: "DOCUMENTARY", 18: "DRAMA", 10751: "FAMILY", 14: "FANTASY", 36: "HISTORY",
+  27: "HORROR", 10402: "MUSIC", 9648: "MYSTERY", 10749: "ROMANCE", 878: "SCI-FI",
+  10770: "TV MOVIE", 53: "THRILLER", 10752: "WAR", 37: "WESTERN",
+  10759: "ACTION", 10762: "KIDS", 10763: "NEWS", 10764: "REALITY",
+  10765: "SCI-FI", 10766: "SOAP", 10767: "TALK", 10768: "WAR"
 };
-
-function renderCinematicNumber(rank) {
-  const strRank = String(rank);
-  const elements = [];
-
-  if (strRank === "10") {
-    // 0 is placed first so 1 renders perfectly over top of it
-    elements.push({ path: SKELETONS["0"], x: 75 });
-    elements.push({ path: SKELETONS["1"], x: 0 });
-  } else {
-    const p = SKELETONS[strRank] || SKELETONS["1"];
-    elements.push({ path: p, x: 0 });
-  }
-
-  let markup = "";
-  elements.forEach((el) => {
-    // Layer 1: Drop Shadow
-    markup += `<path d="${el.path}" transform="translate(${el.x + 10}, 10)" fill="none" stroke="#000000" stroke-width="60" stroke-linecap="round" stroke-linejoin="round" opacity="0.8" />`;
-    // Layer 2: Thick White Border
-    markup += `<path d="${el.path}" transform="translate(${el.x}, 0)" fill="none" stroke="#FFFFFF" stroke-width="50" stroke-linecap="round" stroke-linejoin="round" />`;
-    // Layer 3: Dark Inner Core
-    markup += `<path d="${el.path}" transform="translate(${el.x}, 0)" fill="none" stroke="#141414" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" />`;
-  });
-
-  return markup;
-}
-
-// Aggressive sanitization to prevent missing-font "white dots" on Vercel
-function getSafeGenre(genres) {
-  if (!genres) return "";
-  return genres.split(",")[0].toUpperCase().replace(/[^A-Z0-9 -]/g, "").trim();
-}
 
 function getHostUrl(req) {
   const protocol = req.headers["x-forwarded-proto"] || "https";
@@ -101,7 +61,7 @@ app.get("/", (req, res) => {
       <head><title>Top 10 Trending Addon</title></head>
       <body style="font-family: system-ui, sans-serif; text-align: center; padding: 50px; background: #0f0f12; color: #fff;">
         <h1>Top 10 Trending Addon</h1>
-        <p>Landscape posters with ultra-smooth cinematic numbers and Apple TV UI badges.</p>
+        <p>Landscape posters with cinematic numbers and Apple TV style UI badges.</p>
         <a href="stremio://${req.headers.host}/manifest.json" style="background: #e50914; color: white; padding: 14px 28px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 6px; display: inline-block; margin-top: 20px;">Install in Stremio</a>
         <p style="margin-top: 20px; font-size: 13px; color: #888;">Manifest URL: ${hostUrl}/manifest.json</p>
       </body>
@@ -116,9 +76,9 @@ app.get("/manifest.json", (req, res) => {
   res.json(MANIFEST);
 });
 
-async function getTmdbData(imdbId, type) {
+async function getTmdbMetadata(imdbId, type) {
   const apiKey = process.env.TMDB_API_KEY;
-  if (!apiKey) return { backdropUrl: null };
+  if (!apiKey) return { backdropUrl: null, genre: type === "movie" ? "MOVIE" : "SERIES" };
 
   try {
     const findRes = await axios.get(
@@ -132,12 +92,20 @@ async function getTmdbData(imdbId, type) {
 
     if (match) {
       const backdropUrl = match.backdrop_path ? `https://image.tmdb.org/t/p/w1280${match.backdrop_path}` : null;
-      return { backdropUrl };
+      let genreName = type === "movie" ? "MOVIE" : "SERIES";
+      
+      if (match.genre_ids && match.genre_ids.length > 0) {
+        const firstId = match.genre_ids[0];
+        if (GENRE_MAP[firstId]) {
+          genreName = GENRE_MAP[firstId];
+        }
+      }
+      return { backdropUrl, genre: genreName };
     }
   } catch (err) {
     console.error(`TMDB lookup error for ${imdbId}:`, err.message);
   }
-  return { backdropUrl: null };
+  return { backdropUrl: null, genre: type === "movie" ? "MOVIE" : "SERIES" };
 }
 
 async function fetchTrendingList(type) {
@@ -203,15 +171,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
       const title = item.title || item.name || "Unknown";
       const rank = index + 1;
 
-      let genres = "";
-      if (Array.isArray(item.genres)) {
-        genres = item.genres.join(",");
-      } else if (typeof item.genres === "string") {
-        genres = item.genres;
-      }
-
-      // v=60 forces instant cache refresh for the new Skeleton architecture
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&genres=${encodeURIComponent(genres)}&v=60`;
+      // v=70 forces instant cache refresh
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&v=70`;
 
       return {
         id: idToUse,
@@ -232,7 +193,7 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 });
 
 app.get("/api/poster", async (req, res) => {
-  const { id, rank, type, genres } = req.query;
+  const { id, rank, type } = req.query;
 
   if (!id) {
     return res.status(400).send("Missing ID parameter");
@@ -240,6 +201,7 @@ app.get("/api/poster", async (req, res) => {
 
   try {
     let backdropBuffer = null;
+    let genreBadgeText = type === "movie" ? "MOVIE" : "SERIES";
     const cleanImdbId = id.startsWith("tt") ? id : null;
 
     if (cleanImdbId) {
@@ -250,14 +212,16 @@ app.get("/api/poster", async (req, res) => {
       } catch (e) {}
     }
 
-    if (!backdropBuffer && cleanImdbId) {
-      const tmdbInfo = await getTmdbData(cleanImdbId, type);
-      if (tmdbInfo.backdropUrl) {
-        try {
-          const tmdbRes = await axios.get(tmdbInfo.backdropUrl, { responseType: "arraybuffer", timeout: 4500 });
-          backdropBuffer = Buffer.from(tmdbRes.data);
-        } catch (e) {}
-      }
+    // Fetch TMDB backdrop and precise genre badge text
+    const tmdbMeta = await getTmdbMetadata(cleanImdbId || id, type);
+    if (!backdropBuffer && tmdbMeta.backdropUrl) {
+      try {
+        const tmdbRes = await axios.get(tmdbMeta.backdropUrl, { responseType: "arraybuffer", timeout: 4500 });
+        backdropBuffer = Buffer.from(tmdbRes.data);
+      } catch (e) {}
+    }
+    if (tmdbMeta.genre) {
+      genreBadgeText = tmdbMeta.genre;
     }
 
     if (!backdropBuffer) {
@@ -276,53 +240,73 @@ app.get("/api/poster", async (req, res) => {
     const height = metadata.height || 720;
 
     const numRank = parseInt(rank, 10) || 1;
-    const safeGenre = getSafeGenre(genres);
-    const vectorGroup = renderCinematicNumber(numRank);
+    const rankStr = String(numRank);
 
-    // Number takes up roughly 70% of the poster height
-    const desiredNumHeight = Math.round(height * 0.70);
-    const scale = (desiredNumHeight / 280).toFixed(3);
+    // Cinematic Typography Dimensions
+    const fontSize = Math.round(height * 0.70);
+    const yPos = height - Math.round(height * 0.04);
     const xPos = Math.round(width * 0.02);
-    const yPos = height - desiredNumHeight + Math.round(height * 0.02);
 
-    let badgeMarkup = "";
-    if (safeGenre) {
-      const badgeHeight = Math.round(height * 0.07);
-      const fontSizeBadge = Math.round(badgeHeight * 0.55);
-      const charWidthEst = fontSizeBadge * 0.7; 
-      const badgeWidth = Math.max(120, safeGenre.length * charWidthEst + 40);
-      
-      const badgeX = width - badgeWidth - Math.round(width * 0.03);
-      const badgeY = Math.round(height * 0.04);
-      
-      const textX = badgeX + (badgeWidth / 2);
-      const textY = badgeY + (badgeHeight / 2) + (fontSizeBadge * 0.35);
+    let textMarkup = "";
+    // Uses DejaVu Sans which is natively supported on Vercel Linux environments
+    const fontStack = 'font-family="DejaVu Sans, Liberation Sans, sans-serif" font-weight="900" font-style="italic"';
 
-      // Uses highly-safe system fonts to bypass Vercel rendering bugs
-      badgeMarkup = `
-        <g>
-          <rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${Math.round(badgeHeight/2)}" ry="${Math.round(badgeHeight/2)}" fill="rgba(20, 20, 25, 0.7)" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" />
-          <text x="${textX}" y="${textY}" font-family="system-ui, -apple-system, sans-serif" font-weight="bold" font-size="${fontSizeBadge}" fill="#ffffff" text-anchor="middle" letter-spacing="1.5">${safeGenre}</text>
-        </g>
+    if (rankStr === "10") {
+      const digitOneX = xPos;
+      const digitZeroX = xPos + Math.round(fontSize * 0.38); // Tight overlap for 10
+      
+      textMarkup = `
+        <!-- Zero Background & Foreground Layers -->
+        <text x="${digitZeroX + 12}" y="${yPos + 12}" ${fontStack} font-size="${fontSize}" fill="rgba(0,0,0,0.85)">0</text>
+        <text x="${digitZeroX}" y="${yPos}" ${fontStack} font-size="${fontSize}" fill="#141414" stroke="#ffffff" stroke-width="16" stroke-linejoin="round">0</text>
+        
+        <!-- One Background & Foreground Layers -->
+        <text x="${digitOneX + 12}" y="${yPos + 12}" ${fontStack} font-size="${fontSize}" fill="rgba(0,0,0,0.85)">1</text>
+        <text x="${digitOneX}" y="${yPos}" ${fontStack} font-size="${fontSize}" fill="#141414" stroke="#ffffff" stroke-width="16" stroke-linejoin="round">1</text>
+      `;
+    } else {
+      textMarkup = `
+        <text x="${xPos + 12}" y="${yPos + 12}" ${fontStack} font-size="${fontSize}" fill="rgba(0,0,0,0.85)">${rankStr}</text>
+        <text x="${xPos}" y="${yPos}" ${fontStack} font-size="${fontSize}" fill="#141414" stroke="#ffffff" stroke-width="16" stroke-linejoin="round">${rankStr}</text>
       `;
     }
+
+    // Apple TV Style Genre Badge (Top Right)
+    const badgeHeight = Math.round(height * 0.07);
+    const fontSizeBadge = Math.round(badgeHeight * 0.52);
+    const charWidthEst = fontSizeBadge * 0.65; 
+    const badgeWidth = Math.max(125, genreBadgeText.length * charWidthEst + 44);
+    
+    const badgeX = width - badgeWidth - Math.round(width * 0.03);
+    const badgeY = Math.round(height * 0.04);
+    const textX = badgeX + (badgeWidth / 2);
+    const textY = badgeY + (badgeHeight / 2) + (fontSizeBadge * 0.32);
+
+    const badgeMarkup = `
+      <g>
+        <!-- tvOS Frosted Glass Pill -->
+        <rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${Math.round(badgeHeight/2)}" ry="${Math.round(badgeHeight/2)}" fill="rgba(20, 20, 25, 0.72)" stroke="rgba(255,255,255,0.45)" stroke-width="1.5" />
+        <text x="${textX}" y="${textY}" font-family="DejaVu Sans, Liberation Sans, sans-serif" font-weight="bold" font-size="${fontSizeBadge}" fill="#ffffff" text-anchor="middle" letter-spacing="1.5">${genreBadgeText}</text>
+      </g>
+    `;
 
     const svgOverlay = Buffer.from(`
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="netflixGradient" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stop-color="#000000" stop-opacity="0.88" />
-            <stop offset="35%" stop-color="#000000" stop-opacity="0.5" />
+            <stop offset="35%" stop-color="#000000" stop-opacity="0.45" />
             <stop offset="70%" stop-color="#000000" stop-opacity="0.0" />
           </linearGradient>
         </defs>
 
+        <!-- Vignette Shadow -->
         <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#netflixGradient)" />
 
-        <g transform="translate(${xPos}, ${yPos}) scale(${scale})">
-          ${vectorGroup}
-        </g>
+        <!-- Cinematic Numbers -->
+        ${textMarkup}
 
+        <!-- Apple TV Genre Badge -->
         ${badgeMarkup}
       </svg>
     `);
