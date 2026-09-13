@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "85";
+const POSTER_CACHE_VERSION = "90";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -29,7 +29,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.5.0",
+  version: "1.6.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels.",
@@ -64,6 +64,33 @@ const GENRE_MAP = {
   10765: "SCI-FI", 10766: "SOAP", 10767: "TALK", 10768: "WAR",
 };
 
+
+// Animation genre id on TMDB = 16. Also catch explicit "Anime" labels.
+const ANIME_GENRE_IDS = new Set([16]);
+
+function isAnimeItem(item) {
+  // TMDB trending objects
+  if (Array.isArray(item.genre_ids) && item.genre_ids.some((g) => ANIME_GENRE_IDS.has(g))) {
+    return true;
+  }
+  // MDBList / other payloads
+  const genres = item.genres;
+  if (Array.isArray(genres)) {
+    for (const g of genres) {
+      const name = (typeof g === "string" ? g : g && g.name) || "";
+      const n = name.toLowerCase();
+      if (n.includes("anime") || n === "animation") return true;
+    }
+  } else if (typeof genres === "string") {
+    const n = genres.toLowerCase();
+    if (n.includes("anime") || n.includes("animation")) return true;
+  }
+  // Title heuristics (optional light filter)
+  const title = (item.title || item.name || "").toLowerCase();
+  if (/\banime\b/.test(title)) return true;
+  return false;
+}
+
 function getHostUrl(req) {
   const protocol = req.headers["x-forwarded-proto"] || "https";
   const host = req.headers.host;
@@ -77,58 +104,46 @@ function getHostUrl(req) {
  * - Genre as small frosted pill, bottom-center
  */
 function buildOverlaySvg(width, height, rank, genre) {
-  // Apple TV ranks sit large in the top-left corner
-  const fontSize = Math.round(height * 0.42);
+  // Apple TV ranks: large, top-left, soft metallic silver (not pure flat white)
+  const fontSize = Math.round(height * 0.40);
   const xPos = Math.round(width * 0.022);
-  const yPos = Math.round(height * 0.06 + fontSize * 0.82);
-
-  // Slight negative tracking for multi-digit (esp. 10)
+  const yPos = Math.round(height * 0.055 + fontSize * 0.82);
   const tracking = String(rank).length > 1 ? "-0.06em" : "0";
 
-  // Genre pill — small, bottom center, Apple TV–like
-  const badgeFont = Math.max(14, Math.round(height * 0.034));
-  const badgePadX = Math.round(badgeFont * 1.15);
-  const badgePadY = Math.round(badgeFont * 0.48);
-  const approxChar = badgeFont * 0.55;
-  const textW = (genre || "").length * approxChar;
-  const badgeW = Math.ceil(textW + badgePadX * 2);
-  const badgeH = badgeFont + badgePadY * 2;
-  const badgeRx = Math.round(badgeH / 2);
+  // Genre: plain text + soft blur behind (NO pill border)
+  const badgeFont = Math.max(13, Math.round(height * 0.032));
   const badgeCx = Math.round(width / 2);
-  const badgeCy = height - Math.round(height * 0.065);
-  const badgeX = badgeCx - Math.round(badgeW / 2);
-  const badgeY = badgeCy - Math.round(badgeH / 2);
+  const badgeCy = height - Math.round(height * 0.055);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
      xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Soft metallic: mostly white, slight cool grey at the bottom -->
+    <!-- Apple TV metallic: soft silver, not pure white -->
     <linearGradient id="metal" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#FFFFFF"/>
-      <stop offset="55%" stop-color="#F1F5F9"/>
-      <stop offset="100%" stop-color="#E2E8F0"/>
+      <stop offset="35%" stop-color="#E8EEF4"/>
+      <stop offset="70%" stop-color="#C5D0DC"/>
+      <stop offset="100%" stop-color="#9AA8B8"/>
     </linearGradient>
-    <!-- Left vignette for contrast under the number -->
     <linearGradient id="vig" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#000000" stop-opacity="0.55"/>
-      <stop offset="40%" stop-color="#000000" stop-opacity="0.22"/>
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.50"/>
+      <stop offset="40%" stop-color="#000000" stop-opacity="0.18"/>
       <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
     </linearGradient>
-    <!-- Soft drop shadow only — matches Apple TV, no thick outline -->
     <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="4" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.55"/>
-      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.30"/>
+      <feDropShadow dx="3" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.50"/>
+      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.25"/>
     </filter>
-    <filter id="badgeShadow" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.40"/>
+    <!-- Soft blur plate behind genre text (no border) -->
+    <filter id="genreBlur" x="-50%" y="-80%" width="200%" height="260%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8"/>
     </filter>
   </defs>
 
-  <!-- Light left vignette -->
-  <rect width="${Math.round(width * 0.50)}" height="${height}" fill="url(#vig)"/>
+  <rect width="${Math.round(width * 0.48)}" height="${height}" fill="url(#vig)"/>
 
-  <!-- Rank number — Inter Display Black, clean white, soft shadow -->
+  <!-- Rank -->
   <text
     x="${xPos}"
     y="${yPos}"
@@ -140,27 +155,25 @@ function buildOverlaySvg(width, height, rank, genre) {
     filter="url(#rankShadow)"
   >${rank}</text>
 
-  <!-- Genre pill — frosted, bottom center -->
-  <g filter="url(#badgeShadow)">
-    <rect
-      x="${badgeX}" y="${badgeY}"
-      width="${badgeW}" height="${badgeH}"
-      rx="${badgeRx}" ry="${badgeRx}"
-      fill="rgba(20, 20, 26, 0.72)"
-      stroke="rgba(255,255,255,0.28)"
-      stroke-width="1"
-    />
-    <text
-      x="${badgeCx}"
-      y="${badgeCy + Math.round(badgeFont * 0.32)}"
-      font-family="Inter"
-      font-weight="600"
-      font-size="${badgeFont}"
-      fill="rgba(255,255,255,0.95)"
-      text-anchor="middle"
-      dominant-baseline="middle"
-    >${genre || ""}</text>
-  </g>
+  <!-- Genre: soft dark blur blob + clean text on top -->
+  <ellipse
+    cx="${badgeCx}"
+    cy="${badgeCy}"
+    rx="${Math.max(40, (genre || '').length * badgeFont * 0.38)}"
+    ry="${Math.round(badgeFont * 1.1)}"
+    fill="rgba(0,0,0,0.55)"
+    filter="url(#genreBlur)"
+  />
+  <text
+    x="${badgeCx}"
+    y="${badgeCy + Math.round(badgeFont * 0.35)}"
+    font-family="Inter"
+    font-weight="600"
+    font-size="${badgeFont}"
+    fill="rgba(255,255,255,0.92)"
+    text-anchor="middle"
+    dominant-baseline="middle"
+  >${genre || ""}</text>
 </svg>`;
 }
 
@@ -284,7 +297,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 
   try {
     const raw = await fetchTrendingList(type);
-    const metas = raw.slice(0, 10).map((item, i) => {
+    const filtered = raw.filter((item) => !isAnimeItem(item));
+    const metas = filtered.slice(0, 10).map((item, i) => {
       const imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id);
       const tmdbId = item.id || item.tmdb_id || item.tmdbid;
       const idToUse = imdbId || (tmdbId ? `tmdb:${tmdbId}` : null);
