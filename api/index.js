@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "116";
+const POSTER_CACHE_VERSION = "117";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -35,7 +35,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.9.3",
+  version: "1.9.4",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels.",
@@ -147,8 +147,8 @@ function buildOverlaySvg(width, height, rank, genre) {
     <!-- Apple TV–style faint bottom fade -->
     <linearGradient id="bottomFade" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="35%" stop-color="#000000" stop-opacity="0.18"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.42"/>
+      <stop offset="30%" stop-color="#000000" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.52"/>
     </linearGradient>
     <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
       <feDropShadow dx="3" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.50"/>
