@@ -171,8 +171,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
       const title = item.title || item.name || "Unknown";
       const rank = index + 1;
 
-      // v=80 forces instant cache refresh
-      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&v=80`;
+      // v=90 forces instant cache refresh
+      const posterUrl = `${hostUrl}/api/poster?id=${imdbId || idToUse}&rank=${rank}&type=${type}&v=90`;
 
       return {
         id: idToUse,
@@ -247,7 +247,8 @@ app.get("/api/poster", async (req, res) => {
     const xPos = Math.round(width * 0.025);
 
     let textMarkup = "";
-    const fontAttr = 'font-family="sans-serif" font-weight="900" font-style="italic"';
+    // Explicit Vercel-compatible Linux fonts
+    const fontAttr = 'font-family="DejaVu Sans, Liberation Sans, sans-serif" font-weight="900" font-style="italic"';
 
     if (rankStr === "10") {
       const digitOneX = xPos;
@@ -290,7 +291,7 @@ app.get("/api/poster", async (req, res) => {
       <g>
         <!-- Frosted Glass Pill Background -->
         <rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${Math.round(badgeHeight/2)}" ry="${Math.round(badgeHeight/2)}" fill="rgba(25, 25, 32, 0.75)" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" />
-        <text x="${textX}" y="${textY}" font-family="sans-serif" font-weight="bold" font-size="${fontSizeBadge}" fill="#ffffff" text-anchor="middle" letter-spacing="1.5">${genreBadgeText}</text>
+        <text x="${textX}" y="${textY}" font-family="DejaVu Sans, Liberation Sans, sans-serif" font-weight="bold" font-size="${fontSizeBadge}" fill="#ffffff" text-anchor="middle" letter-spacing="1.5">${genreBadgeText}</text>
       </g>
     `;
 
