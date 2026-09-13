@@ -14,30 +14,25 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "80";
+const POSTER_CACHE_VERSION = "85";
 
-// Font paths — bundled in /fonts, forced into Vercel lambda via includeFiles
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
-
-// Fallback paths relative to this file (api/)
 const FONT_BLACK_ALT = path.join(__dirname, "..", "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI_ALT = path.join(__dirname, "..", "fonts", "Inter-SemiBold.ttf");
 
 function resolveFonts() {
   const black = fs.existsSync(FONT_BLACK) ? FONT_BLACK : FONT_BLACK_ALT;
   const semi = fs.existsSync(FONT_SEMI) ? FONT_SEMI : FONT_SEMI_ALT;
-  if (!fs.existsSync(black)) console.warn("WARNING: InterDisplay-Black.ttf not found at", black);
-  if (!fs.existsSync(semi)) console.warn("WARNING: Inter-SemiBold.ttf not found at", semi);
   return { black, semi };
 }
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.4.0",
+  version: "1.5.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
-    "Top 10 Trending Movies & TV Shows with Apple TV-style Inter Display ranks and frosted genre badges.",
+    "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels.",
   resources: ["catalog"],
   types: ["movie", "series"],
   catalogs: [
@@ -76,30 +71,31 @@ function getHostUrl(req) {
 }
 
 /**
- * Build the full overlay SVG (vignette + rank + genre badge).
- * Uses real Inter fonts — rendered later by resvg-js.
+ * Overlay matched to Apple TV Top 10 reference:
+ * - Large clean white rank, top-left
+ * - Soft shadow only (no heavy stroke)
+ * - Genre as small frosted pill, bottom-center
  */
 function buildOverlaySvg(width, height, rank, genre) {
-  const fontSize = Math.round(height * 0.32);
-  const xPos = Math.round(width * 0.03);
-  // baseline roughly top area
-  const yPos = Math.round(height * 0.08 + fontSize * 0.78);
+  // Apple TV ranks sit large in the top-left corner
+  const fontSize = Math.round(height * 0.42);
+  const xPos = Math.round(width * 0.022);
+  const yPos = Math.round(height * 0.06 + fontSize * 0.82);
 
-  // Tight tracking for "10"
-  const tracking = rank === 10 ? "-0.08em" : "-0.02em";
+  // Slight negative tracking for multi-digit (esp. 10)
+  const tracking = String(rank).length > 1 ? "-0.06em" : "0";
 
-  // Genre badge sizing
-  const badgeFont = Math.round(height * 0.038);
-  const badgePadX = Math.round(badgeFont * 1.4);
-  const badgePadY = Math.round(badgeFont * 0.55);
-  // Approximate text width for centering the pill
-  const approxChar = badgeFont * 0.58;
+  // Genre pill — small, bottom center, Apple TV–like
+  const badgeFont = Math.max(14, Math.round(height * 0.034));
+  const badgePadX = Math.round(badgeFont * 1.15);
+  const badgePadY = Math.round(badgeFont * 0.48);
+  const approxChar = badgeFont * 0.55;
   const textW = (genre || "").length * approxChar;
   const badgeW = Math.ceil(textW + badgePadX * 2);
   const badgeH = badgeFont + badgePadY * 2;
   const badgeRx = Math.round(badgeH / 2);
   const badgeCx = Math.round(width / 2);
-  const badgeCy = height - Math.round(height * 0.075);
+  const badgeCy = height - Math.round(height * 0.065);
   const badgeX = badgeCx - Math.round(badgeW / 2);
   const badgeY = badgeCy - Math.round(badgeH / 2);
 
@@ -107,30 +103,32 @@ function buildOverlaySvg(width, height, rank, genre) {
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
      xmlns="http://www.w3.org/2000/svg">
   <defs>
+    <!-- Soft metallic: mostly white, slight cool grey at the bottom -->
     <linearGradient id="metal" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#FFFFFF"/>
-      <stop offset="30%" stop-color="#F8FAFC"/>
-      <stop offset="65%" stop-color="#CBD5E1"/>
-      <stop offset="100%" stop-color="#94A3B8"/>
+      <stop offset="55%" stop-color="#F1F5F9"/>
+      <stop offset="100%" stop-color="#E2E8F0"/>
     </linearGradient>
+    <!-- Left vignette for contrast under the number -->
     <linearGradient id="vig" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#000000" stop-opacity="0.80"/>
-      <stop offset="50%" stop-color="#000000" stop-opacity="0.40"/>
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.55"/>
+      <stop offset="40%" stop-color="#000000" stop-opacity="0.22"/>
       <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
     </linearGradient>
-    <filter id="rankShadow" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="6" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.55"/>
-      <feDropShadow dx="2" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.35"/>
+    <!-- Soft drop shadow only — matches Apple TV, no thick outline -->
+    <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="4" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.55"/>
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.30"/>
     </filter>
-    <filter id="badgeShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000000" flood-opacity="0.45"/>
+    <filter id="badgeShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.40"/>
     </filter>
   </defs>
 
-  <!-- Left vignette -->
-  <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#vig)"/>
+  <!-- Light left vignette -->
+  <rect width="${Math.round(width * 0.50)}" height="${height}" fill="url(#vig)"/>
 
-  <!-- Rank number — Inter Display Black, metallic fill, white stroke, shadow -->
+  <!-- Rank number — Inter Display Black, clean white, soft shadow -->
   <text
     x="${xPos}"
     y="${yPos}"
@@ -138,31 +136,27 @@ function buildOverlaySvg(width, height, rank, genre) {
     font-weight="900"
     font-size="${fontSize}"
     fill="url(#metal)"
-    stroke="#FFFFFF"
-    stroke-width="${Math.max(8, Math.round(fontSize * 0.045))}"
-    stroke-linejoin="round"
-    paint-order="stroke fill"
     letter-spacing="${tracking}"
     filter="url(#rankShadow)"
   >${rank}</text>
 
-  <!-- Frosted genre pill -->
+  <!-- Genre pill — frosted, bottom center -->
   <g filter="url(#badgeShadow)">
     <rect
       x="${badgeX}" y="${badgeY}"
       width="${badgeW}" height="${badgeH}"
       rx="${badgeRx}" ry="${badgeRx}"
-      fill="rgba(22, 22, 28, 0.82)"
-      stroke="rgba(255,255,255,0.42)"
-      stroke-width="1.5"
+      fill="rgba(20, 20, 26, 0.72)"
+      stroke="rgba(255,255,255,0.28)"
+      stroke-width="1"
     />
     <text
       x="${badgeCx}"
-      y="${badgeCy + Math.round(badgeFont * 0.35)}"
+      y="${badgeCy + Math.round(badgeFont * 0.32)}"
       font-family="Inter"
       font-weight="600"
       font-size="${badgeFont}"
-      fill="#FFFFFF"
+      fill="rgba(255,255,255,0.95)"
       text-anchor="middle"
       dominant-baseline="middle"
     >${genre || ""}</text>
@@ -170,15 +164,13 @@ function buildOverlaySvg(width, height, rank, genre) {
 </svg>`;
 }
 
-/**
- * Render SVG → PNG using resvg-js with bundled Inter fonts.
- */
 function renderSvgToPng(svgString, width) {
   const { black, semi } = resolveFonts();
+  const files = [black, semi].filter((p) => fs.existsSync(p));
   const resvg = new Resvg(svgString, {
     fitTo: { mode: "width", value: width },
     font: {
-      fontFiles: [black, semi].filter((p) => fs.existsSync(p)),
+      fontFiles: files,
       loadSystemFonts: false,
       defaultFontFamily: "Inter",
     },
@@ -186,9 +178,6 @@ function renderSvgToPng(svgString, width) {
   return resvg.render().asPng();
 }
 
-// ---------------------------------------------------------------------------
-// TMDB
-// ---------------------------------------------------------------------------
 async function getTmdbData(imdbId, type) {
   const apiKey = process.env.TMDB_API_KEY;
   if (!apiKey || !imdbId || !imdbId.startsWith("tt")) {
@@ -266,15 +255,12 @@ async function fetchTrendingList(type) {
   return raw;
 }
 
-// ---------------------------------------------------------------------------
-// Routes
-// ---------------------------------------------------------------------------
 app.get("/", (req, res) => {
   const hostUrl = getHostUrl(req);
   res.send(`<!DOCTYPE html><html><head><title>Top 10 Trending</title></head>
 <body style="font-family:system-ui;text-align:center;padding:50px;background:#0f0f12;color:#fff">
 <h1>Top 10 Trending Addon</h1>
-<p>Apple TV-style ranks (Inter Display Black) + frosted genre badges</p>
+<p>Apple TV-style ranks + genre badges</p>
 <a href="stremio://${req.headers.host}/manifest.json"
    style="background:#e50914;color:#fff;padding:14px 28px;text-decoration:none;font-size:18px;font-weight:700;border-radius:6px;display:inline-block;margin-top:20px">
 Install in Stremio</a>
@@ -332,7 +318,6 @@ app.get("/api/poster", async (req, res) => {
     const cleanImdb = id.startsWith("tt") ? id : null;
     let genre = null;
 
-    // 1) ExtendedRatings backdrop
     if (cleanImdb) {
       try {
         const r = await axios.get(
@@ -343,7 +328,6 @@ app.get("/api/poster", async (req, res) => {
       } catch (_) {}
     }
 
-    // 2) TMDB
     const tmdb = await getTmdbData(cleanImdb, type || "movie");
     if (tmdb.genre) genre = tmdb.genre;
 
@@ -369,8 +353,6 @@ app.get("/api/poster", async (req, res) => {
 
     const num = parseInt(rank, 10) || 1;
     const svg = buildOverlaySvg(W, H, num, genre);
-
-    // Real font rendering via resvg
     const overlayPng = renderSvgToPng(svg, W);
 
     const out = await sharp(backdropBuffer)
