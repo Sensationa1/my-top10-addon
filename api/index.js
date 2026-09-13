@@ -38,81 +38,82 @@ const MANIFEST = {
   idPrefixes: ["tt"]
 };
 
-// Pure vector rounded-block digits — no font dependency, renders identically everywhere.
-// Each digit is 7 segments (scoreboard style) inside a 60x100 box.
-const SEG = { W: 60, H: 100, T: 13, R: 5 };
+// Dot-matrix digit rendering — classic 5x7 LED/scoreboard pattern.
+// Each digit is a fixed bitmap of 1s and 0s; every "1" becomes a solid square.
+// This is a decades-old, universally correct pattern with zero font dependency
+// and zero risk of shapes merging or distorting — every pixel is an independent,
+// non-overlapping square.
+const DOT_PATTERNS = {
+  "0": ["01110","10001","10011","10101","11001","10001","01110"],
+  "1": ["00100","01100","00100","00100","00100","00100","01110"],
+  "2": ["01110","10001","00001","00010","00100","01000","11111"],
+  "3": ["11111","00010","00100","00010","00001","10001","01110"],
+  "4": ["00010","00110","01010","10010","11111","00010","00010"],
+  "5": ["11111","10000","11110","00001","00001","10001","01110"],
+  "6": ["00110","01000","10000","11110","10001","10001","01110"],
+  "7": ["11111","00001","00010","00100","01000","01000","01000"],
+  "8": ["01110","10001","10001","01110","10001","10001","01110"],
+  "9": ["01110","10001","10001","01111","00001","00010","01100"],
+};
 
-function seg(x, y, w, h) {
-  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${SEG.R}"/>`;
+const DOT = { CELL: 20, GAP: 3, COLS: 5, ROWS: 7 };
+
+function digitBody(d, fillColor) {
+  const pattern = DOT_PATTERNS[d] || DOT_PATTERNS["1"];
+  const cellSize = DOT.CELL - DOT.GAP;
+  let rects = "";
+  for (let row = 0; row < DOT.ROWS; row++) {
+    for (let col = 0; col < DOT.COLS; col++) {
+      if (pattern[row][col] === "1") {
+        const x = col * DOT.CELL;
+        const y = row * DOT.CELL;
+        rects += `<rect x="${x}" y="${y}" width="${cellSize}" height="${cellSize}" rx="3" fill="${fillColor}"/>`;
+      }
+    }
+  }
+  return rects;
 }
 
-function digitBody(d) {
-  const { W, H, T } = SEG;
-  const midY = (H - T) / 2;
-  const vH = midY - T;
-
-  const parts = {
-    a: seg(T, 0, W - 2 * T, T),
-    b: seg(W - T, T, T, vH),
-    c: seg(W - T, midY + T, T, vH),
-    d: seg(T, H - T, W - 2 * T, T),
-    e: seg(0, midY + T, T, vH),
-    f: seg(0, T, T, vH),
-    g: seg(T, midY, W - 2 * T, T),
-  };
-
-  const map = {
-    "0": ["a","b","c","d","e","f"],
-    "1": ["b","c"],
-    "2": ["a","b","g","e","d"],
-    "3": ["a","b","g","c","d"],
-    "4": ["f","g","b","c"],
-    "5": ["a","f","g","c","d"],
-    "6": ["a","f","g","e","c","d"],
-    "7": ["a","b","c"],
-    "8": ["a","b","c","d","e","f","g"],
-    "9": ["a","b","c","d","f","g"],
-  };
-
-  return (map[d] || map["1"]).map((k) => parts[k]).join("");
-}
-
-// Halo trick: draw the digit body twice — a slightly enlarged solid-white copy
-// behind, then the normal-size dark copy on top. This produces a clean thick
-// outline around the WHOLE numeral silhouette, with no per-segment stroke
-// artifacts (stroking each tiny rect individually caused segments to balloon
-// and merge into unrecognizable blobs — this avoids that entirely).
-function digitWithHalo(d) {
-  const body = digitBody(d);
-  const cx = SEG.W / 2;
-  const cy = SEG.H / 2;
-  const haloScale = 1.22;
-
-  return `
-    <g transform="translate(${cx},${cy}) scale(${haloScale}) translate(${-cx},${-cy})" fill="#ffffff">${body}</g>
-    <g fill="#111114">${body}</g>
-  `;
-}
+function digitWidth() { return DOT.COLS * DOT.CELL - DOT.GAP; }
+function digitHeight() { return DOT.ROWS * DOT.CELL - DOT.GAP; }
 
 function generateNetflixNumberSvg(rank) {
   const digits = String(rank).split("");
-  const gap = 14;
+  const spacing = DOT.CELL * 1.4;
   let x = 0;
-  let shadow = "", digitsMarkup = "";
+  let shadow = "", white = "";
 
   digits.forEach((d) => {
-    const body = digitBody(d);
-    shadow += `<g transform="translate(${x + 7},7)" fill="#000" opacity="0.45">${body}</g>`;
-    digitsMarkup += `<g transform="translate(${x},0)">${digitWithHalo(d)}</g>`;
-    x += SEG.W + gap;
+    shadow += `<g transform="translate(${x + 6},6)">${digitBody(d, "#000000")}</g>`;
+    white  += `<g transform="translate(${x},0)" opacity="1">${digitBody(d, "#ffffff")}</g>`;
+    x += digitWidth() + spacing;
   });
 
-  return `<g>${shadow}${digitsMarkup}</g>`;
+  return `<g><g opacity="0.5">${shadow}</g>${white}</g>`;
 }
 
 function numberGroupWidth(rank) {
-  const digits = String(rank).length;
-  return digits * SEG.W + (digits - 1) * 14;
+  const n = String(rank).length;
+  const spacing = DOT.CELL * 1.4;
+  return n * digitWidth() + (n - 1) * spacing;
+}
+
+function numberGroupHeight() { return digitHeight(); }
+
+// TMDB genre ID → name (movie + tv IDs merged)
+const GENRE_NAMES = {
+  28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime",
+  99: "Documentary", 18: "Drama", 10751: "Family", 14: "Fantasy", 36: "History",
+  27: "Horror", 10402: "Music", 9648: "Mystery", 10749: "Romance", 878: "Sci-Fi",
+  10770: "TV Movie", 53: "Thriller", 10752: "War", 37: "Western",
+  10759: "Action", 10762: "Kids", 10763: "News", 10764: "Reality",
+  10765: "Sci-Fi", 10766: "Soap", 10767: "Talk", 10768: "War",
+};
+
+function genreLabel(genreIds) {
+  if (!Array.isArray(genreIds) || genreIds.length === 0) return "";
+  const name = GENRE_NAMES[genreIds[0]];
+  return name || "";
 }
 
 function getHostUrl(req) {
@@ -145,7 +146,7 @@ app.get("/manifest.json", (req, res) => {
 
 async function getTmdbData(imdbId, type) {
   const apiKey = process.env.TMDB_API_KEY;
-  if (!apiKey) return { backdropUrl: null };
+  if (!apiKey) return { backdropUrl: null, genreIds: [] };
 
   try {
     const findRes = await axios.get(
@@ -159,12 +160,13 @@ async function getTmdbData(imdbId, type) {
 
     if (match) {
       const backdropUrl = match.backdrop_path ? `https://image.tmdb.org/t/p/w1280${match.backdrop_path}` : null;
-      return { backdropUrl };
+      const genreIds = match.genre_ids || [];
+      return { backdropUrl, genreIds };
     }
   } catch (err) {
     console.error(`TMDB lookup error for ${imdbId}:`, err.message);
   }
-  return { backdropUrl: null };
+  return { backdropUrl: null, genreIds: [] };
 }
 
 async function fetchTrendingList(type) {
@@ -259,7 +261,7 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 });
 
 app.get("/api/poster", async (req, res) => {
-  const { id, rank, type, genres } = req.query;
+  const { id, rank, type } = req.query;
 
   if (!id) {
     return res.status(400).send("Missing ID parameter");
@@ -269,6 +271,11 @@ app.get("/api/poster", async (req, res) => {
     let backdropBuffer = null;
     const cleanImdbId = id.startsWith("tt") ? id : null;
 
+    // Always fetch TMDB data (for genre) in parallel with the xrdb attempt
+    const tmdbInfoPromise = cleanImdbId
+      ? getTmdbData(cleanImdbId, type)
+      : Promise.resolve({ backdropUrl: null, genreIds: [] });
+
     if (cleanImdbId) {
       try {
         const extUrl = `https://extendedratings.com/backdrop/${cleanImdbId}?config=russel&key=Kolkko11&v=fd3ce853`;
@@ -277,14 +284,13 @@ app.get("/api/poster", async (req, res) => {
       } catch (e) {}
     }
 
-    if (!backdropBuffer && cleanImdbId) {
-      const tmdbInfo = await getTmdbData(cleanImdbId, type);
-      if (tmdbInfo.backdropUrl) {
-        try {
-          const tmdbRes = await axios.get(tmdbInfo.backdropUrl, { responseType: "arraybuffer", timeout: 4500 });
-          backdropBuffer = Buffer.from(tmdbRes.data);
-        } catch (e) {}
-      }
+    const tmdbInfo = await tmdbInfoPromise;
+
+    if (!backdropBuffer && tmdbInfo.backdropUrl) {
+      try {
+        const tmdbRes = await axios.get(tmdbInfo.backdropUrl, { responseType: "arraybuffer", timeout: 4500 });
+        backdropBuffer = Buffer.from(tmdbRes.data);
+      } catch (e) {}
     }
 
     if (!backdropBuffer) {
@@ -302,9 +308,7 @@ app.get("/api/poster", async (req, res) => {
     const width = metadata.width || 1280;
     const height = metadata.height || 720;
 
-    const formattedGenres = genres
-      ? genres.split(",").slice(0, 2).join(" • ").toUpperCase()
-      : "";
+    const formattedGenres = genreLabel(tmdbInfo.genreIds).toUpperCase();
 
     const numRank = parseInt(rank, 10) || 1;
     const numberSvgGroup = generateNetflixNumberSvg(numRank);
