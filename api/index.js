@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "90";
+const POSTER_CACHE_VERSION = "95";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -29,7 +29,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.6.0",
+  version: "1.7.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels.",
@@ -104,22 +104,27 @@ function getHostUrl(req) {
  * - Genre as small frosted pill, bottom-center
  */
 function buildOverlaySvg(width, height, rank, genre) {
-  // Apple TV ranks: large, top-left, soft metallic silver (not pure flat white)
+  // ===== RANK — DO NOT CHANGE (user confirmed perfect) =====
   const fontSize = Math.round(height * 0.40);
   const xPos = Math.round(width * 0.022);
   const yPos = Math.round(height * 0.055 + fontSize * 0.82);
   const tracking = String(rank).length > 1 ? "-0.06em" : "0";
 
-  // Genre: plain text + soft blur behind (NO pill border)
-  const badgeFont = Math.max(13, Math.round(height * 0.032));
+  // ===== GENRE — Apple TV style: plain text, soft text-shadow only =====
+  // Title Case to match Apple TV ("Action", "Comedy") not ALL CAPS
+  const genreLabel = (genre || "")
+    .toLowerCase()
+    .split(/[\s\-]+/)
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : ""))
+    .join(" ");
+  const badgeFont = Math.max(12, Math.round(height * 0.036));
   const badgeCx = Math.round(width / 2);
-  const badgeCy = height - Math.round(height * 0.055);
+  const badgeCy = height - Math.round(height * 0.048);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
      xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Apple TV metallic: soft silver, not pure white -->
     <linearGradient id="metal" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#FFFFFF"/>
       <stop offset="35%" stop-color="#E8EEF4"/>
@@ -135,15 +140,16 @@ function buildOverlaySvg(width, height, rank, genre) {
       <feDropShadow dx="3" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.50"/>
       <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.25"/>
     </filter>
-    <!-- Soft blur plate behind genre text (no border) -->
-    <filter id="genreBlur" x="-50%" y="-80%" width="200%" height="260%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="8"/>
+    <!-- Soft multi-layer shadow under genre text only (no pill / no blob) -->
+    <filter id="genreShadow" x="-40%" y="-60%" width="180%" height="220%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000000" flood-opacity="0.70"/>
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000000" flood-opacity="0.45"/>
     </filter>
   </defs>
 
   <rect width="${Math.round(width * 0.48)}" height="${height}" fill="url(#vig)"/>
 
-  <!-- Rank -->
+  <!-- Rank (unchanged) -->
   <text
     x="${xPos}"
     y="${yPos}"
@@ -155,25 +161,18 @@ function buildOverlaySvg(width, height, rank, genre) {
     filter="url(#rankShadow)"
   >${rank}</text>
 
-  <!-- Genre: soft dark blur blob + clean text on top -->
-  <ellipse
-    cx="${badgeCx}"
-    cy="${badgeCy}"
-    rx="${Math.max(40, (genre || '').length * badgeFont * 0.38)}"
-    ry="${Math.round(badgeFont * 1.1)}"
-    fill="rgba(0,0,0,0.55)"
-    filter="url(#genreBlur)"
-  />
+  <!-- Genre: plain text + soft shadow only -->
   <text
     x="${badgeCx}"
-    y="${badgeCy + Math.round(badgeFont * 0.35)}"
+    y="${badgeCy}"
     font-family="Inter"
     font-weight="600"
     font-size="${badgeFont}"
-    fill="rgba(255,255,255,0.92)"
+    fill="rgba(255,255,255,0.90)"
     text-anchor="middle"
     dominant-baseline="middle"
-  >${genre || ""}</text>
+    filter="url(#genreShadow)"
+  >${genreLabel}</text>
 </svg>`;
 }
 
