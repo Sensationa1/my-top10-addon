@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "200";
+const POSTER_CACHE_VERSION = "201";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.0.0",
+  version: "2.0.1",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels on portrait posters.",
@@ -113,73 +113,63 @@ function getHostUrl(req) {
  * - Genre as small frosted pill, bottom-center
  */
 function buildOverlaySvg(width, height, rank, genre) {
-  // ===== RANK (portrait-scaled; same metallic style) =====
-  const fontSize = Math.round(height * 0.28);
-  const xPos = Math.round(width * 0.04);
-  const yPos = Math.round(height * 0.04 + fontSize * 0.82);
-  const tracking = String(rank).length > 1 ? "-0.06em" : "0";
+  // ===== RANK — reference style: pure white, smaller =====
+  const fontSize = Math.round(height * 0.175);
+  const xPos = Math.round(width * 0.055);
+  const yPos = Math.round(height * 0.035 + fontSize * 0.82);
+  const tracking = String(rank).length > 1 ? "-0.05em" : "0";
 
-  // ===== GENRE =====
+  // ===== GENRE — bottom center, raised to match reference =====
   const genreLabel = (genre || "")
     .toLowerCase()
     .split(/[\s\-]+/)
     .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : ""))
     .join(" ");
-  const badgeFont = Math.max(18, Math.round(height * 0.048));
+  const badgeFont = Math.max(16, Math.round(height * 0.042));
   const badgeCx = Math.round(width / 2);
-  const badgeCy = height - Math.round(height * 0.055);
+  // Higher than edge — similar to reference row
+  const badgeCy = height - Math.round(height * 0.078);
 
-  // Very faint bottom bar
-  const bottomBarH = Math.round(height * 0.16);
+  const bottomBarH = Math.round(height * 0.14);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
      xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="metal" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#FFFFFF"/>
-      <stop offset="35%" stop-color="#E8EEF4"/>
-      <stop offset="70%" stop-color="#C5D0DC"/>
-      <stop offset="100%" stop-color="#9AA8B8"/>
-    </linearGradient>
     <linearGradient id="vig" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#000000" stop-opacity="0.50"/>
-      <stop offset="40%" stop-color="#000000" stop-opacity="0.18"/>
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.32"/>
+      <stop offset="45%" stop-color="#000000" stop-opacity="0.10"/>
       <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
     </linearGradient>
-    <!-- Apple TV–style very faint bottom fade -->
     <linearGradient id="bottomFade" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="40%" stop-color="#000000" stop-opacity="0.10"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.28"/>
+      <stop offset="45%" stop-color="#000000" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.22"/>
     </linearGradient>
     <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="3" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.50"/>
-      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.25"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.30"/>
     </filter>
-    <!-- Soft halo only behind genre text (not a full bar) -->
     <filter id="genreShadow" x="-50%" y="-80%" width="200%" height="260%">
-      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#000000" flood-opacity="0.35"/>
-      <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#000000" flood-opacity="0.40"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#000000" flood-opacity="0.40"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000000" flood-opacity="0.35"/>
     </filter>
   </defs>
 
-  <!-- Left vignette for rank contrast (portrait) -->
-  <rect width="${Math.round(width * 0.62)}" height="${height}" fill="url(#vig)"/>
+  <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#vig)"/>
 
-  <!-- Rank (unchanged) -->
+  <!-- Rank: pure white like reference -->
   <text
     x="${xPos}"
     y="${yPos}"
     font-family="Inter Display"
     font-weight="900"
     font-size="${fontSize}"
-    fill="url(#metal)"
+    fill="#FFFFFF"
     letter-spacing="${tracking}"
     filter="url(#rankShadow)"
   >${rank}</text>
 
-  <!-- Very faint black bar over bottom of poster -->
   <rect
     x="0"
     y="${height - bottomBarH}"
@@ -188,14 +178,14 @@ function buildOverlaySvg(width, height, rank, genre) {
     fill="url(#bottomFade)"
   />
 
-  <!-- Genre: SF Pro Display Thin + soft shadow -->
+  <!-- Genre: white, soft halo -->
   <text
     x="${badgeCx}"
     y="${badgeCy}"
     font-family="SF Pro Display"
-    font-weight="100"
+    font-weight="500"
     font-size="${badgeFont}"
-    fill="rgba(255,255,255,0.95)"
+    fill="#FFFFFF"
     text-anchor="middle"
     dominant-baseline="middle"
     filter="url(#genreShadow)"
