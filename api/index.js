@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "201";
+const POSTER_CACHE_VERSION = "202";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.0.1",
+  version: "2.0.2",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels on portrait posters.",
@@ -136,6 +136,13 @@ function buildOverlaySvg(width, height, rank, genre) {
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
      xmlns="http://www.w3.org/2000/svg">
   <defs>
+    <!-- Metallic rank: white at top of glyph → silver at bottom of glyph -->
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="35%" stop-color="#F0F4F8"/>
+      <stop offset="70%" stop-color="#C5D0DC"/>
+      <stop offset="100%" stop-color="#94A3B8"/>
+    </linearGradient>
     <linearGradient id="vig" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#000000" stop-opacity="0.32"/>
       <stop offset="45%" stop-color="#000000" stop-opacity="0.10"/>
@@ -158,14 +165,14 @@ function buildOverlaySvg(width, height, rank, genre) {
 
   <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#vig)"/>
 
-  <!-- Rank: pure white like reference -->
+  <!-- Rank: vertical metal gradient (light top → silver bottom of number) -->
   <text
     x="${xPos}"
     y="${yPos}"
     font-family="Inter Display"
     font-weight="900"
     font-size="${fontSize}"
-    fill="#FFFFFF"
+    fill="url(#metal)"
     letter-spacing="${tracking}"
     filter="url(#rankShadow)"
   >${rank}</text>
@@ -178,12 +185,12 @@ function buildOverlaySvg(width, height, rank, genre) {
     fill="url(#bottomFade)"
   />
 
-  <!-- Genre: white, soft halo -->
+  <!-- Genre: SF Pro Display Thin -->
   <text
     x="${badgeCx}"
     y="${badgeCy}"
     font-family="SF Pro Display"
-    font-weight="500"
+    font-weight="100"
     font-size="${badgeFont}"
     fill="#FFFFFF"
     text-anchor="middle"
@@ -194,15 +201,14 @@ function buildOverlaySvg(width, height, rank, genre) {
 }
 
 function renderSvgToPng(svgString, width) {
-  const { black, semi, sfMed, sfBold, sfThin } = resolveFonts();
-  // Prefer Thin for genre labels; keep Medium/Bold as fallbacks
-  const files = [black, semi, sfThin, sfMed, sfBold].filter((p) => fs.existsSync(p));
+  const { black, semi, sfThin } = resolveFonts();
+  // Only Black (ranks) + Thin (genre) so weight 100 always hits SF Pro Thin
+  const files = [black, sfThin, semi].filter((p) => fs.existsSync(p));
   const resvg = new Resvg(svgString, {
     fitTo: { mode: "width", value: width },
     font: {
       fontFiles: files,
       loadSystemFonts: false,
-      // Prefer SF Pro Display when requested in SVG; Inter remains fallback for ranks
       defaultFontFamily: "SF Pro Display",
     },
   });
