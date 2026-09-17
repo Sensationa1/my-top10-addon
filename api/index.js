@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "203";
+const POSTER_CACHE_VERSION = "204";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.0.3",
+  version: "2.0.4",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels on portrait posters.",
@@ -156,11 +156,9 @@ function buildOverlaySvg(width, height, rank, genre) {
       <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.50"/>
       <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.35"/>
     </filter>
-    <!-- Stronger halo so Thin genre stays readable -->
-    <filter id="genreShadow" x="-60%" y="-100%" width="220%" height="300%">
-      <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#000000" flood-opacity="0.65"/>
-      <feDropShadow dx="0" dy="1" stdDeviation="4" flood-color="#000000" flood-opacity="0.55"/>
-      <feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="#000000" flood-opacity="0.80"/>
+    <!-- Minimal genre shadow — barely there -->
+    <filter id="genreShadow" x="-20%" y="-40%" width="140%" height="180%">
+      <feDropShadow dx="0" dy="0.5" stdDeviation="1.2" flood-color="#000000" flood-opacity="0.22"/>
     </filter>
   </defs>
 
