@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "119";
+const POSTER_CACHE_VERSION = "120";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.9.6",
+  version: "1.9.7",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels.",
@@ -125,13 +125,13 @@ function buildOverlaySvg(width, height, rank, genre) {
     .split(/[\s\-]+/)
     .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : ""))
     .join(" ");
-  const badgeFont = Math.max(20, Math.round(height * 0.068));
+  const badgeFont = Math.max(22, Math.round(height * 0.076));
   const badgeCx = Math.round(width / 2);
   // Raised slightly off the bottom edge (was 5.5% → ~9%)
   const badgeCy = height - Math.round(height * 0.09);
 
-  // Faint bottom bar height (~22% of poster, very transparent)
-  const bottomBarH = Math.round(height * 0.22);
+  // Faint bottom bar (~24% of poster; slightly stronger than before)
+  const bottomBarH = Math.round(height * 0.24);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
@@ -148,11 +148,11 @@ function buildOverlaySvg(width, height, rank, genre) {
       <stop offset="40%" stop-color="#000000" stop-opacity="0.18"/>
       <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
     </linearGradient>
-    <!-- Apple TV–style faint bottom fade -->
+    <!-- Apple TV–style faint bottom fade (slightly stronger) -->
     <linearGradient id="bottomFade" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="30%" stop-color="#000000" stop-opacity="0.24"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.52"/>
+      <stop offset="25%" stop-color="#000000" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.60"/>
     </linearGradient>
     <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
       <feDropShadow dx="3" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.50"/>
