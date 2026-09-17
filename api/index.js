@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "121";
+const POSTER_CACHE_VERSION = "200";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,10 +38,10 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.9.8",
+  version: "2.0.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
-    "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels.",
+    "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels on portrait posters.",
   resources: ["catalog"],
   types: ["movie", "series"],
   catalogs: [
@@ -50,14 +50,14 @@ const MANIFEST = {
       type: "movie",
       name: "Top 10 Trending Movies",
       extraSupported: [],
-      posterShape: "landscape",
+      posterShape: "poster",
     },
     {
       id: "top10_trending_shows",
       type: "series",
       name: "Top 10 Trending Shows",
       extraSupported: [],
-      posterShape: "landscape",
+      posterShape: "poster",
     },
   ],
   idPrefixes: ["tt"],
@@ -113,10 +113,10 @@ function getHostUrl(req) {
  * - Genre as small frosted pill, bottom-center
  */
 function buildOverlaySvg(width, height, rank, genre) {
-  // ===== RANK — DO NOT CHANGE =====
-  const fontSize = Math.round(height * 0.40);
-  const xPos = Math.round(width * 0.022);
-  const yPos = Math.round(height * 0.055 + fontSize * 0.82);
+  // ===== RANK (portrait-scaled; same metallic style) =====
+  const fontSize = Math.round(height * 0.28);
+  const xPos = Math.round(width * 0.04);
+  const yPos = Math.round(height * 0.04 + fontSize * 0.82);
   const tracking = String(rank).length > 1 ? "-0.06em" : "0";
 
   // ===== GENRE =====
@@ -125,13 +125,12 @@ function buildOverlaySvg(width, height, rank, genre) {
     .split(/[\s\-]+/)
     .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : ""))
     .join(" ");
-  const badgeFont = Math.max(22, Math.round(height * 0.076));
+  const badgeFont = Math.max(18, Math.round(height * 0.048));
   const badgeCx = Math.round(width / 2);
-  // Raised slightly off the bottom edge (was 5.5% → ~9%)
-  const badgeCy = height - Math.round(height * 0.09);
+  const badgeCy = height - Math.round(height * 0.055);
 
-  // Very faint bottom bar (~20% of poster)
-  const bottomBarH = Math.round(height * 0.20);
+  // Very faint bottom bar
+  const bottomBarH = Math.round(height * 0.16);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
@@ -165,8 +164,8 @@ function buildOverlaySvg(width, height, rank, genre) {
     </filter>
   </defs>
 
-  <!-- Left vignette for rank contrast -->
-  <rect width="${Math.round(width * 0.48)}" height="${height}" fill="url(#vig)"/>
+  <!-- Left vignette for rank contrast (portrait) -->
+  <rect width="${Math.round(width * 0.62)}" height="${height}" fill="url(#vig)"/>
 
   <!-- Rank (unchanged) -->
   <text
@@ -223,7 +222,7 @@ function renderSvgToPng(svgString, width) {
 async function getTmdbData(imdbId, type) {
   const apiKey = process.env.TMDB_API_KEY;
   if (!apiKey || !imdbId || !imdbId.startsWith("tt")) {
-    return { backdropUrl: null, genre: null };
+    return { posterUrl: null, genre: null };
   }
   try {
     const findRes = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
@@ -233,10 +232,10 @@ async function getTmdbData(imdbId, type) {
     const isSeries = type === "series";
     const results = isSeries ? findRes.data.tv_results : findRes.data.movie_results;
     const match = results && results[0];
-    if (!match) return { backdropUrl: null, genre: null };
+    if (!match) return { posterUrl: null, genre: null };
 
-    const backdropUrl = match.backdrop_path
-      ? `https://image.tmdb.org/t/p/w1280${match.backdrop_path}`
+    const posterUrl = match.poster_path
+      ? `https://image.tmdb.org/t/p/w780${match.poster_path}`
       : null;
 
     let genre = null;
@@ -255,10 +254,10 @@ async function getTmdbData(imdbId, type) {
         }
       } catch (_) {}
     }
-    return { backdropUrl, genre };
+    return { posterUrl, genre };
   } catch (err) {
     console.error(`TMDB ${imdbId}:`, err.message);
-    return { backdropUrl: null, genre: null };
+    return { posterUrl: null, genre: null };
   }
 }
 
@@ -339,7 +338,7 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         type,
         name: `${rank}. ${title}`,
         poster: `${hostUrl}/api/poster?id=${encodeURIComponent(imdbId || idToUse)}&rank=${rank}&type=${type}&v=${POSTER_CACHE_VERSION}`,
-        posterShape: "landscape",
+        posterShape: "poster",
         description: item.description || item.overview || "",
       };
     }).filter(Boolean);
@@ -357,48 +356,55 @@ app.get("/api/poster", async (req, res) => {
   if (!id) return res.status(400).send("Missing ID");
 
   try {
-    let backdropBuffer = null;
+    let posterBuffer = null;
     const cleanImdb = id.startsWith("tt") ? id : null;
     let genre = null;
 
+    // Primary: Extended Ratings portrait poster
     if (cleanImdb) {
       try {
         const r = await axios.get(
-          `https://extendedratings.com/backdrop/${cleanImdb}?config=russel&key=Kolkko11&v=fd3ce853`,
+          `https://extendedratings.com/poster/${cleanImdb}?config=russel&key=Kolkko11&v=fd3ce853`,
           { responseType: "arraybuffer", timeout: 4500 }
         );
-        backdropBuffer = Buffer.from(r.data);
+        posterBuffer = Buffer.from(r.data);
       } catch (_) {}
     }
 
     const tmdb = await getTmdbData(cleanImdb, type || "movie");
     if (tmdb.genre) genre = tmdb.genre;
 
-    if (!backdropBuffer && tmdb.backdropUrl) {
+    // Fallback: TMDB portrait poster
+    if (!posterBuffer && tmdb.posterUrl) {
       try {
-        const r = await axios.get(tmdb.backdropUrl, {
+        const r = await axios.get(tmdb.posterUrl, {
           responseType: "arraybuffer", timeout: 4500,
         });
-        backdropBuffer = Buffer.from(r.data);
+        posterBuffer = Buffer.from(r.data);
       } catch (_) {}
     }
 
-    if (!backdropBuffer) {
-      backdropBuffer = await sharp({
-        create: { width: 1280, height: 720, channels: 3, background: { r: 18, g: 18, b: 24 } },
+    if (!posterBuffer) {
+      posterBuffer = await sharp({
+        create: { width: 500, height: 750, channels: 3, background: { r: 18, g: 18, b: 24 } },
       }).jpeg().toBuffer();
     }
 
-    const meta = await sharp(backdropBuffer).metadata();
-    const W = meta.width || 1280;
-    const H = meta.height || 720;
+    // Normalize to consistent portrait canvas
+    const TARGET_W = 500;
+    const TARGET_H = 750;
+    posterBuffer = await sharp(posterBuffer)
+      .resize(TARGET_W, TARGET_H, { fit: "cover", position: "centre" })
+      .jpeg({ quality: 92 })
+      .toBuffer();
+
     if (!genre) genre = type === "series" ? "SERIES" : "MOVIE";
 
     const num = parseInt(rank, 10) || 1;
-    const svg = buildOverlaySvg(W, H, num, genre);
-    const overlayPng = renderSvgToPng(svg, W);
+    const svg = buildOverlaySvg(TARGET_W, TARGET_H, num, genre);
+    const overlayPng = renderSvgToPng(svg, TARGET_W);
 
-    const out = await sharp(backdropBuffer)
+    const out = await sharp(posterBuffer)
       .composite([{ input: overlayPng, top: 0, left: 0 }])
       .jpeg({ quality: 91 })
       .toBuffer();
