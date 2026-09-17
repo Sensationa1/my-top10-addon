@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "202";
+const POSTER_CACHE_VERSION = "203";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.0.2",
+  version: "2.0.3",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels on portrait posters.",
@@ -125,47 +125,48 @@ function buildOverlaySvg(width, height, rank, genre) {
     .split(/[\s\-]+/)
     .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : ""))
     .join(" ");
-  const badgeFont = Math.max(16, Math.round(height * 0.042));
+  const badgeFont = Math.max(20, Math.round(height * 0.052));
   const badgeCx = Math.round(width / 2);
-  // Higher than edge — similar to reference row
   const badgeCy = height - Math.round(height * 0.078);
 
-  const bottomBarH = Math.round(height * 0.14);
+  const bottomBarH = Math.round(height * 0.16);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
      xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Metallic rank: white at top of glyph → silver at bottom of glyph -->
+    <!-- Rank fades from solid white at top → transparent at bottom of glyph -->
     <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF"/>
-      <stop offset="35%" stop-color="#F0F4F8"/>
-      <stop offset="70%" stop-color="#C5D0DC"/>
-      <stop offset="100%" stop-color="#94A3B8"/>
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="70%" stop-color="#E2E8F0" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.12"/>
     </linearGradient>
     <linearGradient id="vig" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#000000" stop-opacity="0.32"/>
-      <stop offset="45%" stop-color="#000000" stop-opacity="0.10"/>
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.36"/>
+      <stop offset="45%" stop-color="#000000" stop-opacity="0.12"/>
       <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
     </linearGradient>
     <linearGradient id="bottomFade" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="45%" stop-color="#000000" stop-opacity="0.08"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.22"/>
+      <stop offset="40%" stop-color="#000000" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.32"/>
     </linearGradient>
     <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.45"/>
-      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.30"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.50"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.35"/>
     </filter>
-    <filter id="genreShadow" x="-50%" y="-80%" width="200%" height="260%">
-      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#000000" flood-opacity="0.40"/>
-      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000000" flood-opacity="0.35"/>
+    <!-- Stronger halo so Thin genre stays readable -->
+    <filter id="genreShadow" x="-60%" y="-100%" width="220%" height="300%">
+      <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#000000" flood-opacity="0.65"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="4" flood-color="#000000" flood-opacity="0.55"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="#000000" flood-opacity="0.80"/>
     </filter>
   </defs>
 
   <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#vig)"/>
 
-  <!-- Rank: vertical metal gradient (light top → silver bottom of number) -->
+  <!-- Rank: solid at top, fades out toward bottom of number -->
   <text
     x="${xPos}"
     y="${yPos}"
@@ -185,7 +186,7 @@ function buildOverlaySvg(width, height, rank, genre) {
     fill="url(#bottomFade)"
   />
 
-  <!-- Genre: SF Pro Display Thin -->
+  <!-- Genre: SF Pro Thin, larger + stronger shadow -->
   <text
     x="${badgeCx}"
     y="${badgeCy}"
@@ -193,6 +194,7 @@ function buildOverlaySvg(width, height, rank, genre) {
     font-weight="100"
     font-size="${badgeFont}"
     fill="#FFFFFF"
+    fill-opacity="1"
     text-anchor="middle"
     dominant-baseline="middle"
     filter="url(#genreShadow)"
