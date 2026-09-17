@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "120";
+const POSTER_CACHE_VERSION = "121";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "1.9.7",
+  version: "1.9.8",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels.",
@@ -130,8 +130,8 @@ function buildOverlaySvg(width, height, rank, genre) {
   // Raised slightly off the bottom edge (was 5.5% → ~9%)
   const badgeCy = height - Math.round(height * 0.09);
 
-  // Faint bottom bar (~24% of poster; slightly stronger than before)
-  const bottomBarH = Math.round(height * 0.24);
+  // Very faint bottom bar (~20% of poster)
+  const bottomBarH = Math.round(height * 0.20);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
@@ -148,19 +148,20 @@ function buildOverlaySvg(width, height, rank, genre) {
       <stop offset="40%" stop-color="#000000" stop-opacity="0.18"/>
       <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
     </linearGradient>
-    <!-- Apple TV–style faint bottom fade (slightly stronger) -->
+    <!-- Apple TV–style very faint bottom fade -->
     <linearGradient id="bottomFade" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="25%" stop-color="#000000" stop-opacity="0.30"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.60"/>
+      <stop offset="40%" stop-color="#000000" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.28"/>
     </linearGradient>
     <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
       <feDropShadow dx="3" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.50"/>
       <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.25"/>
     </filter>
-    <filter id="genreShadow" x="-40%" y="-60%" width="180%" height="220%">
-      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000000" flood-opacity="0.70"/>
-      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000000" flood-opacity="0.45"/>
+    <!-- Soft halo only behind genre text (not a full bar) -->
+    <filter id="genreShadow" x="-50%" y="-80%" width="200%" height="260%">
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#000000" flood-opacity="0.35"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#000000" flood-opacity="0.40"/>
     </filter>
   </defs>
 
