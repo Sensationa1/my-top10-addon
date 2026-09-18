@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.0.5",
+  version: "2.0.6",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels on portrait posters.",
@@ -74,21 +74,24 @@ const GENRE_MAP = {
 };
 
 
-// TMDB Animation = 16. Used only with Japanese language to avoid dropping Pixar etc.
+// TMDB Animation = 16. Paired with Japanese language so Pixar/Disney stay.
 const TMDB_ANIMATION_ID = 16;
+
+// MDBList JSON has almost no genre/lang — catch common anime titles by name.
+const ANIME_TITLE_RE =
+  /\b(anime|one piece|naruto|boruto|demon slayer|kimetsu|jujutsu kaisen|attack on titan|shingeki|clevatess|solo leveling|frieren|bleach|dragon ball|chainsaw man|spy x family|my hero academia|boku no hero|hunter x hunter|tokyo ghoul|death note|evangelion|studio ghibli|ghibli|pokemon|pokémon|digimon|sailor moon|inuyasha|fullmetal|haikyuu|black clover|one punch|mob psycho|vinland saga|dandadan|kaiju no\.?\s*8|blue lock|oshi no ko)\b/i;
 
 function isAnimeItem(item) {
   if (!item || typeof item !== "object") return false;
 
-  // Explicit media type
   const mediaType = String(item.mediatype || item.media_type || item.type || "").toLowerCase();
   if (mediaType === "anime") return true;
 
-  const title = String(item.title || item.name || "").toLowerCase();
-  const overview = String(item.description || item.overview || item.plot || "").toLowerCase();
-  if (/\banime\b/.test(title) || /\banime\b/.test(overview)) return true;
+  const title = String(item.title || item.name || "");
+  const overview = String(item.description || item.overview || item.plot || "");
+  if (ANIME_TITLE_RE.test(title) || ANIME_TITLE_RE.test(overview)) return true;
+  if (/\banime\b/i.test(title) || /\banime\b/i.test(overview)) return true;
 
-  // Genre names (MDBList / TMDB detail)
   const genreNames = [];
   if (Array.isArray(item.genres)) {
     for (const g of item.genres) {
@@ -99,7 +102,6 @@ function isAnimeItem(item) {
   }
   if (genreNames.some((n) => n.includes("anime"))) return true;
 
-  // Japanese + Animation ≈ anime (keeps Western animation)
   const lang = String(
     item.original_language || item.language || item.origlang || ""
   ).toLowerCase();
@@ -109,10 +111,48 @@ function isAnimeItem(item) {
   const hasAnimName = genreNames.some((n) => n.includes("animation") || n.includes("animaatio"));
   if (isJapanese && (hasAnimId || hasAnimName)) return true;
 
-  // Japanese TV often anime on trending lists when marked animation-only
-  if (isJapanese && hasAnimId) return true;
-
   return false;
+}
+
+/** TMDB lookup — MDBList items lack genre/language fields */
+async function isAnimeViaTmdb(item, type) {
+  if (isAnimeItem(item)) return true;
+  const apiKey = process.env.TMDB_API_KEY;
+  const imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id);
+  if (!apiKey || !imdbId || !String(imdbId).startsWith("tt")) return false;
+  try {
+    const findRes = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
+      params: { api_key: apiKey, external_source: "imdb_id" },
+      timeout: 4000,
+    });
+    const isSeries = type === "series";
+    const match =
+      (isSeries ? findRes.data.tv_results : findRes.data.movie_results) &&
+      (isSeries ? findRes.data.tv_results : findRes.data.movie_results)[0];
+    if (!match) return false;
+    const lang = String(match.original_language || "").toLowerCase();
+    const isJapanese = lang === "ja" || lang === "jp";
+    const hasAnim =
+      Array.isArray(match.genre_ids) && match.genre_ids.some((g) => Number(g) === TMDB_ANIMATION_ID);
+    if (isJapanese && hasAnim) return true;
+    if (ANIME_TITLE_RE.test(String(match.name || match.title || ""))) return true;
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function filterOutAnime(raw, type, limit = 10) {
+  const out = [];
+  for (const item of raw) {
+    if (out.length >= limit) break;
+    // Fast local checks first
+    if (isAnimeItem(item)) continue;
+    // Confirm via TMDB when possible (MDBList has no genres)
+    if (await isAnimeViaTmdb(item, type)) continue;
+    out.push(item);
+  }
+  return out;
 }
 
 function getHostUrl(req) {
@@ -323,7 +363,8 @@ Install in Stremio</a>
 app.get("/manifest.json", (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
-  res.setHeader("Cache-Control", "max-age=86400, public");
+  // Short cache so catalog order / version updates apply quickly
+  res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60");
   res.json(MANIFEST);
 });
 
@@ -336,8 +377,9 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 
   try {
     const raw = await fetchTrendingList(type);
-    const filtered = raw.filter((item) => !isAnimeItem(item));
-    const metas = filtered.slice(0, 10).map((item, i) => {
+    // Walk the full list until we have 10 non-anime (MDBList has no genre fields)
+    const filtered = await filterOutAnime(raw, type, 10);
+    const metas = filtered.map((item, i) => {
       const imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id);
       const tmdbId = item.id || item.tmdb_id || item.tmdbid;
       const idToUse = imdbId || (tmdbId ? `tmdb:${tmdbId}` : null);
