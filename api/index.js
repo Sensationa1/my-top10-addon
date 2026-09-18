@@ -38,24 +38,24 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.0.4",
+  version: "2.0.5",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels on portrait posters.",
   resources: ["catalog"],
-  types: ["movie", "series"],
+  types: ["series", "movie"],
   catalogs: [
-    {
-      id: "top10_trending_movies",
-      type: "movie",
-      name: "Top 10 Trending Movies",
-      extraSupported: [],
-      posterShape: "poster",
-    },
     {
       id: "top10_trending_shows",
       type: "series",
       name: "Top 10 Trending Shows",
+      extraSupported: [],
+      posterShape: "poster",
+    },
+    {
+      id: "top10_trending_movies",
+      type: "movie",
+      name: "Top 10 Trending Movies",
       extraSupported: [],
       posterShape: "poster",
     },
@@ -74,29 +74,44 @@ const GENRE_MAP = {
 };
 
 
-// Animation genre id on TMDB = 16. Also catch explicit "Anime" labels.
-const ANIME_GENRE_IDS = new Set([16]);
+// TMDB Animation = 16. Used only with Japanese language to avoid dropping Pixar etc.
+const TMDB_ANIMATION_ID = 16;
 
 function isAnimeItem(item) {
-  // TMDB trending objects
-  if (Array.isArray(item.genre_ids) && item.genre_ids.some((g) => ANIME_GENRE_IDS.has(g))) {
-    return true;
-  }
-  // MDBList / other payloads
-  const genres = item.genres;
-  if (Array.isArray(genres)) {
-    for (const g of genres) {
-      const name = (typeof g === "string" ? g : g && g.name) || "";
-      const n = name.toLowerCase();
-      if (n.includes("anime") || n === "animation") return true;
+  if (!item || typeof item !== "object") return false;
+
+  // Explicit media type
+  const mediaType = String(item.mediatype || item.media_type || item.type || "").toLowerCase();
+  if (mediaType === "anime") return true;
+
+  const title = String(item.title || item.name || "").toLowerCase();
+  const overview = String(item.description || item.overview || item.plot || "").toLowerCase();
+  if (/\banime\b/.test(title) || /\banime\b/.test(overview)) return true;
+
+  // Genre names (MDBList / TMDB detail)
+  const genreNames = [];
+  if (Array.isArray(item.genres)) {
+    for (const g of item.genres) {
+      genreNames.push(String(typeof g === "string" ? g : (g && g.name) || "").toLowerCase());
     }
-  } else if (typeof genres === "string") {
-    const n = genres.toLowerCase();
-    if (n.includes("anime") || n.includes("animation")) return true;
+  } else if (typeof item.genres === "string") {
+    genreNames.push(item.genres.toLowerCase());
   }
-  // Title heuristics (optional light filter)
-  const title = (item.title || item.name || "").toLowerCase();
-  if (/\banime\b/.test(title)) return true;
+  if (genreNames.some((n) => n.includes("anime"))) return true;
+
+  // Japanese + Animation ≈ anime (keeps Western animation)
+  const lang = String(
+    item.original_language || item.language || item.origlang || ""
+  ).toLowerCase();
+  const isJapanese = lang === "ja" || lang === "jp" || lang.startsWith("ja-");
+  const hasAnimId =
+    Array.isArray(item.genre_ids) && item.genre_ids.some((g) => Number(g) === TMDB_ANIMATION_ID);
+  const hasAnimName = genreNames.some((n) => n.includes("animation") || n.includes("animaatio"));
+  if (isJapanese && (hasAnimId || hasAnimName)) return true;
+
+  // Japanese TV often anime on trending lists when marked animation-only
+  if (isJapanese && hasAnimId) return true;
+
   return false;
 }
 
