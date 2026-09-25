@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "204";
+const POSTER_CACHE_VERSION = "210";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,10 +38,10 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.0.6",
+  version: "2.1.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
-    "Top 10 Trending Movies & TV Shows with Apple TV-style ranks and genre labels on portrait posters.",
+    "Top 10 Trending Movies & TV Shows with Apple TV-style rank numbers on clean portrait posters.",
   resources: ["catalog"],
   types: ["series", "movie"],
   catalogs: [
@@ -162,35 +162,19 @@ function getHostUrl(req) {
 }
 
 /**
- * Overlay matched to Apple TV Top 10 reference:
- * - Large clean white rank, top-left
- * - Soft shadow only (no heavy stroke)
- * - Genre as small frosted pill, bottom-center
+ * Overlay: rank numbers only (no genre label).
+ * Metallic fade top→bottom of each digit, light left vignette.
  */
-function buildOverlaySvg(width, height, rank, genre) {
-  // ===== RANK — reference style: pure white, smaller =====
+function buildOverlaySvg(width, height, rank) {
   const fontSize = Math.round(height * 0.175);
   const xPos = Math.round(width * 0.055);
   const yPos = Math.round(height * 0.035 + fontSize * 0.82);
   const tracking = String(rank).length > 1 ? "-0.05em" : "0";
 
-  // ===== GENRE — bottom center, raised to match reference =====
-  const genreLabel = (genre || "")
-    .toLowerCase()
-    .split(/[\s\-]+/)
-    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : ""))
-    .join(" ");
-  const badgeFont = Math.max(20, Math.round(height * 0.052));
-  const badgeCx = Math.round(width / 2);
-  const badgeCy = height - Math.round(height * 0.078);
-
-  const bottomBarH = Math.round(height * 0.16);
-
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
      xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Rank fades from solid white at top → transparent at bottom of glyph -->
     <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
       <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
       <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.95"/>
@@ -202,24 +186,14 @@ function buildOverlaySvg(width, height, rank, genre) {
       <stop offset="45%" stop-color="#000000" stop-opacity="0.12"/>
       <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
     </linearGradient>
-    <linearGradient id="bottomFade" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="40%" stop-color="#000000" stop-opacity="0.12"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.32"/>
-    </linearGradient>
     <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
       <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.50"/>
       <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.35"/>
-    </filter>
-    <!-- Minimal genre shadow — barely there -->
-    <filter id="genreShadow" x="-20%" y="-40%" width="140%" height="180%">
-      <feDropShadow dx="0" dy="0.5" stdDeviation="1.2" flood-color="#000000" flood-opacity="0.22"/>
     </filter>
   </defs>
 
   <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#vig)"/>
 
-  <!-- Rank: solid at top, fades out toward bottom of number -->
   <text
     x="${xPos}"
     y="${yPos}"
@@ -230,28 +204,6 @@ function buildOverlaySvg(width, height, rank, genre) {
     letter-spacing="${tracking}"
     filter="url(#rankShadow)"
   >${rank}</text>
-
-  <rect
-    x="0"
-    y="${height - bottomBarH}"
-    width="${width}"
-    height="${bottomBarH}"
-    fill="url(#bottomFade)"
-  />
-
-  <!-- Genre: SF Pro Thin, larger + stronger shadow -->
-  <text
-    x="${badgeCx}"
-    y="${badgeCy}"
-    font-family="SF Pro Display"
-    font-weight="100"
-    font-size="${badgeFont}"
-    fill="#FFFFFF"
-    fill-opacity="1"
-    text-anchor="middle"
-    dominant-baseline="middle"
-    filter="url(#genreShadow)"
-  >${genreLabel}</text>
 </svg>`;
 }
 
@@ -411,30 +363,29 @@ app.get("/api/poster", async (req, res) => {
   try {
     let posterBuffer = null;
     const cleanImdb = id.startsWith("tt") ? id : null;
-    let genre = null;
 
-    // Primary: Extended Ratings portrait poster
+    // Primary: btttr clean posters (no rating tags)
     if (cleanImdb) {
       try {
         const r = await axios.get(
-          `https://extendedratings.com/poster/${cleanImdb}?config=russel&key=Kolkko11&v=fd3ce853`,
-          { responseType: "arraybuffer", timeout: 4500 }
+          `https://btttr.cc/poster-g/imdb/poster-default/${cleanImdb}.jpg?tag=none`,
+          { responseType: "arraybuffer", timeout: 5000 }
         );
         posterBuffer = Buffer.from(r.data);
       } catch (_) {}
     }
 
-    const tmdb = await getTmdbData(cleanImdb, type || "movie");
-    if (tmdb.genre) genre = tmdb.genre;
-
     // Fallback: TMDB portrait poster
-    if (!posterBuffer && tmdb.posterUrl) {
-      try {
-        const r = await axios.get(tmdb.posterUrl, {
-          responseType: "arraybuffer", timeout: 4500,
-        });
-        posterBuffer = Buffer.from(r.data);
-      } catch (_) {}
+    if (!posterBuffer) {
+      const tmdb = await getTmdbData(cleanImdb, type || "movie");
+      if (tmdb.posterUrl) {
+        try {
+          const r = await axios.get(tmdb.posterUrl, {
+            responseType: "arraybuffer", timeout: 4500,
+          });
+          posterBuffer = Buffer.from(r.data);
+        } catch (_) {}
+      }
     }
 
     if (!posterBuffer) {
@@ -443,7 +394,6 @@ app.get("/api/poster", async (req, res) => {
       }).jpeg().toBuffer();
     }
 
-    // Normalize to consistent portrait canvas
     const TARGET_W = 500;
     const TARGET_H = 750;
     posterBuffer = await sharp(posterBuffer)
@@ -451,10 +401,8 @@ app.get("/api/poster", async (req, res) => {
       .jpeg({ quality: 92 })
       .toBuffer();
 
-    if (!genre) genre = type === "series" ? "SERIES" : "MOVIE";
-
     const num = parseInt(rank, 10) || 1;
-    const svg = buildOverlaySvg(TARGET_W, TARGET_H, num, genre);
+    const svg = buildOverlaySvg(TARGET_W, TARGET_H, num);
     const overlayPng = renderSvgToPng(svg, TARGET_W);
 
     const out = await sharp(posterBuffer)
