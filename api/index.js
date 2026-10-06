@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "222";
+const POSTER_CACHE_VERSION = "223";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,10 +38,10 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.2.2",
+  version: "2.2.3",
   name: "Top 10 Trending (Apple TV Style)",
   description:
-    "Top 10 Trending Movies & TV Shows with Apple TV-style rank numbers on PostersPlus portrait art.",
+    "Top 10 from TMDB trending (no news/talk/kids/anime) with Apple TV ranks on PostersPlus art.",
   resources: ["catalog"],
   types: ["series", "movie"],
   catalogs: [
@@ -142,13 +142,40 @@ async function isAnimeViaTmdb(item, type) {
   }
 }
 
-async function filterOutAnime(raw, type, limit = 10) {
+// TV genres to exclude: News, Kids, Talk. Animation+JA = anime.
+const EXCLUDE_TV_GENRES = new Set([10763, 10762, 10767]); // news, kids, talk
+const FAMILY_GENRE = 10751;
+
+function shouldExcludeTrendingItem(item, type) {
+  if (!item) return true;
+  if (isAnimeItem(item)) return true;
+
+  const genreIds = Array.isArray(item.genre_ids) ? item.genre_ids.map(Number) : [];
+  const isSeries = type === "series";
+
+  if (isSeries) {
+    if (genreIds.some((g) => EXCLUDE_TV_GENRES.has(g))) return true;
+    // Kids animation / pure kids cartoons
+    if (genreIds.includes(TMDB_ANIMATION_ID) && (genreIds.includes(10762) || genreIds.includes(FAMILY_GENRE))) {
+      return true;
+    }
+  }
+
+  // Anime: Japanese + Animation
+  const lang = String(item.original_language || "").toLowerCase();
+  const isJapanese = lang === "ja" || lang === "jp" || lang.startsWith("ja-");
+  if (isJapanese && genreIds.includes(TMDB_ANIMATION_ID)) return true;
+  if (ANIME_TITLE_RE.test(String(item.title || item.name || ""))) return true;
+
+  return false;
+}
+
+async function filterTrendingList(raw, type, limit = 10) {
   const out = [];
   for (const item of raw) {
     if (out.length >= limit) break;
-    // Fast local checks first
-    if (isAnimeItem(item)) continue;
-    // Confirm via TMDB when possible (MDBList has no genres)
+    if (shouldExcludeTrendingItem(item, type)) continue;
+    // Extra anime check via TMDB find when only imdb is known
     if (await isAnimeViaTmdb(item, type)) continue;
     out.push(item);
   }
@@ -256,7 +283,8 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("minimalist_mode_font_y_offset", "0.880");
   params.set("minimalist_score_out_of_10", "true");
   params.set("minimalist_center", "true");
-  params.set("minimalist_rating_separator", "pip");
+  params.set("minimalist_separator", "bullet");
+  params.set("minimalist_rating_separator", "bullet");
   params.set("movie_weights", "letterboxd:0.20,tomatoes:0.05,popcorn:0.20,imdb:0.55");
   params.set("tv_weights", "tomatoes:0.10,popcorn:0.25,imdb:0.61,tmdb:0.04");
   params.set("original_art_source", "top_rated");
@@ -352,38 +380,50 @@ async function getTmdbData(imdbId, type, existingTmdbId) {
 }
 
 async function fetchTrendingList(type) {
-  let raw = [];
   const apiKey = process.env.TMDB_API_KEY;
+  if (!apiKey) {
+    console.error("TMDB_API_KEY missing — cannot fetch trending");
+    return [];
+  }
 
-  if (type === "movie") {
+  const media = type === "series" ? "tv" : "movie";
+  const seen = new Set();
+  const merged = [];
+
+  // Day first, then week to fill after exclusions
+  for (const window of ["day", "week"]) {
     try {
-      const res = await axios.get(SNOAK_MOVIES_URL, { timeout: 6000 });
-      if (Array.isArray(res.data)) raw = res.data;
-    } catch (_) {}
-    if (!raw.length && apiKey) {
-      const r = await axios.get(`https://api.themoviedb.org/3/trending/movie/day`, {
-        params: { api_key: apiKey }, timeout: 5000,
+      const r = await axios.get(`https://api.themoviedb.org/3/trending/${media}/${window}`, {
+        params: { api_key: apiKey },
+        timeout: 6000,
       });
-      raw = r.data.results || [];
-    }
-  } else {
-    try {
-      const res = await axios.get(SNOAK_SHOWS_URL, { timeout: 6000 });
-      if (Array.isArray(res.data)) raw = res.data;
-    } catch (_) {
-      try {
-        const res = await axios.get(SNOAK_SHOWS_ALT_URL, { timeout: 6000 });
-        if (Array.isArray(res.data)) raw = res.data;
-      } catch (_) {}
-    }
-    if (!raw.length && apiKey) {
-      const r = await axios.get(`https://api.themoviedb.org/3/trending/tv/day`, {
-        params: { api_key: apiKey }, timeout: 5000,
-      });
-      raw = r.data.results || [];
+      for (const item of r.data.results || []) {
+        const key = item.id;
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        merged.push(item);
+      }
+    } catch (err) {
+      console.error(`TMDB trending ${media}/${window}:`, err.message);
     }
   }
-  return raw;
+  return merged;
+}
+
+/** Attach imdb_id from TMDB external_ids when missing (trending has none). */
+async function resolveImdbId(tmdbId, type) {
+  const apiKey = process.env.TMDB_API_KEY;
+  if (!apiKey || !tmdbId) return null;
+  try {
+    const pathType = type === "series" ? `tv/${tmdbId}` : `movie/${tmdbId}`;
+    const r = await axios.get(`https://api.themoviedb.org/3/${pathType}/external_ids`, {
+      params: { api_key: apiKey },
+      timeout: 4000,
+    });
+    return r.data && r.data.imdb_id ? r.data.imdb_id : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 app.get("/", (req, res) => {
@@ -416,19 +456,19 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 
   try {
     const raw = await fetchTrendingList(type);
-    // Keep unreleased / upcoming titles — only drop anime
-    const filtered = await filterOutAnime(raw, type, 10);
+    // Keep unreleased; drop news / talk / kids / anime
+    const filtered = await filterTrendingList(raw, type, 10);
 
     const metas = [];
     for (let i = 0; i < filtered.length; i++) {
       const item = filtered[i];
-      const imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id);
-      let tmdbId = item.tmdb_id || item.tmdbid || null;
-      // MDBList often uses `id` as imdb-less internal; prefer explicit tmdb fields
-      if (!tmdbId && item.id && !String(item.id).startsWith("tt") && Number(item.id)) {
-        tmdbId = item.id;
+      let tmdbId = item.tmdb_id || item.tmdbid || item.id || null;
+      if (tmdbId && String(tmdbId).startsWith("tt")) tmdbId = null;
+      let imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id) || null;
+      if (!imdbId && tmdbId) {
+        imdbId = await resolveImdbId(tmdbId, type);
       }
-      // Do not require a past release date — include not-yet-released
+      // Include not-yet-released; prefer imdb id for stream matching
       const idToUse = imdbId || (tmdbId ? `tmdb:${tmdbId}` : null);
       if (!idToUse) continue;
 
