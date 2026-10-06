@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "210";
+const POSTER_CACHE_VERSION = "220";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,10 +38,10 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.1.0",
+  version: "2.2.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
-    "Top 10 Trending Movies & TV Shows with Apple TV-style rank numbers on clean portrait posters.",
+    "Top 10 Trending Movies & TV Shows with Apple TV-style rank numbers on PostersPlus portrait art.",
   resources: ["catalog"],
   types: ["series", "movie"],
   catalogs: [
@@ -222,10 +222,70 @@ function renderSvgToPng(svgString, width) {
   return resvg.render().asPng();
 }
 
+function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
+  const params = new URLSearchParams();
+  if (tmdbId) params.set("tmdb_id", String(tmdbId));
+  if (imdbId) params.set("imdb_id", String(imdbId));
+  params.set("stremio_id", stremioId || imdbId || (tmdbId ? `tmdb:${tmdbId}` : ""));
+  params.set("type", type === "series" ? "series" : "movie");
+  params.set("shape", shape || "poster");
+  params.set("primary_client", "stremio_tv_nuvio");
+  params.set("tmdb_key", process.env.TMDB_API_KEY || "dc1ae8c943c805800112762a3afbc1b6");
+  params.set("mdblist_key", process.env.MDBLIST_API_KEY || "1cym9fkqsk4hvwtesjthxsrr9");
+  params.set("top_gradient", "medium");
+  params.set("vignette_poster_color_bottom", "true");
+  params.set("vignette_color_saturation", "0.20");
+  params.set("vignette_color_blur", "0.15");
+  params.set("vignette_color_lightness", "0.40");
+  params.set("sash_mode", "notch");
+  params.set("landscape_vignette_color_local", "true");
+  params.set("landscape_hide_genre", "true");
+  params.set("landscape_hide_year", "true");
+  params.set("landscape_hide_rating", "true");
+  params.set("landscape_sash_mode", "hidden");
+  params.set("badge_pos", "top_left");
+  params.set("landscape_badge_scale", "1.60");
+  params.set("landscape_info_scale", "0.60");
+  params.set("landscape_logo_pos", "center");
+  params.set("landscape_score_out_of_10", "true");
+  params.set("fallback_to_imdb", "true");
+  params.set("rating_display_mode", "3");
+  params.set("minimalist_append_mode", "1");
+  params.set("minimalist_mode_font_size_ratio", "0.076");
+  params.set("minimalist_mode_font_x_offset", "0.185");
+  params.set("minimalist_mode_font_y_offset", "0.880");
+  params.set("minimalist_score_out_of_10", "true");
+  params.set("minimalist_center", "true");
+  params.set("minimalist_rating_separator", "pip");
+  params.set("movie_weights", "letterboxd:0.20,tomatoes:0.05,popcorn:0.20,imdb:0.55");
+  params.set("tv_weights", "tomatoes:0.10,popcorn:0.25,imdb:0.61,tmdb:0.04");
+  params.set("original_art_source", "top_rated");
+  params.set("logo_language", "fi");
+  params.set("fallback_bg_style", "photoreal");
+  params.set("logo_bottom_ratio", "0.17");
+  params.set("logo_bottom_anchor", "true");
+  params.set("cinema_greyscale", "false");
+  params.set("meta_order", "genre,rating,year");
+  params.set("sash_badge_size_w", "1.40");
+  params.set("sash_badge_size_h", "1.20");
+  params.set("sash_badge_frost_opacity", "0.33");
+  params.set("sash_badge_frost_saturation", "0.95");
+  params.set("notch_vignette_color", "true");
+  params.set("sash_badge_pos", "left");
+  params.set(
+    "sash_priority",
+    "wins,cinema,new_season,just_added,season_finale,premiere,airing,renewed,cast,director,returning,new_release,-production,-watchlist,-gg_wins,-festival,-pic_noms,-metacritic,-gg_noms,-trending,-trending_broad,-studio,-blockbuster,-cult,-foreign,-true_story,-short_film,-mini_series,-binge_ready,-cancelled,-ended,-physical,-streaming"
+  );
+  params.set("badge_display_mode", "7");
+  params.set("badge_group1", "chip:4:network:24");
+  params.set("badge_logo_scale", "0.85");
+  return `https://postersplus.slokker.cc/poster?${params.toString()}`;
+}
+
 async function getTmdbData(imdbId, type) {
   const apiKey = process.env.TMDB_API_KEY;
   if (!apiKey || !imdbId || !imdbId.startsWith("tt")) {
-    return { posterUrl: null, genre: null };
+    return { posterUrl: null, genre: null, tmdbId: null };
   }
   try {
     const findRes = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
@@ -235,7 +295,7 @@ async function getTmdbData(imdbId, type) {
     const isSeries = type === "series";
     const results = isSeries ? findRes.data.tv_results : findRes.data.movie_results;
     const match = results && results[0];
-    if (!match) return { posterUrl: null, genre: null };
+    if (!match) return { posterUrl: null, genre: null, tmdbId: null };
 
     const posterUrl = match.poster_path
       ? `https://image.tmdb.org/t/p/w780${match.poster_path}`
@@ -247,8 +307,8 @@ async function getTmdbData(imdbId, type) {
     }
     if (!genre && match.id) {
       try {
-        const p = isSeries ? `tv/${match.id}` : `movie/${match.id}`;
-        const det = await axios.get(`https://api.themoviedb.org/3/${p}`, {
+        const pathType = isSeries ? `tv/${match.id}` : `movie/${match.id}`;
+        const det = await axios.get(`https://api.themoviedb.org/3/${pathType}`, {
           params: { api_key: apiKey },
           timeout: 4000,
         });
@@ -257,10 +317,10 @@ async function getTmdbData(imdbId, type) {
         }
       } catch (_) {}
     }
-    return { posterUrl, genre };
+    return { posterUrl, genre, tmdbId: match.id || null };
   } catch (err) {
     console.error(`TMDB ${imdbId}:`, err.message);
-    return { posterUrl: null, genre: null };
+    return { posterUrl: null, genre: null, tmdbId: null };
   }
 }
 
@@ -342,7 +402,7 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         id: idToUse,
         type,
         name: `${rank}. ${title}`,
-        poster: `${hostUrl}/api/poster?id=${encodeURIComponent(imdbId || idToUse)}&rank=${rank}&type=${type}&v=${POSTER_CACHE_VERSION}`,
+        poster: `${hostUrl}/api/poster?id=${encodeURIComponent(imdbId || idToUse)}&rank=${rank}&type=${type}&tmdb=${encodeURIComponent(tmdbId || "")}&v=${POSTER_CACHE_VERSION}`,
         posterShape: "poster",
         description: item.description || item.overview || "",
       };
@@ -357,30 +417,51 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 });
 
 app.get("/api/poster", async (req, res) => {
-  const { id, rank, type } = req.query;
+  const { id, rank, type, tmdb } = req.query;
   if (!id) return res.status(400).send("Missing ID");
 
   try {
     let posterBuffer = null;
+    const mediaType = type === "series" ? "series" : "movie";
     const cleanImdb = id.startsWith("tt") ? id : null;
+    let tmdbId = tmdb || null;
 
-    // Primary: btttr clean posters (no rating tags)
-    if (cleanImdb) {
+    // Resolve TMDB id when missing (helps PostersPlus)
+    if (!tmdbId && cleanImdb) {
       try {
-        const r = await axios.get(
-          `https://btttr.cc/poster-g/imdb/poster-default/${cleanImdb}.jpg?tag=none`,
-          { responseType: "arraybuffer", timeout: 5000 }
-        );
-        posterBuffer = Buffer.from(r.data);
+        const tmdbData = await getTmdbData(cleanImdb, mediaType);
+        tmdbId = tmdbData.tmdbId;
       } catch (_) {}
     }
 
+    // Primary: PostersPlus
+    try {
+      const ppUrl = buildPostersPlusUrl({
+        imdbId: cleanImdb,
+        tmdbId,
+        stremioId: id,
+        type: mediaType,
+        shape: "poster",
+      });
+      const r = await axios.get(ppUrl, {
+        responseType: "arraybuffer",
+        timeout: 12000,
+        headers: { Accept: "image/*" },
+        maxRedirects: 5,
+      });
+      if (r.data && r.data.byteLength > 1000) {
+        posterBuffer = Buffer.from(r.data);
+      }
+    } catch (e) {
+      console.error("PostersPlus:", e.message);
+    }
+
     // Fallback: TMDB portrait poster
-    if (!posterBuffer) {
-      const tmdb = await getTmdbData(cleanImdb, type || "movie");
-      if (tmdb.posterUrl) {
+    if (!posterBuffer && cleanImdb) {
+      const tmdbData = await getTmdbData(cleanImdb, mediaType);
+      if (tmdbData.posterUrl) {
         try {
-          const r = await axios.get(tmdb.posterUrl, {
+          const r = await axios.get(tmdbData.posterUrl, {
             responseType: "arraybuffer", timeout: 4500,
           });
           posterBuffer = Buffer.from(r.data);
