@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "223";
+const POSTER_CACHE_VERSION = "224";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.2.3",
+  version: "2.2.4",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from TMDB trending (no news/talk/kids/anime) with Apple TV ranks on PostersPlus art.",
@@ -146,9 +146,43 @@ async function isAnimeViaTmdb(item, type) {
 const EXCLUDE_TV_GENRES = new Set([10763, 10762, 10767]); // news, kids, talk
 const FAMILY_GENRE = 10751;
 
+// Always drop Chinese / regional Chinese variants
+const BLOCKED_LANGS = new Set([
+  "zh", "cn", "zh-cn", "zh-tw", "zh-hk", "yue", "cmn", "zh-hans", "zh-hant",
+]);
+
+// Languages treated as mainstream / widely known for this catalog
+const KNOWN_LANGS = new Set([
+  "en", "fi", "sv", "no", "da", "de", "fr", "es", "it", "pt",
+  "ko", "ja", "nl", "pl", "tr", "hi", "ru", "uk",
+]);
+
+function normalizeLang(code) {
+  return String(code || "").toLowerCase().trim().split(/[-_]/)[0];
+}
+
+function isObscureInternational(item) {
+  const raw = String(item.original_language || "").toLowerCase().trim();
+  const lang = normalizeLang(raw);
+  if (!lang) return false;
+
+  // Chinese always out
+  if (BLOCKED_LANGS.has(raw) || BLOCKED_LANGS.has(lang) || lang === "zh") return true;
+
+  // English and other known languages stay
+  if (KNOWN_LANGS.has(lang)) return false;
+
+  // Unknown language: only keep if clearly popular / well-rated on TMDB
+  const votes = Number(item.vote_count || 0);
+  const popularity = Number(item.popularity || 0);
+  if (votes >= 800 || popularity >= 80) return false;
+  return true;
+}
+
 function shouldExcludeTrendingItem(item, type) {
   if (!item) return true;
   if (isAnimeItem(item)) return true;
+  if (isObscureInternational(item)) return true;
 
   const genreIds = Array.isArray(item.genre_ids) ? item.genre_ids.map(Number) : [];
   const isSeries = type === "series";
@@ -162,8 +196,8 @@ function shouldExcludeTrendingItem(item, type) {
   }
 
   // Anime: Japanese + Animation
-  const lang = String(item.original_language || "").toLowerCase();
-  const isJapanese = lang === "ja" || lang === "jp" || lang.startsWith("ja-");
+  const lang = normalizeLang(item.original_language);
+  const isJapanese = lang === "ja" || lang === "jp";
   if (isJapanese && genreIds.includes(TMDB_ANIMATION_ID)) return true;
   if (ANIME_TITLE_RE.test(String(item.title || item.name || ""))) return true;
 
@@ -456,7 +490,7 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 
   try {
     const raw = await fetchTrendingList(type);
-    // Keep unreleased; drop news / talk / kids / anime
+    // Keep unreleased; drop news / talk / kids / anime / Chinese / obscure international
     const filtered = await filterTrendingList(raw, type, 10);
 
     const metas = [];
