@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "224";
+const POSTER_CACHE_VERSION = "225";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,10 +38,10 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.2.4",
+  version: "2.2.5",
   name: "Top 10 Trending (Apple TV Style)",
   description:
-    "Top 10 from TMDB trending (no news/talk/kids/anime) with Apple TV ranks on PostersPlus art.",
+    "Top 10 from Trakt/MDBList trending with Apple TV ranks on PostersPlus art.",
   resources: ["catalog"],
   types: ["series", "movie"],
   catalogs: [
@@ -204,14 +204,48 @@ function shouldExcludeTrendingItem(item, type) {
   return false;
 }
 
+async function enrichItemFromTmdb(item, type) {
+  // MDBList often has no language/genres — pull from TMDB so filters work
+  if (item.original_language && Array.isArray(item.genre_ids) && item.genre_ids.length) {
+    return item;
+  }
+  const apiKey = process.env.TMDB_API_KEY;
+  const imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id);
+  if (!apiKey || !imdbId || !String(imdbId).startsWith("tt")) return item;
+  try {
+    const findRes = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
+      params: { api_key: apiKey, external_source: "imdb_id" },
+      timeout: 4000,
+    });
+    const isSeries = type === "series";
+    const match =
+      (isSeries ? findRes.data.tv_results : findRes.data.movie_results) &&
+      (isSeries ? findRes.data.tv_results : findRes.data.movie_results)[0];
+    if (!match) return item;
+    return {
+      ...item,
+      original_language: item.original_language || match.original_language,
+      genre_ids: (item.genre_ids && item.genre_ids.length) ? item.genre_ids : (match.genre_ids || []),
+      vote_count: item.vote_count || match.vote_count,
+      popularity: item.popularity || match.popularity,
+      title: item.title || match.title || match.name,
+      name: item.name || match.name || match.title,
+      id: item.tmdb_id || item.tmdbid || match.id || item.id,
+      tmdb_id: item.tmdb_id || item.tmdbid || match.id,
+    };
+  } catch (_) {
+    return item;
+  }
+}
+
 async function filterTrendingList(raw, type, limit = 10) {
   const out = [];
   for (const item of raw) {
     if (out.length >= limit) break;
-    if (shouldExcludeTrendingItem(item, type)) continue;
-    // Extra anime check via TMDB find when only imdb is known
-    if (await isAnimeViaTmdb(item, type)) continue;
-    out.push(item);
+    const enriched = await enrichItemFromTmdb(item, type);
+    if (shouldExcludeTrendingItem(enriched, type)) continue;
+    if (await isAnimeViaTmdb(enriched, type)) continue;
+    out.push(enriched);
   }
   return out;
 }
@@ -414,34 +448,47 @@ async function getTmdbData(imdbId, type, existingTmdbId) {
 }
 
 async function fetchTrendingList(type) {
+  let raw = [];
   const apiKey = process.env.TMDB_API_KEY;
-  if (!apiKey) {
-    console.error("TMDB_API_KEY missing — cannot fetch trending");
-    return [];
+
+  // Primary: Snoak Trakt / MDBList (fewer unreleased junk titles)
+  if (type === "movie") {
+    try {
+      const res = await axios.get(SNOAK_MOVIES_URL, { timeout: 8000 });
+      if (Array.isArray(res.data)) raw = res.data;
+    } catch (err) {
+      console.error("MDBList movies:", err.message);
+    }
+  } else {
+    try {
+      const res = await axios.get(SNOAK_SHOWS_URL, { timeout: 8000 });
+      if (Array.isArray(res.data)) raw = res.data;
+    } catch (err) {
+      console.error("MDBList shows:", err.message);
+      try {
+        const res = await axios.get(SNOAK_SHOWS_ALT_URL, { timeout: 8000 });
+        if (Array.isArray(res.data)) raw = res.data;
+      } catch (err2) {
+        console.error("MDBList shows alt:", err2.message);
+      }
+    }
   }
 
-  const media = type === "series" ? "tv" : "movie";
-  const seen = new Set();
-  const merged = [];
-
-  // Day first, then week to fill after exclusions
-  for (const window of ["day", "week"]) {
+  // Fallback only if list is empty
+  if (!raw.length && apiKey) {
+    const media = type === "series" ? "tv" : "movie";
     try {
-      const r = await axios.get(`https://api.themoviedb.org/3/trending/${media}/${window}`, {
+      const r = await axios.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
         params: { api_key: apiKey },
         timeout: 6000,
       });
-      for (const item of r.data.results || []) {
-        const key = item.id;
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        merged.push(item);
-      }
+      raw = r.data.results || [];
     } catch (err) {
-      console.error(`TMDB trending ${media}/${window}:`, err.message);
+      console.error(`TMDB fallback ${media}:`, err.message);
     }
   }
-  return merged;
+
+  return raw;
 }
 
 /** Attach imdb_id from TMDB external_ids when missing (trending has none). */
@@ -490,7 +537,7 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 
   try {
     const raw = await fetchTrendingList(type);
-    // Keep unreleased; drop news / talk / kids / anime / Chinese / obscure international
+    // Trakt/MDBList source; drop news / talk / kids / anime / Chinese / obscure international
     const filtered = await filterTrendingList(raw, type, 10);
 
     const metas = [];
