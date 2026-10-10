@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "225";
+const POSTER_CACHE_VERSION = "226";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.2.5",
+  version: "2.2.6",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList trending with Apple TV ranks on PostersPlus art.",
@@ -332,48 +332,50 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("vignette_color_saturation", "0.20");
   params.set("vignette_color_blur", "0.15");
   params.set("vignette_color_lightness", "0.40");
-  params.set("sash_mode", "notch");
+  params.set("sash_mode", "hidden");
+  params.set("landscape_bottom_gradient", "custom");
+  params.set("landscape_bottom_gradient_opacity", "1");
+  params.set("landscape_bottom_gradient_height", "0.6");
+  params.set("landscape_vignette_color_blur", "0.20");
   params.set("landscape_vignette_color_local", "true");
   params.set("landscape_hide_genre", "true");
   params.set("landscape_hide_year", "true");
   params.set("landscape_hide_rating", "true");
-  params.set("landscape_sash_mode", "hidden");
+  params.set("landscape_textless", "true");
   params.set("badge_pos", "top_left");
   params.set("landscape_badge_scale", "1.60");
   params.set("landscape_info_scale", "0.60");
   params.set("landscape_logo_pos", "center");
   params.set("landscape_score_out_of_10", "true");
+  params.set("landscape_badge_shape", "chip");
+  params.set("landscape_badge_case", "mixed");
+  params.set("landscape_logo_scale", "1.30");
   params.set("fallback_to_imdb", "true");
   params.set("rating_display_mode", "3");
+  params.set("score_color_mode", "1");
   params.set("minimalist_append_mode", "1");
-  params.set("minimalist_mode_font_size_ratio", "0.076");
-  params.set("minimalist_mode_font_x_offset", "0.185");
-  params.set("minimalist_mode_font_y_offset", "0.880");
+  params.set("minimalist_mode_font_size_ratio", "0.078");
+  params.set("minimalist_mode_font_x_offset", "0.125");
+  params.set("minimalist_mode_font_y_offset", "0.890");
   params.set("minimalist_score_out_of_10", "true");
   params.set("minimalist_center", "true");
-  params.set("minimalist_separator", "bullet");
-  params.set("minimalist_rating_separator", "bullet");
+  params.set("minimalist_rating_separator", "pip");
   params.set("movie_weights", "letterboxd:0.20,tomatoes:0.05,popcorn:0.20,imdb:0.55");
   params.set("tv_weights", "tomatoes:0.10,popcorn:0.25,imdb:0.61,tmdb:0.04");
   params.set("original_art_source", "top_rated");
-  params.set("logo_language", "fi");
   params.set("fallback_bg_style", "photoreal");
+  params.set("logo_max_w_ratio", "0.82");
+  params.set("logo_max_h_ratio", "0.40");
   params.set("logo_bottom_ratio", "0.16");
   params.set("logo_bottom_anchor", "true");
   params.set("cinema_greyscale", "false");
+  params.set("hide_unreleased_rating", "true");
   params.set("meta_order", "genre,rating,year");
-  params.set("sash_badge_size_w", "1.40");
-  params.set("sash_badge_size_h", "1.20");
-  params.set("sash_badge_frost_opacity", "0.33");
-  params.set("sash_badge_frost_saturation", "0.95");
-  params.set("notch_vignette_color", "true");
-  params.set(
-    "sash_priority",
-    "default,-watchlist,-gg_wins,-festival,-pic_noms,-metacritic,-gg_noms,-trending,-trending_broad,-new_release,-just_added,-studio,-director,-cast,-blockbuster,-cult,-foreign,-true_story,-short_film,-mini_series,-binge_ready,-returning,-cancelled,-ended,-physical,-streaming,-production,-renewed,cinema@1,new_season@2,season_finale@3"
-  );
   params.set("badge_display_mode", "7");
-  params.set("badge_group1", "chip:4:network:24");
-  params.set("badge_logo_scale", "0.85");
+  params.set("badge_group1", "");
+  params.set("landscape_badge_display_mode", "7");
+  params.set("landscape_badge_group1", "0.87,0.1,l:4:network:24");
+  params.set("badge_logo_scale", "1.20");
   return `https://postersplus.slokker.cc/poster?${params.toString()}`;
 }
 
@@ -556,14 +558,21 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
       const title = item.title || item.name || "Unknown";
       const rank = i + 1;
 
-      let background = null;
       let logo = null;
       try {
         const tmdbData = await getTmdbData(imdbId, type, tmdbId);
         if (tmdbData.tmdbId) tmdbId = tmdbData.tmdbId;
-        background = tmdbData.backdropUrl || null;
         logo = tmdbData.logoUrl || null;
       } catch (_) {}
+
+      // PostersPlus landscape as detail / fanart background
+      const background = buildPostersPlusUrl({
+        imdbId,
+        tmdbId,
+        stremioId: idToUse,
+        type,
+        shape: "landscape",
+      });
 
       const meta = {
         id: idToUse,
@@ -572,9 +581,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         poster: `${hostUrl}/api/poster?id=${encodeURIComponent(imdbId || idToUse)}&rank=${rank}&type=${type}&tmdb=${encodeURIComponent(tmdbId || "")}&v=${POSTER_CACHE_VERSION}`,
         posterShape: "poster",
         description: item.description || item.overview || "",
+        background,
       };
-      // TMDB landscape backdrop for detail / fanart
-      if (background) meta.background = background;
       if (logo) meta.logo = logo;
       // Pass through release date when present (including future)
       const rd = item.release_date || item.first_air_date || item.released || null;
