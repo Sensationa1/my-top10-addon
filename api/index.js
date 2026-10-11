@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "230";
+const POSTER_CACHE_VERSION = "231";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.3.0",
+  version: "2.3.1",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList trending with Apple TV ranks on PostersPlus art.",
@@ -382,7 +382,7 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("rating_display_mode", "3");
   params.set("frost_reference", "true");
   params.set("minimalist_append_mode", "1");
-  params.set("minimalist_mode_font_size_ratio", "0.068");
+  params.set("minimalist_mode_font_size_ratio", "0.080");
   params.set("minimalist_mode_font_x_offset", "0.060");
   params.set("minimalist_mode_font_y_offset", "0.900");
   params.set("minimalist_score_out_of_10", "true");
