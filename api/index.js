@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "227";
+const POSTER_CACHE_VERSION = "230";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.2.7",
+  version: "2.3.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList trending with Apple TV ranks on PostersPlus art.",
@@ -250,6 +250,26 @@ async function filterTrendingList(raw, type, limit = 10) {
   return out;
 }
 
+function resolveDigitPath(rank) {
+  const n = Math.min(10, Math.max(1, parseInt(rank, 10) || 1));
+  const a = path.join(process.cwd(), "digits", `${n}.png`);
+  const b = path.join(__dirname, "..", "digits", `${n}.png`);
+  if (fs.existsSync(a)) return a;
+  if (fs.existsSync(b)) return b;
+  return null;
+}
+
+async function loadRankOverlay(targetH, rank) {
+  const digitPath = resolveDigitPath(rank);
+  if (!digitPath) return null;
+  // Rank height ~22% of poster, top-left with margin
+  const digitH = Math.round(targetH * 0.22);
+  return sharp(digitPath)
+    .resize({ height: digitH, fit: "inside" })
+    .png()
+    .toBuffer();
+}
+
 function getHostUrl(req) {
   const protocol = req.headers["x-forwarded-proto"] || "https";
   const host = req.headers.host;
@@ -343,6 +363,7 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("landscape_vignette_color_local", "true");
   params.set("landscape_hide_genre", "true");
   params.set("landscape_hide_rating", "true");
+  params.set("landscape_textless", "true");
   params.set("badge_pos", "top_left");
   params.set("landscape_badge_scale", "1.70");
   params.set("landscape_info_scale", "1.35");
@@ -381,7 +402,7 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("badge_display_mode", "7");
   params.set("badge_group1", "chip:4:network");
   params.set("landscape_badge_display_mode", "7");
-  params.set("landscape_badge_group1", "0.87,0.1,l:4:network:24");
+  params.set("landscape_badge_group1", "");
   return `https://postersplus.slokker.cc/poster?${params.toString()}`;
 }
 
@@ -564,21 +585,14 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
       const title = item.title || item.name || "Unknown";
       const rank = i + 1;
 
+      let background = null;
       let logo = null;
       try {
         const tmdbData = await getTmdbData(imdbId, type, tmdbId);
         if (tmdbData.tmdbId) tmdbId = tmdbData.tmdbId;
+        background = tmdbData.backdropUrl || null;
         logo = tmdbData.logoUrl || null;
       } catch (_) {}
-
-      // PostersPlus landscape as detail / fanart background
-      const background = buildPostersPlusUrl({
-        imdbId,
-        tmdbId,
-        stremioId: idToUse,
-        type,
-        shape: "landscape",
-      });
 
       const meta = {
         id: idToUse,
@@ -587,8 +601,9 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         poster: `${hostUrl}/api/poster?id=${encodeURIComponent(imdbId || idToUse)}&rank=${rank}&type=${type}&tmdb=${encodeURIComponent(tmdbId || "")}&v=${POSTER_CACHE_VERSION}`,
         posterShape: "poster",
         description: item.description || item.overview || "",
-        background,
       };
+      // TMDB landscape backdrop + logo
+      if (background) meta.background = background;
       if (logo) meta.logo = logo;
       // Pass through release date when present (including future)
       const rd = item.release_date || item.first_air_date || item.released || null;
@@ -672,11 +687,32 @@ app.get("/api/poster", async (req, res) => {
       .toBuffer();
 
     const num = parseInt(rank, 10) || 1;
-    const svg = buildOverlaySvg(TARGET_W, TARGET_H, num);
-    const overlayPng = renderSvgToPng(svg, TARGET_W);
+    const composites = [];
+    // Soft left vignette for contrast behind rank
+    const vigSvg = Buffer.from(
+      `<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="v" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#000" stop-opacity="0.42"/>
+            <stop offset="40%" stop-color="#000" stop-opacity="0.14"/>
+            <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <rect width="${Math.round(TARGET_W * 0.52)}" height="${TARGET_H}" fill="url(#v)"/>
+      </svg>`
+    );
+    composites.push({ input: vigSvg, top: 0, left: 0 });
+
+    const rankPng = await loadRankOverlay(TARGET_H, num);
+    if (rankPng) {
+      const meta = await sharp(rankPng).metadata();
+      const left = Math.round(TARGET_W * 0.04);
+      const top = Math.round(TARGET_H * 0.03);
+      composites.push({ input: rankPng, top, left });
+    }
 
     const out = await sharp(posterBuffer)
-      .composite([{ input: overlayPng, top: 0, left: 0 }])
+      .composite(composites)
       .jpeg({ quality: 91 })
       .toBuffer();
 
