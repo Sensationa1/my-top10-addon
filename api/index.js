@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "241";
+const POSTER_CACHE_VERSION = "242";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.4.1",
+  version: "2.4.2",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with Pictorium portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -259,15 +259,123 @@ function resolveDigitPath(rank) {
   return null;
 }
 
-async function loadRankOverlay(targetH, rank) {
+/**
+ * Giant frosted rank: digit mask clipped over a brightened/blurred
+ * sample of the poster (adapts to each title). Falls back to PNG digits.
+ */
+async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
   const digitPath = resolveDigitPath(rank);
-  if (!digitPath) return null;
-  // Rank height ~22% of poster, top-left with margin
-  const digitH = Math.round(targetH * 0.22);
-  return sharp(digitPath)
-    .resize({ height: digitH, fit: "inside" })
-    .png()
-    .toBuffer();
+  const digitH = Math.round(targetH * 0.32); // much larger ranks
+  const left = Math.round(targetW * 0.03);
+  const top = Math.round(targetH * 0.02);
+
+  if (!digitPath || !posterBuffer) {
+    if (!digitPath) return null;
+    const buf = await sharp(digitPath).resize({ height: digitH, fit: "inside" }).png().toBuffer();
+    return { buf, left, top };
+  }
+
+  try {
+    const maskResized = await sharp(digitPath)
+      .resize({ height: digitH, fit: "inside" })
+      .ensureAlpha()
+      .png()
+      .toBuffer();
+    const meta = await sharp(maskResized).metadata();
+    const dw = meta.width || Math.round(digitH * 0.7);
+    const dh = meta.height || digitH;
+
+    // Region of poster under the rank (pad for blur)
+    const pad = 24;
+    const extractLeft = Math.max(0, left - pad);
+    const extractTop = Math.max(0, top - pad);
+    const extractW = Math.min(targetW - extractLeft, dw + pad * 2);
+    const extractH = Math.min(targetH - extractTop, dh + pad * 2);
+
+    const region = await sharp(posterBuffer)
+      .extract({
+        left: extractLeft,
+        top: extractTop,
+        width: extractW,
+        height: extractH,
+      })
+      .blur(12)
+      .modulate({ brightness: 1.55, saturation: 0.35 })
+      .linear(1.25, 40)
+      .ensureAlpha()
+      .png()
+      .toBuffer();
+
+    // White frost layer
+    const frost = await sharp({
+      create: {
+        width: extractW,
+        height: extractH,
+        channels: 4,
+        background: { r: 255, g: 255, b: 255, alpha: 0.55 },
+      },
+    })
+      .png()
+      .toBuffer();
+
+    const frostedRegion = await sharp(region)
+      .composite([{ input: frost, blend: "over" }])
+      .png()
+      .toBuffer();
+
+    // Align mask inside padded region
+    const maskOnPad = await sharp({
+      create: {
+        width: extractW,
+        height: extractH,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite([
+        {
+          input: maskResized,
+          left: left - extractLeft,
+          top: top - extractTop,
+        },
+      ])
+      .png()
+      .toBuffer();
+
+    // Use digit alpha as mask: dest-in keeps frost only inside glyph
+    const clipped = await sharp(frostedRegion)
+      .composite([{ input: maskOnPad, blend: "dest-in" }])
+      .png()
+      .toBuffer();
+
+    // Soft outer glow for readability
+    const glow = await sharp(maskResized)
+      .blur(3)
+      .linear(0.3, 0)
+      .png()
+      .toBuffer();
+
+    const finalDigit = await sharp({
+      create: {
+        width: extractW,
+        height: extractH,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite([
+        { input: glow, left: left - extractLeft, top: top - extractTop, blend: "over" },
+        { input: clipped, blend: "over" },
+      ])
+      .png()
+      .toBuffer();
+
+    return { buf: finalDigit, left: extractLeft, top: extractTop };
+  } catch (e) {
+    console.error("Frost rank:", e.message);
+    const buf = await sharp(digitPath).resize({ height: digitH, fit: "inside" }).png().toBuffer();
+    return { buf, left, top };
+  }
 }
 
 
@@ -283,49 +391,19 @@ function buildGenreRatingSvg(width, height, genre, rating) {
   const label = [g, rating].filter(Boolean).join("  ·  ");
   if (!label) return null;
 
-  // Larger type + lower on the poster
-  const fontSize = Math.round(height * 0.048);
-  const y = Math.round(height * 0.968);
+  // Plain SF Pro Thin text only — no frost pill
+  const fontSize = Math.round(height * 0.036);
+  const y = Math.round(height * 0.965);
   const x = Math.round(width / 2);
-
-  // Frosted pill behind text
-  const approxCharW = fontSize * 0.52;
-  const textW = Math.ceil(label.length * approxCharW);
-  const padX = Math.round(fontSize * 0.85);
-  const padY = Math.round(fontSize * 0.55);
-  const pillW = textW + padX * 2;
-  const pillH = fontSize + padY * 2;
-  const pillX = Math.round((width - pillW) / 2);
-  const pillY = Math.round(y - fontSize * 0.78 - padY);
-  const rx = Math.round(pillH / 2);
-
   const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <filter id="frostBlur" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="0"/>
-    </filter>
     <filter id="tshadow" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="1" stdDeviation="2.5" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.35"/>
     </filter>
   </defs>
-  <!-- Frosted glass pill -->
-  <rect
-    x="${pillX}" y="${pillY}"
-    width="${pillW}" height="${pillH}"
-    rx="${rx}" ry="${rx}"
-    fill="rgba(20, 20, 28, 0.42)"
-    stroke="rgba(255,255,255,0.28)"
-    stroke-width="1"
-  />
-  <rect
-    x="${pillX}" y="${pillY}"
-    width="${pillW}" height="${Math.round(pillH * 0.45)}"
-    rx="${rx}" ry="${rx}"
-    fill="rgba(255,255,255,0.08)"
-  />
   <text
     x="${x}"
     y="${y}"
@@ -784,11 +862,13 @@ app.get("/api/poster", async (req, res) => {
     );
     composites.push({ input: vigSvg, top: 0, left: 0 });
 
-    const rankPng = await loadRankOverlay(TARGET_H, num);
-    if (rankPng) {
-      const left = Math.round(TARGET_W * 0.04);
-      const top = Math.round(TARGET_H * 0.03);
-      composites.push({ input: rankPng, top, left });
+    const rankOverlay = await loadRankOverlay(TARGET_H, num, posterBuffer, TARGET_W);
+    if (rankOverlay && rankOverlay.buf) {
+      composites.push({
+        input: rankOverlay.buf,
+        top: rankOverlay.top,
+        left: rankOverlay.left,
+      });
     }
 
     // SF Pro Thin: GENRE · IMDb rating (bottom center)
