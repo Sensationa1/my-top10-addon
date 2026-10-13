@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "242";
+const POSTER_CACHE_VERSION = "243";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.4.2",
+  version: "2.4.3",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with Pictorium portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -265,9 +265,10 @@ function resolveDigitPath(rank) {
  */
 async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
   const digitPath = resolveDigitPath(rank);
-  const digitH = Math.round(targetH * 0.32); // much larger ranks
-  const left = Math.round(targetW * 0.03);
-  const top = Math.round(targetH * 0.02);
+  // Bigger ranks, tight top-left corner
+  const digitH = Math.round(targetH * 0.40);
+  const left = Math.round(targetW * 0.012);
+  const top = Math.round(targetH * 0.008);
 
   if (!digitPath || !posterBuffer) {
     if (!digitPath) return null;
@@ -276,6 +277,7 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
   }
 
   try {
+    // Soften digit edges slightly for glass look; keep alpha as mask
     const maskResized = await sharp(digitPath)
       .resize({ height: digitH, fit: "inside" })
       .ensureAlpha()
@@ -285,13 +287,13 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
     const dw = meta.width || Math.round(digitH * 0.7);
     const dh = meta.height || digitH;
 
-    // Region of poster under the rank (pad for blur)
-    const pad = 24;
+    const pad = 28;
     const extractLeft = Math.max(0, left - pad);
     const extractTop = Math.max(0, top - pad);
     const extractW = Math.min(targetW - extractLeft, dw + pad * 2);
     const extractH = Math.min(targetH - extractTop, dh + pad * 2);
 
+    // Keep poster color (higher saturation) + strong blur = real glass, not grey slab
     const region = await sharp(posterBuffer)
       .extract({
         left: extractLeft,
@@ -299,31 +301,60 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
         width: extractW,
         height: extractH,
       })
-      .blur(12)
-      .modulate({ brightness: 1.55, saturation: 0.35 })
-      .linear(1.25, 40)
+      .blur(18)
+      .modulate({ brightness: 1.35, saturation: 0.85 })
       .ensureAlpha()
       .png()
       .toBuffer();
 
-    // White frost layer
+    // Light translucent white veil (glass), not opaque grey
     const frost = await sharp({
       create: {
         width: extractW,
         height: extractH,
         channels: 4,
-        background: { r: 255, g: 255, b: 255, alpha: 0.55 },
+        background: { r: 255, g: 255, b: 255, alpha: 0.28 },
       },
     })
       .png()
       .toBuffer();
 
-    const frostedRegion = await sharp(region)
-      .composite([{ input: frost, blend: "over" }])
+    // Soft top highlight for glass edge
+    const highlight = await sharp({
+      create: {
+        width: extractW,
+        height: extractH,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: {
+              width: extractW,
+              height: Math.max(8, Math.round(extractH * 0.35)),
+              channels: 4,
+              background: { r: 255, g: 255, b: 255, alpha: 0.22 },
+            },
+          })
+            .png()
+            .toBuffer(),
+          top: 0,
+          left: 0,
+        },
+      ])
       .png()
       .toBuffer();
 
-    // Align mask inside padded region
+    const frostedRegion = await sharp(region)
+      .composite([
+        { input: frost, blend: "over" },
+        { input: highlight, blend: "over" },
+      ])
+      .png()
+      .toBuffer();
+
     const maskOnPad = await sharp({
       create: {
         width: extractW,
@@ -342,16 +373,31 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
       .png()
       .toBuffer();
 
-    // Use digit alpha as mask: dest-in keeps frost only inside glyph
+    // Clip glass through digit; then reduce overall opacity so it stays transparent
     const clipped = await sharp(frostedRegion)
       .composite([{ input: maskOnPad, blend: "dest-in" }])
+      .ensureAlpha()
       .png()
       .toBuffer();
 
-    // Soft outer glow for readability
-    const glow = await sharp(maskResized)
-      .blur(3)
-      .linear(0.3, 0)
+    // Multiply alpha by ~0.82 for extra transparency without going muddy
+    const { data, info } = await sharp(clipped)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    for (let i = 3; i < data.length; i += 4) {
+      data[i] = Math.round(data[i] * 0.82);
+    }
+    const translucent = await sharp(data, {
+      raw: { width: info.width, height: info.height, channels: 4 },
+    })
+      .png()
+      .toBuffer();
+
+    // Very light edge so glyph reads on bright posters (not a grey fill)
+    const edge = await sharp(maskResized)
+      .blur(1.2)
+      .linear(0.15, 0)
       .png()
       .toBuffer();
 
@@ -364,8 +410,8 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
       },
     })
       .composite([
-        { input: glow, left: left - extractLeft, top: top - extractTop, blend: "over" },
-        { input: clipped, blend: "over" },
+        { input: edge, left: left - extractLeft, top: top - extractTop, blend: "over" },
+        { input: translucent, blend: "over" },
       ])
       .png()
       .toBuffer();
@@ -852,8 +898,8 @@ app.get("/api/poster", async (req, res) => {
       `<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="v" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#000" stop-opacity="0.42"/>
-            <stop offset="40%" stop-color="#000" stop-opacity="0.14"/>
+            <stop offset="0%" stop-color="#000" stop-opacity="0.18"/>
+            <stop offset="35%" stop-color="#000" stop-opacity="0.06"/>
             <stop offset="100%" stop-color="#000" stop-opacity="0"/>
           </linearGradient>
         </defs>
