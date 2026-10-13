@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "240";
+const POSTER_CACHE_VERSION = "241";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.4.0",
+  version: "2.4.1",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with Pictorium portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -271,19 +271,61 @@ async function loadRankOverlay(targetH, rank) {
 }
 
 
+function formatGenreLabel(genre) {
+  if (!genre) return null;
+  const s = String(genre).trim().toLowerCase();
+  if (!s) return null;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function buildGenreRatingSvg(width, height, genre, rating) {
-  const label = [genre, rating].filter(Boolean).join("  ·  ");
+  const g = formatGenreLabel(genre);
+  const label = [g, rating].filter(Boolean).join("  ·  ");
   if (!label) return null;
-  const fontSize = Math.round(height * 0.032);
-  const y = Math.round(height * 0.935);
+
+  // Larger type + lower on the poster
+  const fontSize = Math.round(height * 0.048);
+  const y = Math.round(height * 0.968);
   const x = Math.round(width / 2);
+
+  // Frosted pill behind text
+  const approxCharW = fontSize * 0.52;
+  const textW = Math.ceil(label.length * approxCharW);
+  const padX = Math.round(fontSize * 0.85);
+  const padY = Math.round(fontSize * 0.55);
+  const pillW = textW + padX * 2;
+  const pillH = fontSize + padY * 2;
+  const pillX = Math.round((width - pillW) / 2);
+  const pillY = Math.round(y - fontSize * 0.78 - padY);
+  const rx = Math.round(pillH / 2);
+
+  const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <filter id="tshadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000000" flood-opacity="0.55"/>
+    <filter id="frostBlur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="0"/>
+    </filter>
+    <filter id="tshadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2.5" flood-color="#000000" flood-opacity="0.45"/>
     </filter>
   </defs>
+  <!-- Frosted glass pill -->
+  <rect
+    x="${pillX}" y="${pillY}"
+    width="${pillW}" height="${pillH}"
+    rx="${rx}" ry="${rx}"
+    fill="rgba(20, 20, 28, 0.42)"
+    stroke="rgba(255,255,255,0.28)"
+    stroke-width="1"
+  />
+  <rect
+    x="${pillX}" y="${pillY}"
+    width="${pillW}" height="${Math.round(pillH * 0.45)}"
+    rx="${rx}" ry="${rx}"
+    fill="rgba(255,255,255,0.08)"
+  />
   <text
     x="${x}"
     y="${y}"
@@ -292,9 +334,9 @@ function buildGenreRatingSvg(width, height, genre, rating) {
     font-weight="100"
     font-size="${fontSize}"
     fill="#FFFFFF"
-    letter-spacing="0.12em"
+    letter-spacing="0.10em"
     filter="url(#tshadow)"
-  >${label.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</text>
+  >${safe}</text>
 </svg>`;
 }
 
