@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "231";
+const POSTER_CACHE_VERSION = "240";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,10 +38,10 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.3.1",
+  version: "2.4.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
-    "Top 10 from Trakt/MDBList trending with Apple TV ranks on PostersPlus art.",
+    "Top 10 from Trakt/MDBList with Pictorium portraits, adaptive ranks, SF Pro genre · IMDb.",
   resources: ["catalog"],
   types: ["series", "movie"],
   catalogs: [
@@ -270,6 +270,34 @@ async function loadRankOverlay(targetH, rank) {
     .toBuffer();
 }
 
+
+function buildGenreRatingSvg(width, height, genre, rating) {
+  const label = [genre, rating].filter(Boolean).join("  ·  ");
+  if (!label) return null;
+  const fontSize = Math.round(height * 0.032);
+  const y = Math.round(height * 0.935);
+  const x = Math.round(width / 2);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="tshadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+  <text
+    x="${x}"
+    y="${y}"
+    text-anchor="middle"
+    font-family="SF Pro Display"
+    font-weight="100"
+    font-size="${fontSize}"
+    fill="#FFFFFF"
+    letter-spacing="0.12em"
+    filter="url(#tshadow)"
+  >${label.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</text>
+</svg>`;
+}
+
 function getHostUrl(req) {
   const protocol = req.headers["x-forwarded-proto"] || "https";
   const host = req.headers.host;
@@ -337,78 +365,65 @@ function renderSvgToPng(svgString, width) {
   return resvg.render().asPng();
 }
 
-function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
+function buildPictoriumUrl({ imdbId, tmdbId, type, shape }) {
+  const media = type === "series" ? "series" : "movie";
+  // Prefer IMDb id (stable); fall back to TMDB numeric id
+  const idPart = (imdbId && String(imdbId).startsWith("tt"))
+    ? imdbId
+    : (tmdbId ? String(tmdbId) : "");
+  if (!idPart) return null;
+
   const params = new URLSearchParams();
-  if (tmdbId) params.set("tmdb_id", String(tmdbId));
-  if (imdbId) params.set("imdb_id", String(imdbId));
-  params.set("stremio_id", stremioId || imdbId || (tmdbId ? `tmdb:${tmdbId}` : ""));
-  params.set("type", type === "series" ? "series" : "movie");
+  params.set("badges", "0");
+  params.set("ranking", "0");
+  params.set("by", "0");
+  params.set("bq", "0");
+  params.set("cr", "0");
+  params.set("sepstyle", "bottom-pills");
+  params.set("rsrc", "imdb,simkl,anilist,mal,tomatoes,letterboxd");
+  params.set("df", "dmy");
+  params.set("netLogo", "0");
+  params.set("side", "left");
+  params.set("layout", "standard");
+  params.set("freshScope", "ranked");
+  params.set("lang", "en");
+  params.set("gradHeight", "30");
+  params.set("blur", "40");
+  params.set("tint", "20");
+  params.set("bf", "50");
+  params.set("bd", "30");
+  params.set("ts", "60");
+  params.set("bs", "shadow");
+  params.set("rs", "number");
+  params.set("xbs", "default");
+  params.set("bfont", "inter");
+  params.set("qbs", "color");
+  params.set("tscale", "100");
+  params.set("tox", "0");
+  params.set("toy", "0");
+  params.set("exscale", "120");
+  params.set("exox", "0");
+  params.set("exoy", "0");
+  params.set("gscale", "100");
+  params.set("gox", "0");
+  params.set("goy", "0");
+  params.set("qscale", "100");
+  params.set("sepscale", "130");
+  params.set("sepox", "0");
+  params.set("sepoy", "0");
+  params.set("qox", "-10");
+  params.set("qoy", "15");
+  params.set("netscale", "100");
+  params.set("nox", "0");
+  params.set("noy", "0");
+  params.set("rv", "cc6eae9f4a");
   params.set("shape", shape || "poster");
-  params.set("primary_client", "stremio_tv_nuvio");
-  params.set("tmdb_key", process.env.TMDB_API_KEY || "dc1ae8c943c805800112762a3afbc1b6");
-  params.set("mdblist_key", process.env.MDBLIST_API_KEY || "1cym9fkqsk4hvwtesjthxsrr9");
-  params.set("top_gradient", "medium");
-  params.set("vignette_poster_color_bottom", "true");
-  params.set("vignette_color_saturation", "0.00");
-  params.set("vignette_color_blur", "0.30");
-  params.set("vignette_color_lightness", "0.40");
-  params.set("vignette_color_style", "muted");
-  params.set("hide_year", "true");
-  params.set("sash_mode", "hidden");
-  params.set("landscape_bottom_gradient", "custom");
-  params.set("landscape_bottom_gradient_opacity", "0.2");
-  params.set("landscape_bottom_gradient_height", "0.75");
-  params.set("landscape_vignette_color_saturation", "0.20");
-  params.set("landscape_vignette_color_blur", "0.05");
-  params.set("landscape_vignette_color_local", "true");
-  params.set("landscape_hide_genre", "true");
-  params.set("landscape_hide_rating", "true");
-  params.set("landscape_textless", "true");
-  params.set("badge_pos", "top_left");
-  params.set("landscape_badge_scale", "1.70");
-  params.set("landscape_info_scale", "1.35");
-  params.set("landscape_logo_pos", "center");
-  params.set("landscape_info_pos", "bottom_center");
-  params.set("landscape_poster_crop", "true");
-  params.set("landscape_score_out_of_10", "true");
-  params.set("landscape_badge_case", "mixed");
-  params.set("landscape_badge_font", "1.15");
-  params.set("landscape_badge_glass_opacity", "0.00");
-  params.set("landscape_badge_saturation", "0.00");
-  params.set("landscape_badge_x", "-0.040");
-  params.set("landscape_badge_y", "-0.060");
-  params.set("landscape_logo_scale", "1.30");
-  params.set("fallback_to_imdb", "true");
-  params.set("rating_display_mode", "3");
-  params.set("frost_reference", "true");
-  params.set("minimalist_append_mode", "1");
-  params.set("minimalist_mode_font_size_ratio", "0.080");
-  params.set("minimalist_mode_font_x_offset", "0.060");
-  params.set("minimalist_mode_font_y_offset", "0.900");
-  params.set("minimalist_score_out_of_10", "true");
-  params.set("minimalist_center", "true");
-  params.set("minimalist_rating_separator", "bullet");
-  params.set("rating_text_color", "FFFFFF");
-  params.set("movie_weights", "letterboxd:0.20,popcorn:0.20,imdb:0.60");
-  params.set("tv_weights", "tomatoes:0.10,popcorn:0.25,imdb:0.61,tmdb:0.04");
-  params.set("original_art_source", "top_rated");
-  params.set("fallback_bg_style", "photoreal");
-  params.set("logo_max_w_ratio", "0.85");
-  params.set("logo_max_h_ratio", "0.40");
-  params.set("logo_bottom_ratio", "0.15");
-  params.set("logo_bottom_anchor", "true");
-  params.set("cinema_greyscale", "false");
-  params.set("hide_unreleased_rating", "true");
-  params.set("badge_display_mode", "7");
-  params.set("badge_group1", "chip:4:network");
-  params.set("landscape_badge_display_mode", "7");
-  params.set("landscape_badge_group1", "");
-  return `https://postersplus.slokker.cc/poster?${params.toString()}`;
+  return `https://pictorium-rctu.vercel.app/api/poster/${media}/${idPart}?${params.toString()}`;
 }
 
 async function getTmdbData(imdbId, type, existingTmdbId) {
   const apiKey = process.env.TMDB_API_KEY;
-  const empty = { posterUrl: null, backdropUrl: null, logoUrl: null, genre: null, tmdbId: existingTmdbId || null };
+  const empty = { posterUrl: null, backdropUrl: null, logoUrl: null, genre: null, tmdbId: existingTmdbId || null, imdbRating: null };
   if (!apiKey) return empty;
 
   const isSeries = type === "series";
@@ -469,7 +484,25 @@ async function getTmdbData(imdbId, type, existingTmdbId) {
       genre = GENRE_MAP[match.genre_ids[0]] || null;
     }
 
-    return { posterUrl, backdropUrl, logoUrl, genre, tmdbId };
+    // Prefer real IMDb rating via OMDb when key present; else TMDB vote
+    let imdbRating = null;
+    const tt = imdbId && String(imdbId).startsWith("tt") ? imdbId : null;
+    if (tt && process.env.OMDB_API_KEY) {
+      try {
+        const o = await axios.get("https://www.omdbapi.com/", {
+          params: { i: tt, apikey: process.env.OMDB_API_KEY },
+          timeout: 3500,
+        });
+        if (o.data && o.data.imdbRating && o.data.imdbRating !== "N/A") {
+          imdbRating = o.data.imdbRating;
+        }
+      } catch (_) {}
+    }
+    if (!imdbRating && det && det.vote_average != null && Number(det.vote_average) > 0) {
+      imdbRating = Number(det.vote_average).toFixed(1);
+    }
+
+    return { posterUrl, backdropUrl, logoUrl, genre, tmdbId, imdbRating };
   } catch (err) {
     console.error(`TMDB ${imdbId || existingTmdbId}:`, err.message);
     return empty;
@@ -630,47 +663,53 @@ app.get("/api/poster", async (req, res) => {
     const cleanImdb = id.startsWith("tt") ? id : null;
     let tmdbId = tmdb || null;
 
-    // Resolve TMDB id when missing (helps PostersPlus)
-    if (!tmdbId && cleanImdb) {
-      try {
-        const tmdbData = await getTmdbData(cleanImdb, mediaType, tmdbId);
-        tmdbId = tmdbData.tmdbId || tmdbId;
-      } catch (_) {}
-    }
+    let genre = null;
+    let imdbRating = null;
 
-    // Primary: PostersPlus
+    // Resolve TMDB + genre + rating
     try {
-      const ppUrl = buildPostersPlusUrl({
+      const tmdbData = await getTmdbData(cleanImdb, mediaType, tmdbId);
+      if (tmdbData.tmdbId) tmdbId = tmdbData.tmdbId;
+      genre = tmdbData.genre || null;
+      imdbRating = tmdbData.imdbRating || null;
+    } catch (_) {}
+
+    // Primary: Pictorium portrait
+    try {
+      const picUrl = buildPictoriumUrl({
         imdbId: cleanImdb,
         tmdbId,
-        stremioId: id,
         type: mediaType,
         shape: "poster",
       });
-      const r = await axios.get(ppUrl, {
-        responseType: "arraybuffer",
-        timeout: 12000,
-        headers: { Accept: "image/*" },
-        maxRedirects: 5,
-      });
-      if (r.data && r.data.byteLength > 1000) {
-        posterBuffer = Buffer.from(r.data);
+      if (picUrl) {
+        const r = await axios.get(picUrl, {
+          responseType: "arraybuffer",
+          timeout: 15000,
+          headers: { Accept: "image/*" },
+          maxRedirects: 5,
+        });
+        if (r.data && r.data.byteLength > 1000) {
+          posterBuffer = Buffer.from(r.data);
+        }
       }
     } catch (e) {
-      console.error("PostersPlus:", e.message);
+      console.error("Pictorium:", e.message);
     }
 
     // Fallback: TMDB portrait poster
-    if (!posterBuffer && cleanImdb) {
-      const tmdbData = await getTmdbData(cleanImdb, mediaType, tmdbId);
-      if (tmdbData.posterUrl) {
-        try {
+    if (!posterBuffer) {
+      try {
+        const tmdbData = await getTmdbData(cleanImdb, mediaType, tmdbId);
+        if (tmdbData.posterUrl) {
           const r = await axios.get(tmdbData.posterUrl, {
             responseType: "arraybuffer", timeout: 4500,
           });
           posterBuffer = Buffer.from(r.data);
-        } catch (_) {}
-      }
+        }
+        if (!genre) genre = tmdbData.genre;
+        if (!imdbRating) imdbRating = tmdbData.imdbRating;
+      } catch (_) {}
     }
 
     if (!posterBuffer) {
@@ -705,10 +744,20 @@ app.get("/api/poster", async (req, res) => {
 
     const rankPng = await loadRankOverlay(TARGET_H, num);
     if (rankPng) {
-      const meta = await sharp(rankPng).metadata();
       const left = Math.round(TARGET_W * 0.04);
       const top = Math.round(TARGET_H * 0.03);
       composites.push({ input: rankPng, top, left });
+    }
+
+    // SF Pro Thin: GENRE · IMDb rating (bottom center)
+    const genreSvg = buildGenreRatingSvg(TARGET_W, TARGET_H, genre, imdbRating);
+    if (genreSvg) {
+      try {
+        const genrePng = renderSvgToPng(genreSvg, TARGET_W);
+        composites.push({ input: genrePng, top: 0, left: 0 });
+      } catch (e) {
+        console.error("Genre overlay:", e.message);
+      }
     }
 
     const out = await sharp(posterBuffer)
