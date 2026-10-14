@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "243";
+const POSTER_CACHE_VERSION = "244";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.4.3",
+  version: "2.4.4",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with Pictorium portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -260,40 +260,70 @@ function resolveDigitPath(rank) {
 }
 
 /**
- * Giant frosted rank: digit mask clipped over a brightened/blurred
- * sample of the poster (adapts to each title). Falls back to PNG digits.
+ * Giant frosted rank: pure alpha mask over blurred poster glass.
+ * Whole glyph is translucent glass — no solid half / colored digit bleed.
  */
 async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
   const digitPath = resolveDigitPath(rank);
-  // Bigger ranks, tight top-left corner
-  const digitH = Math.round(targetH * 0.40);
-  const left = Math.round(targetW * 0.012);
-  const top = Math.round(targetH * 0.008);
+  // Larger + hard left corner
+  const digitH = Math.round(targetH * 0.46);
+  const left = Math.round(targetW * 0.004);
+  const top = Math.round(targetH * 0.004);
 
-  if (!digitPath || !posterBuffer) {
-    if (!digitPath) return null;
-    const buf = await sharp(digitPath).resize({ height: digitH, fit: "inside" }).png().toBuffer();
+  if (!digitPath) return null;
+
+  // Build pure white+alpha mask from digit PNG (strip nebula RGB)
+  const maskResized = await sharp(digitPath)
+    .resize({ height: digitH, fit: "inside" })
+    .ensureAlpha()
+    .png()
+    .toBuffer();
+
+  const maskMeta = await sharp(maskResized).metadata();
+  const dw = maskMeta.width || Math.round(digitH * 0.65);
+  const dh = maskMeta.height || digitH;
+
+  // Extract alpha only → solid white glyph with same alpha (uniform glass)
+  const { data: raw, info } = await sharp(maskResized)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  for (let i = 0; i < raw.length; i += 4) {
+    const a = raw[i + 3];
+    raw[i] = 255;
+    raw[i + 1] = 255;
+    raw[i + 2] = 255;
+    raw[i + 3] = a;
+  }
+  const pureMask = await sharp(raw, {
+    raw: { width: info.width, height: info.height, channels: 4 },
+  })
+    .png()
+    .toBuffer();
+
+  if (!posterBuffer) {
+    // Fallback: soft white translucent digit
+    const { data: d2, info: i2 } = await sharp(pureMask)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    for (let i = 3; i < d2.length; i += 4) d2[i] = Math.round(d2[i] * 0.55);
+    const buf = await sharp(d2, {
+      raw: { width: i2.width, height: i2.height, channels: 4 },
+    })
+      .png()
+      .toBuffer();
     return { buf, left, top };
   }
 
   try {
-    // Soften digit edges slightly for glass look; keep alpha as mask
-    const maskResized = await sharp(digitPath)
-      .resize({ height: digitH, fit: "inside" })
-      .ensureAlpha()
-      .png()
-      .toBuffer();
-    const meta = await sharp(maskResized).metadata();
-    const dw = meta.width || Math.round(digitH * 0.7);
-    const dh = meta.height || digitH;
-
-    const pad = 28;
+    const pad = 32;
     const extractLeft = Math.max(0, left - pad);
     const extractTop = Math.max(0, top - pad);
     const extractW = Math.min(targetW - extractLeft, dw + pad * 2);
     const extractH = Math.min(targetH - extractTop, dh + pad * 2);
 
-    // Keep poster color (higher saturation) + strong blur = real glass, not grey slab
+    // Blurred poster under rank — keep color for real glass
     const region = await sharp(posterBuffer)
       .extract({
         left: extractLeft,
@@ -301,60 +331,30 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
         width: extractW,
         height: extractH,
       })
-      .blur(18)
-      .modulate({ brightness: 1.35, saturation: 0.85 })
+      .blur(22)
+      .modulate({ brightness: 1.4, saturation: 0.9 })
       .ensureAlpha()
       .png()
       .toBuffer();
 
-    // Light translucent white veil (glass), not opaque grey
+    // Translucent white glass veil (whole surface before mask)
     const frost = await sharp({
       create: {
         width: extractW,
         height: extractH,
         channels: 4,
-        background: { r: 255, g: 255, b: 255, alpha: 0.28 },
+        background: { r: 255, g: 255, b: 255, alpha: 0.32 },
       },
     })
       .png()
       .toBuffer();
 
-    // Soft top highlight for glass edge
-    const highlight = await sharp({
-      create: {
-        width: extractW,
-        height: extractH,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      },
-    })
-      .composite([
-        {
-          input: await sharp({
-            create: {
-              width: extractW,
-              height: Math.max(8, Math.round(extractH * 0.35)),
-              channels: 4,
-              background: { r: 255, g: 255, b: 255, alpha: 0.22 },
-            },
-          })
-            .png()
-            .toBuffer(),
-          top: 0,
-          left: 0,
-        },
-      ])
+    const glassPlate = await sharp(region)
+      .composite([{ input: frost, blend: "over" }])
       .png()
       .toBuffer();
 
-    const frostedRegion = await sharp(region)
-      .composite([
-        { input: frost, blend: "over" },
-        { input: highlight, blend: "over" },
-      ])
-      .png()
-      .toBuffer();
-
+    // Place pure alpha mask on pad canvas
     const maskOnPad = await sharp({
       create: {
         width: extractW,
@@ -365,65 +365,51 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
     })
       .composite([
         {
-          input: maskResized,
-          left: left - extractLeft,
-          top: top - extractTop,
+          input: pureMask,
+          left: Math.max(0, left - extractLeft),
+          top: Math.max(0, top - extractTop),
         },
       ])
       .png()
       .toBuffer();
 
-    // Clip glass through digit; then reduce overall opacity so it stays transparent
-    const clipped = await sharp(frostedRegion)
+    // Clip glass through entire glyph
+    let clipped = await sharp(glassPlate)
       .composite([{ input: maskOnPad, blend: "dest-in" }])
       .ensureAlpha()
       .png()
       .toBuffer();
 
-    // Multiply alpha by ~0.82 for extra transparency without going muddy
-    const { data, info } = await sharp(clipped)
+    // Uniform transparency across whole number
+    const { data, info: cInfo } = await sharp(clipped)
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
     for (let i = 3; i < data.length; i += 4) {
-      data[i] = Math.round(data[i] * 0.82);
+      data[i] = Math.round(data[i] * 0.72);
     }
-    const translucent = await sharp(data, {
-      raw: { width: info.width, height: info.height, channels: 4 },
+    clipped = await sharp(data, {
+      raw: { width: cInfo.width, height: cInfo.height, channels: 4 },
     })
       .png()
       .toBuffer();
 
-    // Very light edge so glyph reads on bright posters (not a grey fill)
-    const edge = await sharp(maskResized)
-      .blur(1.2)
-      .linear(0.15, 0)
-      .png()
-      .toBuffer();
-
-    const finalDigit = await sharp({
-      create: {
-        width: extractW,
-        height: extractH,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      },
-    })
-      .composite([
-        { input: edge, left: left - extractLeft, top: top - extractTop, blend: "over" },
-        { input: translucent, blend: "over" },
-      ])
-      .png()
-      .toBuffer();
-
-    return { buf: finalDigit, left: extractLeft, top: extractTop };
+    return { buf: clipped, left: extractLeft, top: extractTop };
   } catch (e) {
     console.error("Frost rank:", e.message);
-    const buf = await sharp(digitPath).resize({ height: digitH, fit: "inside" }).png().toBuffer();
+    const { data: d2, info: i2 } = await sharp(pureMask)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    for (let i = 3; i < d2.length; i += 4) d2[i] = Math.round(d2[i] * 0.55);
+    const buf = await sharp(d2, {
+      raw: { width: i2.width, height: i2.height, channels: 4 },
+    })
+      .png()
+      .toBuffer();
     return { buf, left, top };
   }
 }
-
 
 function formatGenreLabel(genre) {
   if (!genre) return null;
@@ -438,7 +424,7 @@ function buildGenreRatingSvg(width, height, genre, rating) {
   if (!label) return null;
 
   // Plain SF Pro Thin text only — no frost pill
-  const fontSize = Math.round(height * 0.036);
+  const fontSize = Math.round(height * 0.042);
   const y = Math.round(height * 0.965);
   const x = Math.round(width / 2);
   const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
