@@ -789,39 +789,40 @@ app.get("/api/poster", async (req, res) => {
       }).jpeg().toBuffer();
     }
 
-    // Netflix Top 10: readable frosted rank on left, smaller soft-edged poster on right
     const TARGET_W = 1000;
     const TARGET_H = 1500;
     const num = parseInt(rank, 10) || 1;
+    const isTen = num >= 10;
 
-    // Smaller inset so rank stays fully readable (extra room when rank is 10)
-    const isTenLayout = num >= 10;
-    const posterW = Math.round(TARGET_W * (isTenLayout ? 0.64 : 0.68));
-    const posterH = Math.round(TARGET_H * 0.78);
-    const posterLeft = Math.round(TARGET_W * (isTenLayout ? 0.34 : 0.28));
+    // 1. Force exact 2:3 proportions for the inner poster to eliminate cropping
+    const posterH = Math.round(TARGET_H * 0.76); // 1140px
+    const posterW = Math.round(posterH * (2 / 3)); // 760px
+    
+    // Right-align the poster to give the rank numbers maximum breathing room
+    const posterLeft = Math.round(TARGET_W - posterW - (TARGET_W * 0.035));
     const posterTop = Math.round((TARGET_H - posterH) / 2);
     const radius = 28;
 
-    // Soft-edged rounded poster (transparent corners)
+    // Soft-edged rounded poster
     const roundedMask = Buffer.from(
       `<svg width="${posterW}" height="${posterH}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="${posterW}" height="${posterH}" rx="${radius}" ry="${radius}" fill="#fff"/>
       </svg>`
     );
+    
     const insetPoster = await sharp(posterBuffer)
-      .resize(posterW, posterH, { fit: "cover", position: "centre" })
+      .resize(posterW, posterH, { fit: "fill" }) // Perfect 2:3 fit, no cutout
       .composite([{ input: roundedMask, blend: "dest-in" }])
       .png()
       .toBuffer();
 
-    // Rank: fully on-canvas; "10" uses smaller size + tighter tracking so both digits show
-    const isTen = num >= 10;
-    const rankFont = Math.round(TARGET_H * (isTen ? 0.34 : 0.42));
-    const rankX = Math.round(TARGET_W * (isTen ? 0.008 : 0.02));
-    const rankBaseline = Math.round(TARGET_H * 0.68);
-    const tracking = isTen ? -0.10 : 0;
+    // 2. Adjust Rank Alignment
+    const rankFont = Math.round(TARGET_H * (isTen ? 0.35 : 0.42));
+    const rankX = Math.round(TARGET_W * (isTen ? -0.02 : 0.03)); 
+    const rankBaseline = posterTop + posterH - Math.round(TARGET_H * 0.06); // Anchored to the bottom of the poster
+    const tracking = isTen ? -0.08 : 0;
 
-    // Frost plate from blurred stage + poster sample
+    // 3. Frost Plate: Reduced blur (20) and higher transparency
     const frostBase = await sharp({
       create: {
         width: TARGET_W,
@@ -834,7 +835,7 @@ app.get("/api/poster", async (req, res) => {
         {
           input: await sharp(posterBuffer)
             .resize(TARGET_W, TARGET_H, { fit: "cover" })
-            .blur(40)
+            .blur(20) // Reduced from 40
             .modulate({ brightness: 0.85, saturation: 0.5 })
             .jpeg()
             .toBuffer(),
@@ -843,17 +844,16 @@ app.get("/api/poster", async (req, res) => {
           top: 0,
         },
       ])
-      .linear(0.9, 20)
       .png()
       .toBuffer();
 
-    // White glass veil
+    // White glass veil (Reduced alpha from 0.35 to 0.15)
     const veil = await sharp({
       create: {
         width: TARGET_W,
         height: TARGET_H,
         channels: 4,
-        background: { r: 220, g: 225, b: 235, alpha: 0.35 },
+        background: { r: 220, g: 225, b: 235, alpha: 0.15 },
       },
     })
       .png()
@@ -886,58 +886,6 @@ app.get("/api/poster", async (req, res) => {
       .png()
       .toBuffer();
 
-    // Slight overall transparency
-    {
-      const { data, info } = await sharp(glassRank)
-        .ensureAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-      for (let i = 3; i < data.length; i += 4) {
-        data[i] = Math.round(data[i] * 0.88);
-      }
-      glassRank = await sharp(data, {
-        raw: { width: info.width, height: info.height, channels: 4 },
-      })
-        .png()
-        .toBuffer();
-    }
-
-    // Thin clean outline for legibility (dilate ring)
-    const { data: mdat, info: mi } = await sharp(rankMask)
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    const mw = mi.width;
-    const mh = mi.height;
-    const radiusPx = 3;
-    const ring = Buffer.alloc(mdat.length);
-    for (let y = 0; y < mh; y++) {
-      for (let x = 0; x < mw; x++) {
-        const i = (y * mw + x) * 4;
-        let maxA = 0;
-        for (let dy = -radiusPx; dy <= radiusPx; dy++) {
-          for (let dx = -radiusPx; dx <= radiusPx; dx++) {
-            if (dx * dx + dy * dy > radiusPx * radiusPx) continue;
-            const sx = x + dx;
-            const sy = y + dy;
-            if (sx < 0 || sy < 0 || sx >= mw || sy >= mh) continue;
-            const a = mdat[(sy * mw + sx) * 4 + 3];
-            if (a > maxA) maxA = a;
-          }
-        }
-        const a = Math.max(0, maxA - mdat[i + 3]);
-        ring[i] = 255;
-        ring[i + 1] = 255;
-        ring[i + 2] = 255;
-        ring[i + 3] = Math.round(a * 0.5);
-      }
-    }
-    const outlineRing = await sharp(ring, {
-      raw: { width: mw, height: mh, channels: 4 },
-    })
-      .png()
-      .toBuffer();
-
     // Soft drop shadow under poster
     const shadowSvg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
@@ -950,8 +898,8 @@ app.get("/api/poster", async (req, res) => {
         rx="${radius}" ry="${radius}" fill="#000" filter="url(#s)" opacity="0.9"/>
 </svg>`);
 
+    // Removed the manual outline ring generation completely to fix color artifacts
     const composites = [
-      { input: outlineRing, top: 0, left: 0 },
       { input: glassRank, top: 0, left: 0 },
       { input: shadowSvg, top: 0, left: 0 },
       { input: insetPoster, top: posterTop, left: posterLeft },
