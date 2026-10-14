@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "248";
+const POSTER_CACHE_VERSION = "249";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.4.8",
+  version: "2.4.9",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -268,9 +268,9 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
   if (!digitPath) return null;
 
   const digitH = Math.round(targetH * 0.40);
-  // Flush corner — digit PNGs are pre-trimmed of left padding
-  const left = 0;
-  const top = 0;
+  // Slight inset so ranks don't clip the poster edge
+  const left = Math.round(targetW * 0.028);
+  const top = Math.round(targetH * 0.022);
 
   let digitPng = await sharp(digitPath)
     .resize({ height: digitH, fit: "inside" })
@@ -306,7 +306,7 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
     .toBuffer();
 
   if (!posterBuffer) {
-    return { buf: digitPng, left: 0, top: 0 };
+    return { buf: digitPng, left, top };
   }
 
   try {
@@ -317,7 +317,7 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
       .extract({ left: 0, top: 0, width: sampleW, height: sampleH })
       .resize(dw, dh, { fit: "cover", position: "left top" })
       .blur(18)
-      .modulate({ brightness: 1.4, saturation: 0.8 })
+      .modulate({ brightness: 1.05, saturation: 0.7 })
       .ensureAlpha()
       .png()
       .toBuffer();
@@ -327,7 +327,7 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
         width: dw,
         height: dh,
         channels: 4,
-        background: { r: 255, g: 255, b: 255, alpha: 0.28 },
+        background: { r: 200, g: 205, b: 215, alpha: 0.38 },
       },
     })
       .png()
@@ -350,7 +350,7 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
         .raw()
         .toBuffer({ resolveWithObject: true });
       for (let i = 3; i < data.length; i += 4) {
-        data[i] = Math.round(data[i] * 0.75);
+        data[i] = Math.round(data[i] * 0.82);
       }
       glassGlyph = await sharp(data, {
         raw: { width: gi.width, height: gi.height, channels: 4 },
@@ -415,10 +415,10 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
       .png()
       .toBuffer();
 
-    return { buf: finalDigit, left: 0, top: 0 };
+    return { buf: finalDigit, left, top };
   } catch (e) {
     console.error("Frost rank:", e.message);
-    return { buf: digitPng, left: 0, top: 0 };
+    return { buf: digitPng, left, top };
   }
 }
 
@@ -436,7 +436,7 @@ function buildGenreRatingSvg(width, height, genre, rating) {
 
   // Plain SF Pro Thin text only — no frost pill
   const fontSize = Math.round(height * 0.042);
-  const y = Math.round(height * 0.965);
+  const y = Math.round(height * 0.88);
   const x = Math.round(width / 2);
   const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
