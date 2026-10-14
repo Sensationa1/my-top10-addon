@@ -805,37 +805,36 @@ app.get("/api/poster", async (req, res) => {
     const num = parseInt(rank, 10) || 1;
     const isTen = num >= 10;
 
-    // 1. Force exact 2:3 proportions for the inner poster to eliminate cropping
-    const posterH = Math.round(TARGET_H * 0.76); // 1140px
-    const posterW = Math.round(posterH * (2 / 3)); // 760px
+    // 1. Force exact 2:3 proportions and scale down to 70% of canvas height (fixing the "too tall" look)
+    const posterH = Math.round(TARGET_H * 0.70); // 1050px
+    const posterW = Math.round(posterH * (2 / 3)); // 700px
     
     // Right-align the poster to give the rank numbers maximum breathing room
-    const posterLeft = Math.round(TARGET_W - posterW - (TARGET_W * 0.035));
+    const posterLeft = Math.round(TARGET_W - posterW - (TARGET_W * 0.05));
     const posterTop = Math.round((TARGET_H - posterH) / 2);
-    const radius = 28;
+    const radius = 24;
 
-    // Soft-edged rounded poster
     const roundedMask = Buffer.from(
       `<svg width="${posterW}" height="${posterH}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="${posterW}" height="${posterH}" rx="${radius}" ry="${radius}" fill="#fff"/>
       </svg>`
     );
     
+    // fit: "cover" ensures it scales proportionally without distortion, cropping any excess
     const insetPoster = await sharp(posterBuffer)
-      .resize(posterW, posterH, { fit: "fill" }) // Perfect 2:3 fit, no cutout
+      .resize(posterW, posterH, { fit: "cover", position: "centre" }) 
       .composite([{ input: roundedMask, blend: "dest-in" }])
       .png()
       .toBuffer();
 
-    // 2. Adjust Rank Alignment
-    const rankFont = Math.round(TARGET_H * (isTen ? 0.35 : 0.42));
-    // Shift further left for better visibility
-    const rankX = Math.round(TARGET_W * (isTen ? -0.08 : -0.01)); 
-    // Shift higher on the canvas
-    const rankBaseline = posterTop + posterH - Math.round(TARGET_H * 0.12); 
+    // 2. Adjust Rank Alignment (Centered vertically, larger, pushed right to peek out more)
+    const rankFont = Math.round(TARGET_H * (isTen ? 0.50 : 0.60)); // Made the numbers much larger
+    const rankX = Math.round(TARGET_W * (isTen ? -0.06 : 0.04)); 
+    // Shifted to the exact vertical middle of the canvas
+    const rankBaseline = Math.round(TARGET_H / 2 + rankFont * 0.33); 
     const tracking = isTen ? -0.08 : 0;
 
-    // 3. Frost Plate: Reduced blur (20) and higher transparency
+    // 3. Frost Plate: High contrast for extreme visibility
     const frostBase = await sharp({
       create: {
         width: TARGET_W,
@@ -848,8 +847,8 @@ app.get("/api/poster", async (req, res) => {
         {
           input: await sharp(posterBuffer)
             .resize(TARGET_W, TARGET_H, { fit: "cover" })
-            .blur(20) // Reduced from 40
-            .modulate({ brightness: 0.85, saturation: 0.5 })
+            .blur(25)
+            .modulate({ brightness: 1.1, saturation: 0.6 }) // Brighter frost
             .jpeg()
             .toBuffer(),
           blend: "over",
@@ -860,13 +859,13 @@ app.get("/api/poster", async (req, res) => {
       .png()
       .toBuffer();
 
-    // White glass veil (Reduced alpha from 0.35 to 0.15)
+    // White glass veil (Higher alpha to make the number pop significantly)
     const veil = await sharp({
       create: {
         width: TARGET_W,
         height: TARGET_H,
         channels: 4,
-        background: { r: 220, g: 225, b: 235, alpha: 0.15 },
+        background: { r: 245, g: 250, b: 255, alpha: 0.45 },
       },
     })
       .png()
@@ -878,9 +877,14 @@ app.get("/api/poster", async (req, res) => {
       .png()
       .toBuffer();
 
-    // Rank shape as alpha mask via SVG
+    // Rank shape as alpha mask via SVG, with a subtle drop shadow to separate it from background
     const rankMaskSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
   <text
     x="${rankX}"
     y="${rankBaseline}"
@@ -889,6 +893,7 @@ app.get("/api/poster", async (req, res) => {
     font-size="${rankFont}"
     fill="#ffffff"
     letter-spacing="${tracking}em"
+    filter="url(#glow)"
   >${num}</text>
 </svg>`;
     const rankMask = renderSvgToPng(rankMaskSvg, TARGET_W);
@@ -911,7 +916,6 @@ app.get("/api/poster", async (req, res) => {
         rx="${radius}" ry="${radius}" fill="#000" filter="url(#s)" opacity="0.9"/>
 </svg>`);
 
-    // Removed the manual outline ring generation completely to fix color artifacts
     const composites = [
       { input: glassRank, top: 0, left: 0 },
       { input: shadowSvg, top: 0, left: 0 },
