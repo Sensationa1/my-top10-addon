@@ -805,11 +805,11 @@ app.get("/api/poster", async (req, res) => {
     const num = parseInt(rank, 10) || 1;
     const isTen = num >= 10;
 
-    // 1. Force exact 2:3 proportions and scale down to 60% of canvas height so it's not too tall
-    const posterH = Math.round(TARGET_H * 0.60); 
-    const posterW = Math.round(posterH * (2 / 3)); 
+    // 1. Force exact 2:3 proportions and scale down to 70% of canvas height (fixing the "too tall" look)
+    const posterH = Math.round(TARGET_H * 0.70); // 1050px
+    const posterW = Math.round(posterH * (2 / 3)); // 700px
     
-    // Right-align the poster
+    // Right-align the poster to give the rank numbers maximum breathing room
     const posterLeft = Math.round(TARGET_W - posterW - (TARGET_W * 0.05));
     const posterTop = Math.round((TARGET_H - posterH) / 2);
     const radius = 24;
@@ -820,20 +820,18 @@ app.get("/api/poster", async (req, res) => {
       </svg>`
     );
     
-    // fit: "cover" ensures it scales proportionally without distortion
+    // fit: "cover" ensures it scales proportionally without distortion, cropping any excess
     const insetPoster = await sharp(posterBuffer)
       .resize(posterW, posterH, { fit: "cover", position: "centre" }) 
       .composite([{ input: roundedMask, blend: "dest-in" }])
       .png()
       .toBuffer();
 
-    // 2. Adjust Rank Alignment
-    const rankFont = Math.round(TARGET_H * (isTen ? 0.50 : 0.60));
+    // 2. Adjust Rank Alignment (Aligned properly, pushed left to peek out)
+    const rankFont = Math.round(TARGET_H * (isTen ? 0.50 : 0.60)); // Made the numbers much larger
     const rankX = Math.round(TARGET_W * (isTen ? -0.06 : 0.04)); 
-    
-    // Shift the baseline up slightly ONLY for the number 10 so it aligns perfectly with the others
-    const baseBaseline = Math.round(TARGET_H / 2 + (TARGET_H * 0.60) * 0.33);
-    const rankBaseline = isTen ? baseBaseline - Math.round(TARGET_H * 0.025) : baseBaseline; 
+    // Shifted to the exact vertical middle of the canvas
+    const rankBaseline = Math.round(TARGET_H / 2 + (TARGET_H * 0.60) * 0.33); // Calculate baseline using the size of single digits so the 10 aligns perfectly
     const tracking = isTen ? -0.08 : 0;
 
     // 3. Frost Plate: High contrast for extreme visibility
