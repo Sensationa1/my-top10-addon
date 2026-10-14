@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "254";
+const POSTER_CACHE_VERSION = "300";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.5.4",
+  version: "3.0.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
