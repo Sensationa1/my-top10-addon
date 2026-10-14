@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "259";
+const POSTER_CACHE_VERSION = "260";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.6.2",
+  version: "2.6.3",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -815,7 +815,7 @@ app.get("/api/poster", async (req, res) => {
     // 10 uses same visual height family, tighter tracking, not lower
     const rankFont = Math.round(TARGET_H * (isTen ? 0.30 : 0.34));
     const rankX = Math.round(TARGET_W * 0.03);
-    const rankBaseline = Math.round(TARGET_H * 0.26); // slightly lower, shared baseline
+    const rankBaseline = Math.round(TARGET_H * 0.29); // tad lower, shared baseline
     const tracking = isTen ? -0.15 : 0;
 
     // ===== Polished Apple frosted glass =====
@@ -917,56 +917,39 @@ app.get("/api/poster", async (req, res) => {
         .toBuffer();
     }
 
-    // Thin bright rim + soft dark outer for shine / separation
-    const { data: mdat, info: mi } = await sharp(rankMask)
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    const mw = mi.width;
-    const mh = mi.height;
-    const rim = Buffer.alloc(mdat.length);
-    const outer = Buffer.alloc(mdat.length);
-    const rIn = 2;
-    const rOut = 4;
-    for (let y = 0; y < mh; y++) {
-      for (let x = 0; x < mw; x++) {
-        const i = (y * mw + x) * 4;
-        let maxIn = 0;
-        let maxOut = 0;
-        for (let dy = -rOut; dy <= rOut; dy++) {
-          for (let dx = -rOut; dx <= rOut; dx++) {
-            const d2 = dx * dx + dy * dy;
-            const sx = x + dx;
-            const sy = y + dy;
-            if (sx < 0 || sy < 0 || sx >= mw || sy >= mh) continue;
-            const a = mdat[(sy * mw + sx) * 4 + 3];
-            if (d2 <= rOut * rOut && a > maxOut) maxOut = a;
-            if (d2 <= rIn * rIn && a > maxIn) maxIn = a;
-          }
-        }
-        const core = mdat[i + 3];
-        const rimA = Math.max(0, maxIn - core);
-        const outA = Math.max(0, maxOut - maxIn);
-        rim[i] = 255;
-        rim[i + 1] = 255;
-        rim[i + 2] = 255;
-        rim[i + 3] = Math.round(rimA * 0.45);
-        outer[i] = 0;
-        outer[i + 1] = 0;
-        outer[i + 2] = 0;
-        outer[i + 3] = Math.round(outA * 0.22);
-      }
-    }
-    const rimPng = await sharp(rim, { raw: { width: mw, height: mh, channels: 4 } }).png().toBuffer();
-    const outerPng = await sharp(outer, { raw: { width: mw, height: mh, channels: 4 } }).png().toBuffer();
+    // Professional outline: vector stroke only (no pixel dilation haze)
+    const strokeW = Math.max(2, Math.round(rankFont * 0.014));
+    const outlineSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="outSoft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="Inter Display"
+    font-weight="900"
+    font-size="${rankFont}"
+    fill="none"
+    stroke="rgba(255,255,255,0.40)"
+    stroke-width="${strokeW}"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    letter-spacing="${tracking}em"
+    filter="url(#outSoft)"
+  >${num}</text>
+</svg>`;
+    const outlinePng = renderSvgToPng(outlineSvg, TARGET_W);
 
     // Soft left vignette for rank contrast
     const vig = Buffer.from(
       `<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="v" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#000" stop-opacity="0.28"/>
-            <stop offset="35%" stop-color="#000" stop-opacity="0.10"/>
+            <stop offset="0%" stop-color="#000" stop-opacity="0.22"/>
+            <stop offset="35%" stop-color="#000" stop-opacity="0.08"/>
             <stop offset="100%" stop-color="#000" stop-opacity="0"/>
           </linearGradient>
         </defs>
@@ -976,8 +959,7 @@ app.get("/api/poster", async (req, res) => {
 
     const composites = [
       { input: vig, top: 0, left: 0 },
-      { input: outerPng, top: 0, left: 0 },
-      { input: rimPng, top: 0, left: 0 },
+      { input: outlinePng, top: 0, left: 0 },
       { input: glassRank, top: 0, left: 0 },
     ];
 
