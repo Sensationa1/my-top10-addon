@@ -240,12 +240,19 @@ async function enrichItemFromTmdb(item, type) {
 
 async function filterTrendingList(raw, type, limit = 10) {
   const out = [];
-  for (const item of raw) {
+  const chunkSize = 15;
+  for (let i = 0; i < raw.length; i += chunkSize) {
+    const chunk = raw.slice(i, i + chunkSize);
+    const processed = await Promise.all(chunk.map(async (item) => {
+      const enriched = await enrichItemFromTmdb(item, type);
+      if (shouldExcludeTrendingItem(enriched, type)) return null;
+      if (await isAnimeViaTmdb(enriched, type)) return null;
+      return enriched;
+    }));
+    for (const res of processed) {
+      if (res && out.length < limit) out.push(res);
+    }
     if (out.length >= limit) break;
-    const enriched = await enrichItemFromTmdb(item, type);
-    if (shouldExcludeTrendingItem(enriched, type)) continue;
-    if (await isAnimeViaTmdb(enriched, type)) continue;
-    out.push(enriched);
   }
   return out;
 }
@@ -669,21 +676,19 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 
   try {
     const raw = await fetchTrendingList(type);
-    // Trakt/MDBList source; drop news / talk / kids / anime / Chinese / obscure international
     const filtered = await filterTrendingList(raw, type, 10);
 
-    const metas = [];
-    for (let i = 0; i < filtered.length; i++) {
-      const item = filtered[i];
+    const metaPromises = filtered.map(async (item, i) => {
       let tmdbId = item.tmdb_id || item.tmdbid || item.id || null;
       if (tmdbId && String(tmdbId).startsWith("tt")) tmdbId = null;
       let imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id) || null;
+      
       if (!imdbId && tmdbId) {
         imdbId = await resolveImdbId(tmdbId, type);
       }
-      // Include not-yet-released; prefer imdb id for stream matching
+      
       const idToUse = imdbId || (tmdbId ? `tmdb:${tmdbId}` : null);
-      if (!idToUse) continue;
+      if (!idToUse) return null;
 
       const title = item.title || item.name || "Unknown";
       const rank = i + 1;
@@ -705,15 +710,21 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         posterShape: "poster",
         description: item.description || item.overview || "",
       };
-      // TMDB landscape backdrop + logo
+      
       if (background) meta.background = background;
       if (logo) meta.logo = logo;
-      // Pass through release date when present (including future)
+      
       const rd = item.release_date || item.first_air_date || item.released || null;
       if (rd) meta.releaseInfo = String(rd).slice(0, 10);
 
-      metas.push(meta);
-    }
+      return { meta, rank };
+    });
+
+    const resolved = await Promise.all(metaPromises);
+    const metas = resolved
+      .filter((r) => r && r.meta)
+      .sort((a, b) => a.rank - b.rank)
+      .map((r) => r.meta);
 
     res.setHeader("Cache-Control", "public, max-age=900, s-maxage=900");
     res.json({ metas });
@@ -818,8 +829,10 @@ app.get("/api/poster", async (req, res) => {
 
     // 2. Adjust Rank Alignment
     const rankFont = Math.round(TARGET_H * (isTen ? 0.35 : 0.42));
-    const rankX = Math.round(TARGET_W * (isTen ? -0.02 : 0.03)); 
-    const rankBaseline = posterTop + posterH - Math.round(TARGET_H * 0.06); // Anchored to the bottom of the poster
+    // Shift further left for better visibility
+    const rankX = Math.round(TARGET_W * (isTen ? -0.08 : -0.01)); 
+    // Shift higher on the canvas
+    const rankBaseline = posterTop + posterH - Math.round(TARGET_H * 0.12); 
     const tracking = isTen ? -0.08 : 0;
 
     // 3. Frost Plate: Reduced blur (20) and higher transparency
