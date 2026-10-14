@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "246";
+const POSTER_CACHE_VERSION = "248";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.4.6",
+  version: "2.4.8",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -260,29 +260,33 @@ function resolveDigitPath(rank) {
 }
 
 /**
- * Custom digit PNGs + frosted glass fill, pinned to true top-left.
- * Keeps the user's rank artwork; glass comes from blurred poster through alpha.
+ * Custom digit PNGs + frosted glass, flush top-left (assets trimmed).
+ * Slight glassy outline for readability on bright posters.
  */
 async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
   const digitPath = resolveDigitPath(rank);
   if (!digitPath) return null;
 
-  // Sizeable but corner-anchored (not floating mid-poster)
-  const digitH = Math.round(targetH * 0.38);
+  const digitH = Math.round(targetH * 0.40);
+  // Flush corner — digit PNGs are pre-trimmed of left padding
   const left = 0;
   const top = 0;
 
-  const digitPng = await sharp(digitPath)
+  let digitPng = await sharp(digitPath)
     .resize({ height: digitH, fit: "inside" })
     .ensureAlpha()
     .png()
     .toBuffer();
 
+  // Runtime trim any remaining transparent padding (forces glyph to image origin)
+  try {
+    digitPng = await sharp(digitPng).trim({ threshold: 5 }).ensureAlpha().png().toBuffer();
+  } catch (_) {}
+
   const meta = await sharp(digitPng).metadata();
   const dw = meta.width || Math.round(digitH * 0.65);
   const dh = meta.height || digitH;
 
-  // Alpha-only mask (shape of custom digit)
   const { data: raw, info } = await sharp(digitPng)
     .ensureAlpha()
     .raw()
@@ -302,30 +306,18 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
     .toBuffer();
 
   if (!posterBuffer) {
-    // Soften original custom digit
-    const { data: d2, info: i2 } = await sharp(digitPng)
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    for (let i = 3; i < d2.length; i += 4) d2[i] = Math.round(d2[i] * 0.7);
-    const buf = await sharp(d2, {
-      raw: { width: i2.width, height: i2.height, channels: 4 },
-    })
-      .png()
-      .toBuffer();
-    return { buf, left, top };
+    return { buf: digitPng, left: 0, top: 0 };
   }
 
   try {
-    // Sample a generous area from the true top-left of the poster
-    const sampleW = Math.min(targetW, Math.max(dw + 40, Math.round(targetW * 0.55)));
-    const sampleH = Math.min(targetH, Math.max(dh + 40, Math.round(targetH * 0.5)));
+    const sampleW = Math.min(targetW, Math.max(dw + 48, Math.round(targetW * 0.55)));
+    const sampleH = Math.min(targetH, Math.max(dh + 48, Math.round(targetH * 0.5)));
 
     const glassSrc = await sharp(posterBuffer)
       .extract({ left: 0, top: 0, width: sampleW, height: sampleH })
       .resize(dw, dh, { fit: "cover", position: "left top" })
-      .blur(20)
-      .modulate({ brightness: 1.45, saturation: 0.75 })
+      .blur(18)
+      .modulate({ brightness: 1.4, saturation: 0.8 })
       .ensureAlpha()
       .png()
       .toBuffer();
@@ -335,7 +327,7 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
         width: dw,
         height: dh,
         channels: 4,
-        background: { r: 255, g: 255, b: 255, alpha: 0.3 },
+        background: { r: 255, g: 255, b: 255, alpha: 0.28 },
       },
     })
       .png()
@@ -346,21 +338,19 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
       .png()
       .toBuffer();
 
-    // Glass clipped to custom digit shape
     let glassGlyph = await sharp(glassPlate)
       .composite([{ input: pureMask, blend: "dest-in" }])
       .ensureAlpha()
       .png()
       .toBuffer();
 
-    // Pull alpha down so poster shows through
     {
       const { data, info: gi } = await sharp(glassGlyph)
         .ensureAlpha()
         .raw()
         .toBuffer({ resolveWithObject: true });
       for (let i = 3; i < data.length; i += 4) {
-        data[i] = Math.round(data[i] * 0.78);
+        data[i] = Math.round(data[i] * 0.75);
       }
       glassGlyph = await sharp(data, {
         raw: { width: gi.width, height: gi.height, channels: 4 },
@@ -369,17 +359,43 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
         .toBuffer();
     }
 
-    // Fade original custom digit (nebula style) on top at low opacity — keeps YOUR art
+    // Soft custom-digit tint on top (keep user art)
     const { data: dig, info: di } = await sharp(digitPng)
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
     for (let i = 3; i < dig.length; i += 4) {
-      dig[i] = Math.round(dig[i] * 0.38);
+      dig[i] = Math.round(dig[i] * 0.34);
     }
     const softDigit = await sharp(dig, {
       raw: { width: di.width, height: di.height, channels: 4 },
     })
+      .png()
+      .toBuffer();
+
+    // Glassy outline: expand mask slightly, stroke with translucent white
+    const outline = await sharp(pureMask)
+      .blur(1.8)
+      .linear(1.8, -40)
+      .ensureAlpha()
+      .png()
+      .toBuffer();
+    const { data: od, info: oi } = await sharp(outline)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    for (let i = 0; i < od.length; i += 4) {
+      const a = od[i + 3];
+      od[i] = 255;
+      od[i + 1] = 255;
+      od[i + 2] = 255;
+      od[i + 3] = Math.round(a * 0.45);
+    }
+    // Subtract inner fill so only ring remains
+    const outlineRing = await sharp(od, {
+      raw: { width: oi.width, height: oi.height, channels: 4 },
+    })
+      .composite([{ input: pureMask, blend: "dest-out" }])
       .png()
       .toBuffer();
 
@@ -392,13 +408,13 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
       },
     })
       .composite([
+        { input: outlineRing, blend: "over" },
         { input: glassGlyph, blend: "over" },
         { input: softDigit, blend: "over" },
       ])
       .png()
       .toBuffer();
 
-    // Composite at exact top-left of poster (no padded extract offset)
     return { buf: finalDigit, left: 0, top: 0 };
   } catch (e) {
     console.error("Frost rank:", e.message);
@@ -525,7 +541,7 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("tg", "medium");
   params.set("bgr", "custom");
   params.set("bgo", "1");
-  params.set("bgh", "0.35");
+  params.set("bgh", "0.55");
   params.set("tvso", "1");
   params.set("vpcb", "1");
   params.set("vcsa", "0.00");
@@ -533,7 +549,7 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("vcli", "0.40");
   params.set("vcs", "reference");
   params.set("hy", "1");
-  params.set("sm", "notch");
+  params.set("sm", "hidden");
   params.set("_bgr", "custom");
   params.set("_bgo", "0.2");
   params.set("_bgh", "0.75");
@@ -544,7 +560,6 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("_hg", "1");
   params.set("_hr", "1");
   params.set("_tx", "1");
-  params.set("_sm", "hidden");
   params.set("bp", "top_left");
   params.set("_bs", "1.70");
   params.set("_is", "1.35");
@@ -567,21 +582,14 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("fbs", "photoreal");
   params.set("lmwr", "0.80");
   params.set("lmhr", "0.40");
-  params.set("lbr", "0.10");
+  params.set("lbr", "0.19");
   params.set("cg", "0");
   params.set("hur", "1");
-  params.set("sbsw", "1.40");
-  params.set("sbsh", "1.20");
-  params.set("sbp", "0.95");
-  params.set("sbfo", "0.05");
-  params.set(
-    "sp",
-    "default2,-watchlist,-gg_wins,-festival,-pic_noms,-metacritic,-gg_noms,-trending,-trending_broad,-new_release,-just_added,-studio,-director,-cast,-blockbuster,-cult,-foreign,-true_story,-short_film,-mini_series,-binge_ready,-returning,-cancelled,-ended,-physical,-streaming,-cinema,-production,-renewed,premiere@3"
-  );
   params.set("bdm", "7");
   params.set("bg1", "tr:4:network");
   params.set("_bdm", "7");
   params.set("_bg1", "");
+  params.set("bls", "1.10");
   return `https://postersplus.slokker.cc/poster?${params.toString()}`;
 }
 
