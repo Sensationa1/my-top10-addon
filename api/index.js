@@ -805,84 +805,27 @@ app.get("/api/poster", async (req, res) => {
     const num = parseInt(rank, 10) || 1;
     const isTen = num >= 10;
 
-    // 1. Force exact 2:3 proportions and scale down to 70% of canvas height (fixing the "too tall" look)
-    const posterH = Math.round(TARGET_H * 0.70); // 1050px
-    const posterW = Math.round(posterH * (2 / 3)); // 700px
-    
-    // Right-align the poster to give the rank numbers maximum breathing room
-    const posterLeft = Math.round(TARGET_W - posterW - (TARGET_W * 0.05));
-    const posterTop = Math.round((TARGET_H - posterH) / 2);
-    const radius = 24;
-
-    const roundedMask = Buffer.from(
-      `<svg width="${posterW}" height="${posterH}" xmlns="http://www.w3.org/2000/svg">
-        <rect x="0" y="0" width="${posterW}" height="${posterH}" rx="${radius}" ry="${radius}" fill="#fff"/>
-      </svg>`
-    );
-    
-    // fit: "cover" ensures it scales proportionally without distortion, cropping any excess
-    const insetPoster = await sharp(posterBuffer)
-      .resize(posterW, posterH, { fit: "cover", position: "centre" }) 
-      .composite([{ input: roundedMask, blend: "dest-in" }])
-      .png()
+    // 1. Base Poster (Fill exactly 2:3)
+    const basePoster = await sharp(posterBuffer)
+      .resize(TARGET_W, TARGET_H, { fit: "cover", position: "centre" })
       .toBuffer();
 
-    // 2. Adjust Rank Alignment (Aligned properly, pushed left to peek out)
-    const rankFont = Math.round(TARGET_H * (isTen ? 0.50 : 0.60)); // Made the numbers much larger
-    const rankX = Math.round(TARGET_W * (isTen ? -0.06 : 0.04)); 
-    // Shifted to the exact vertical middle of the canvas
-    const rankBaseline = Math.round(TARGET_H / 2 + (TARGET_H * 0.60) * 0.33); // Calculate baseline using the size of single digits so the 10 aligns perfectly
-    const tracking = isTen ? -0.08 : 0;
+    // 2. Number Overlay (Top-Left)
+    const rankFont = Math.round(TARGET_H * 0.26); // 26% of height, visible but not blocking the whole poster
+    const rankX = Math.round(TARGET_W * (isTen ? 0.01 : 0.03)); 
+    const rankBaseline = Math.round(TARGET_H * 0.03 + rankFont * 0.72); // Top left corner
+    const tracking = isTen ? -0.06 : 0;
 
-    // 3. Frost Plate: High contrast for extreme visibility
-    const frostBase = await sharp({
-      create: {
-        width: TARGET_W,
-        height: TARGET_H,
-        channels: 3,
-        background: { r: 13, g: 13, b: 13 },
-      },
-    })
-      .composite([
-        {
-          input: await sharp(posterBuffer)
-            .resize(TARGET_W, TARGET_H, { fit: "cover" })
-            .blur(25)
-            .modulate({ brightness: 1.1, saturation: 0.6 }) // Brighter frost
-            .jpeg()
-            .toBuffer(),
-          blend: "over",
-          left: 0,
-          top: 0,
-        },
-      ])
-      .png()
-      .toBuffer();
-
-    // White glass veil (Higher alpha to make the number pop significantly)
-    const veil = await sharp({
-      create: {
-        width: TARGET_W,
-        height: TARGET_H,
-        channels: 4,
-        background: { r: 245, g: 250, b: 255, alpha: 0.45 },
-      },
-    })
-      .png()
-      .toBuffer();
-
-    const glassBg = await sharp(frostBase)
-      .ensureAlpha()
-      .composite([{ input: veil, blend: "over" }])
-      .png()
-      .toBuffer();
-
-    // Rank shape as alpha mask via SVG, with a subtle drop shadow to separate it from background
-    const rankMaskSvg = `<?xml version="1.0" encoding="UTF-8"?>
+    const rankSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.4"/>
+    <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#E2E8F0" stop-opacity="0.85"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.85"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.6"/>
     </filter>
   </defs>
   <text
@@ -891,55 +834,31 @@ app.get("/api/poster", async (req, res) => {
     font-family="Inter Display"
     font-weight="900"
     font-size="${rankFont}"
-    fill="#ffffff"
+    fill="url(#grad)"
     letter-spacing="${tracking}em"
-    filter="url(#glow)"
+    filter="url(#shadow)"
   >${num}</text>
 </svg>`;
-    const rankMask = renderSvgToPng(rankMaskSvg, TARGET_W);
 
-    // Clip glass through rank glyph
-    let glassRank = await sharp(glassBg)
-      .composite([{ input: rankMask, blend: "dest-in" }])
-      .png()
-      .toBuffer();
+    const rankPng = renderSvgToPng(rankSvg, TARGET_W);
 
-    // Soft drop shadow under poster
-    const shadowSvg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000" flood-opacity="0.55"/>
-    </filter>
-  </defs>
-  <rect x="${posterLeft}" y="${posterTop}" width="${posterW}" height="${posterH}"
-        rx="${radius}" ry="${radius}" fill="#000" filter="url(#s)" opacity="0.9"/>
-</svg>`);
-
+    // 3. Composite
     const composites = [
-      { input: glassRank, top: 0, left: 0 },
-      { input: shadowSvg, top: 0, left: 0 },
-      { input: insetPoster, top: posterTop, left: posterLeft },
+      { input: rankPng, top: 0, left: 0 }
     ];
 
-    const genreSvg = buildGenreRatingSvg(posterW, posterH, genre, imdbRating);
+    // Add Genre/Rating if available (at the bottom)
+    const genreSvg = buildGenreRatingSvg(TARGET_W, TARGET_H, genre, imdbRating);
     if (genreSvg) {
       try {
-        const genrePng = renderSvgToPng(genreSvg, posterW);
-        composites.push({ input: genrePng, top: posterTop, left: posterLeft });
+        const genrePng = renderSvgToPng(genreSvg, TARGET_W);
+        composites.push({ input: genrePng, top: 0, left: 0 });
       } catch (e) {
         console.error("Genre overlay:", e.message);
       }
     }
 
-    const out = await sharp({
-      create: {
-        width: TARGET_W,
-        height: TARGET_H,
-        channels: 3,
-        background: { r: 13, g: 13, b: 13 },
-      },
-    })
+    const out = await sharp(basePoster)
       .composite(composites)
       .jpeg({ quality: 92 })
       .toBuffer();
