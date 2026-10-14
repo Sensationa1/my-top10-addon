@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "254";
+const POSTER_CACHE_VERSION = "255";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.5.4",
+  version: "2.5.8",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -805,36 +805,32 @@ app.get("/api/poster", async (req, res) => {
     const num = parseInt(rank, 10) || 1;
     const isTen = num >= 10;
 
-    // 1. Force exact 2:3 proportions and scale down to 70% of canvas height (fixing the "too tall" look)
-    const posterH = Math.round(TARGET_H * 0.70); // 1050px
-    const posterW = Math.round(posterH * (2 / 3)); // 700px
-    
-    // Right-align the poster to give the rank numbers maximum breathing room
-    const posterLeft = Math.round(TARGET_W - posterW - (TARGET_W * 0.05));
+    // Exact 2:3 poster, compact Netflix inset — stable left gutter for ranks
+    const posterH = Math.round(TARGET_H * 0.72);
+    const posterW = Math.round(posterH * (2 / 3));
+    const posterLeft = Math.round(TARGET_W * (isTen ? 0.36 : 0.32));
     const posterTop = Math.round((TARGET_H - posterH) / 2);
-    const radius = 24;
+    const radius = 22;
 
     const roundedMask = Buffer.from(
       `<svg width="${posterW}" height="${posterH}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="${posterW}" height="${posterH}" rx="${radius}" ry="${radius}" fill="#fff"/>
       </svg>`
     );
-    
-    // fit: "cover" ensures it scales proportionally without distortion, cropping any excess
+
     const insetPoster = await sharp(posterBuffer)
-      .resize(posterW, posterH, { fit: "cover", position: "centre" }) 
+      .resize(posterW, posterH, { fit: "cover", position: "centre" })
       .composite([{ input: roundedMask, blend: "dest-in" }])
       .png()
       .toBuffer();
 
-    // 2. Adjust Rank Alignment (Centered vertically, larger, pushed right to peek out more)
-    const rankFont = Math.round(TARGET_H * (isTen ? 0.50 : 0.60)); // Made the numbers much larger
-    const rankX = Math.round(TARGET_W * (isTen ? -0.06 : 0.04)); 
-    // Shifted to the exact vertical middle of the canvas
-    const rankBaseline = Math.round(TARGET_H / 2 + rankFont * 0.33); 
-    const tracking = isTen ? -0.08 : 0;
+    // Unified ranks: shared baseline; 10 slightly smaller, never off-canvas
+    const rankFont = Math.round(TARGET_H * (isTen ? 0.36 : 0.44));
+    const rankX = Math.round(TARGET_W * (isTen ? 0.012 : 0.03));
+    const rankBaseline = Math.round(TARGET_H * 0.58);
+    const tracking = isTen ? -0.11 : 0;
 
-    // 3. Frost Plate: High contrast for extreme visibility
+    // Lighter frost
     const frostBase = await sharp({
       create: {
         width: TARGET_W,
@@ -847,8 +843,8 @@ app.get("/api/poster", async (req, res) => {
         {
           input: await sharp(posterBuffer)
             .resize(TARGET_W, TARGET_H, { fit: "cover" })
-            .blur(25)
-            .modulate({ brightness: 1.1, saturation: 0.6 }) // Brighter frost
+            .blur(14)
+            .modulate({ brightness: 0.95, saturation: 0.55 })
             .jpeg()
             .toBuffer(),
           blend: "over",
@@ -859,13 +855,12 @@ app.get("/api/poster", async (req, res) => {
       .png()
       .toBuffer();
 
-    // White glass veil (Higher alpha to make the number pop significantly)
     const veil = await sharp({
       create: {
         width: TARGET_W,
         height: TARGET_H,
         channels: 4,
-        background: { r: 245, g: 250, b: 255, alpha: 0.45 },
+        background: { r: 230, g: 235, b: 245, alpha: 0.28 },
       },
     })
       .png()
