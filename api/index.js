@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "258";
+const POSTER_CACHE_VERSION = "259";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.6.1",
+  version: "2.6.2",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -813,9 +813,9 @@ app.get("/api/poster", async (req, res) => {
 
     // Rank size: large but inset from edges so corners never clip
     // 10 uses same visual height family, tighter tracking, not lower
-    const rankFont = Math.round(TARGET_H * (isTen ? 0.26 : 0.28));
+    const rankFont = Math.round(TARGET_H * (isTen ? 0.30 : 0.34));
     const rankX = Math.round(TARGET_W * 0.03);
-    const rankBaseline = Math.round(TARGET_H * 0.22); // top-left area, shared baseline
+    const rankBaseline = Math.round(TARGET_H * 0.26); // slightly lower, shared baseline
     const tracking = isTen ? -0.15 : 0;
 
     // ===== Polished Apple frosted glass =====
@@ -825,9 +825,9 @@ app.get("/api/poster", async (req, res) => {
     const local = await sharp(fullPoster)
       .extract({ left: 0, top: 0, width: sampleW, height: sampleH })
       .resize(TARGET_W, TARGET_H, { fit: "cover" })
-      .blur(22)
-      .modulate({ brightness: 1.25, saturation: 0.4 })
-      .linear(1.08, 25)
+      .blur(16)
+      .modulate({ brightness: 1.12, saturation: 0.55 })
+      .linear(1.02, 12)
       .ensureAlpha()
       .png()
       .toBuffer();
@@ -838,7 +838,7 @@ app.get("/api/poster", async (req, res) => {
         width: TARGET_W,
         height: TARGET_H,
         channels: 4,
-        background: { r: 255, g: 255, b: 255, alpha: 0.42 },
+        background: { r: 255, g: 255, b: 255, alpha: 0.22 },
       },
     })
       .png()
@@ -858,9 +858,9 @@ app.get("/api/poster", async (req, res) => {
             `<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <linearGradient id="sp" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#ffffff" stop-opacity="0.55"/>
-                  <stop offset="45%" stop-color="#ffffff" stop-opacity="0.08"/>
-                  <stop offset="100%" stop-color="#a8b4c4" stop-opacity="0.12"/>
+                  <stop offset="0%" stop-color="#ffffff" stop-opacity="0.32"/>
+                  <stop offset="40%" stop-color="#ffffff" stop-opacity="0.06"/>
+                  <stop offset="100%" stop-color="#c5cdd8" stop-opacity="0.08"/>
                 </linearGradient>
               </defs>
               <rect width="${TARGET_W}" height="${TARGET_H}" fill="url(#sp)"/>
@@ -908,7 +908,7 @@ app.get("/api/poster", async (req, res) => {
         .raw()
         .toBuffer({ resolveWithObject: true });
       for (let i = 3; i < data.length; i += 4) {
-        data[i] = Math.round(data[i] * 0.92);
+        data[i] = Math.round(data[i] * 0.72);
       }
       glassRank = await sharp(data, {
         raw: { width: info.width, height: info.height, channels: 4 },
@@ -950,11 +950,11 @@ app.get("/api/poster", async (req, res) => {
         rim[i] = 255;
         rim[i + 1] = 255;
         rim[i + 2] = 255;
-        rim[i + 3] = Math.round(rimA * 0.65);
+        rim[i + 3] = Math.round(rimA * 0.45);
         outer[i] = 0;
         outer[i + 1] = 0;
         outer[i + 2] = 0;
-        outer[i + 3] = Math.round(outA * 0.35);
+        outer[i + 3] = Math.round(outA * 0.22);
       }
     }
     const rimPng = await sharp(rim, { raw: { width: mw, height: mh, channels: 4 } }).png().toBuffer();
