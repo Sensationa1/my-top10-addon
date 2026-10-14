@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "251";
+const POSTER_CACHE_VERSION = "252";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.5.1",
+  version: "2.5.2",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -331,9 +331,9 @@ function buildGenreRatingSvg(width, height, genre, rating) {
   const label = [g, rating].filter(Boolean).join("  ·  ");
   if (!label) return null;
 
-  // SF Pro Display Regular — minimal, larger, balanced bottom
-  const fontSize = Math.round(height * 0.058);
-  const y = Math.round(height * 0.912);
+  // SF Pro Display Thin — subtle bottom meta
+  const fontSize = Math.round(height * 0.038);
+  const y = Math.round(height * 0.94);
   const x = Math.round(width / 2);
   const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
@@ -341,7 +341,7 @@ function buildGenreRatingSvg(width, height, genre, rating) {
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <filter id="tshadow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000000" flood-opacity="0.50"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.45"/>
     </filter>
   </defs>
   <text
@@ -349,11 +349,11 @@ function buildGenreRatingSvg(width, height, genre, rating) {
     y="${y}"
     text-anchor="middle"
     font-family="SF Pro Display"
-    font-weight="400"
+    font-weight="100"
     font-size="${fontSize}"
     fill="#FFFFFF"
-    fill-opacity="0.92"
-    letter-spacing="0.14em"
+    fill-opacity="0.88"
+    letter-spacing="0.12em"
     filter="url(#tshadow)"
   >${safe}</text>
 </svg>`;
@@ -414,7 +414,7 @@ function buildOverlaySvg(width, height, rank) {
 function renderSvgToPng(svgString, width) {
   const { black, semi, sfMed, sfBold, sfThin } = resolveFonts();
   // Medium = Regular for genre · rating; Thin/Bold available if needed
-  const files = [black, sfMed, sfBold, sfThin, semi].filter((p) => p && fs.existsSync(p));
+  const files = [sfThin, black, sfMed, sfBold, semi].filter((p) => p && fs.existsSync(p));
   const resvg = new Resvg(svgString, {
     fitTo: { mode: "width", value: width },
     font: {
@@ -789,53 +789,92 @@ app.get("/api/poster", async (req, res) => {
       }).jpeg().toBuffer();
     }
 
+    // Netflix Top 10 card: black stage, giant side rank, inset poster overlapping number
     const TARGET_W = 1000;
     const TARGET_H = 1500;
-    posterBuffer = await sharp(posterBuffer)
-      .resize(TARGET_W, TARGET_H, { fit: "cover", position: "centre" })
+    const num = parseInt(rank, 10) || 1;
+
+    // Poster minimized & shifted right (Netflix inset)
+    const posterW = Math.round(TARGET_W * 0.78);
+    const posterH = Math.round(TARGET_H * 0.88);
+    const posterLeft = Math.round(TARGET_W * 0.20);
+    const posterTop = Math.round((TARGET_H - posterH) / 2);
+
+    const insetPoster = await sharp(posterBuffer)
+      .resize(posterW, posterH, { fit: "cover", position: "centre" })
       .jpeg({ quality: 92 })
       .toBuffer();
 
-    const num = parseInt(rank, 10) || 1;
-    const composites = [];
-    // Soft left vignette for contrast behind rank
-    const vigSvg = Buffer.from(
-      `<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="v" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#000" stop-opacity="0.22"/>
-            <stop offset="40%" stop-color="#000" stop-opacity="0.08"/>
-            <stop offset="100%" stop-color="#000" stop-opacity="0"/>
-          </linearGradient>
-        </defs>
-        <rect width="${Math.round(TARGET_W * 0.52)}" height="${TARGET_H}" fill="url(#v)"/>
-      </svg>`
-    );
-    composites.push({ input: vigSvg, top: 0, left: 0 });
+    // Giant rank sits on the left, partially under the poster
+    const rankFont = Math.round(TARGET_H * 0.62);
+    const rankX = Math.round(TARGET_W * -0.02); // bleed slightly off left like Netflix
+    const rankBaseline = Math.round(TARGET_H * 0.72);
+    const tracking = num >= 10 ? -0.08 : 0;
 
-    const rankOverlay = await loadRankOverlay(TARGET_H, num, posterBuffer, TARGET_W);
-    if (rankOverlay && rankOverlay.buf) {
-      composites.push({
-        input: rankOverlay.buf,
-        top: rankOverlay.top,
-        left: rankOverlay.left,
-      });
-    }
+    const rankSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="nk" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#E5E7EB" stop-opacity="1"/>
+      <stop offset="55%" stop-color="#9CA3AF" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#4B5563" stop-opacity="0.85"/>
+    </linearGradient>
+    <filter id="nkDepth" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="Inter Display"
+    font-weight="900"
+    font-size="${rankFont}"
+    fill="url(#nk)"
+    stroke="#111827"
+    stroke-width="${Math.round(rankFont * 0.012)}"
+    paint-order="stroke fill"
+    letter-spacing="${tracking}em"
+    filter="url(#nkDepth)"
+  >${num}</text>
+</svg>`;
 
-    // SF Pro Thin: GENRE · IMDb rating (bottom center)
-    const genreSvg = buildGenreRatingSvg(TARGET_W, TARGET_H, genre, imdbRating);
+    const rankLayer = renderSvgToPng(rankSvg, TARGET_W);
+
+    // Soft shadow under inset poster for depth
+    const shadowSvg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+  <rect x="${posterLeft + 6}" y="${posterTop + 10}" width="${posterW}" height="${posterH}"
+        rx="12" ry="12" fill="#000000" opacity="0.45"/>
+</svg>`);
+
+    // Optional rounded mask feel via slight overlay at poster edges — keep simple
+    const composites = [
+      { input: rankLayer, top: 0, left: 0 },
+      { input: shadowSvg, top: 0, left: 0 },
+      { input: insetPoster, top: posterTop, left: posterLeft },
+    ];
+
+    // Genre on the inset poster area (bottom of card)
+    const genreSvg = buildGenreRatingSvg(posterW, posterH, genre, imdbRating);
     if (genreSvg) {
       try {
-        const genrePng = renderSvgToPng(genreSvg, TARGET_W);
-        composites.push({ input: genrePng, top: 0, left: 0 });
+        const genrePng = renderSvgToPng(genreSvg, posterW);
+        composites.push({ input: genrePng, top: posterTop, left: posterLeft });
       } catch (e) {
         console.error("Genre overlay:", e.message);
       }
     }
 
-    const out = await sharp(posterBuffer)
+    const out = await sharp({
+      create: {
+        width: TARGET_W,
+        height: TARGET_H,
+        channels: 3,
+        background: { r: 8, g: 8, b: 10 },
+      },
+    })
       .composite(composites)
-      .jpeg({ quality: 91 })
+      .jpeg({ quality: 92 })
       .toBuffer();
 
     res.setHeader("Content-Type", "image/jpeg");
