@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "255";
+const POSTER_CACHE_VERSION = "254";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.5.8",
+  version: "2.5.4",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -805,32 +805,38 @@ app.get("/api/poster", async (req, res) => {
     const num = parseInt(rank, 10) || 1;
     const isTen = num >= 10;
 
-    // Exact 2:3 poster, compact Netflix inset — stable left gutter for ranks
-    const posterH = Math.round(TARGET_H * 0.72);
-    const posterW = Math.round(posterH * (2 / 3));
-    const posterLeft = Math.round(TARGET_W * (isTen ? 0.36 : 0.32));
+    // 1. Force exact 2:3 proportions and scale down to 60% of canvas height so it's not too tall
+    const posterH = Math.round(TARGET_H * 0.60); 
+    const posterW = Math.round(posterH * (2 / 3)); 
+    
+    // Right-align the poster
+    const posterLeft = Math.round(TARGET_W - posterW - (TARGET_W * 0.05));
     const posterTop = Math.round((TARGET_H - posterH) / 2);
-    const radius = 22;
+    const radius = 24;
 
     const roundedMask = Buffer.from(
       `<svg width="${posterW}" height="${posterH}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="${posterW}" height="${posterH}" rx="${radius}" ry="${radius}" fill="#fff"/>
       </svg>`
     );
-
+    
+    // fit: "cover" ensures it scales proportionally without distortion
     const insetPoster = await sharp(posterBuffer)
-      .resize(posterW, posterH, { fit: "cover", position: "centre" })
+      .resize(posterW, posterH, { fit: "cover", position: "centre" }) 
       .composite([{ input: roundedMask, blend: "dest-in" }])
       .png()
       .toBuffer();
 
-    // Unified ranks: shared baseline; 10 slightly smaller, never off-canvas
-    const rankFont = Math.round(TARGET_H * (isTen ? 0.36 : 0.44));
-    const rankX = Math.round(TARGET_W * (isTen ? 0.012 : 0.03));
-    const rankBaseline = Math.round(TARGET_H * 0.58);
-    const tracking = isTen ? -0.11 : 0;
+    // 2. Adjust Rank Alignment
+    const rankFont = Math.round(TARGET_H * (isTen ? 0.50 : 0.60));
+    const rankX = Math.round(TARGET_W * (isTen ? -0.06 : 0.04)); 
+    
+    // Shift the baseline up slightly ONLY for the number 10 so it aligns perfectly with the others
+    const baseBaseline = Math.round(TARGET_H / 2 + (TARGET_H * 0.60) * 0.33);
+    const rankBaseline = isTen ? baseBaseline - Math.round(TARGET_H * 0.025) : baseBaseline; 
+    const tracking = isTen ? -0.08 : 0;
 
-    // Lighter frost
+    // 3. Frost Plate: High contrast for extreme visibility
     const frostBase = await sharp({
       create: {
         width: TARGET_W,
@@ -843,8 +849,8 @@ app.get("/api/poster", async (req, res) => {
         {
           input: await sharp(posterBuffer)
             .resize(TARGET_W, TARGET_H, { fit: "cover" })
-            .blur(14)
-            .modulate({ brightness: 0.95, saturation: 0.55 })
+            .blur(25)
+            .modulate({ brightness: 1.1, saturation: 0.6 }) // Brighter frost
             .jpeg()
             .toBuffer(),
           blend: "over",
@@ -855,12 +861,13 @@ app.get("/api/poster", async (req, res) => {
       .png()
       .toBuffer();
 
+    // White glass veil (Higher alpha to make the number pop significantly)
     const veil = await sharp({
       create: {
         width: TARGET_W,
         height: TARGET_H,
         channels: 4,
-        background: { r: 230, g: 235, b: 245, alpha: 0.28 },
+        background: { r: 245, g: 250, b: 255, alpha: 0.45 },
       },
     })
       .png()
