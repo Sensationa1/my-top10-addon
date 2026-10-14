@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "253";
+const POSTER_CACHE_VERSION = "254";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.5.3",
+  version: "2.5.4",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -794,10 +794,11 @@ app.get("/api/poster", async (req, res) => {
     const TARGET_H = 1500;
     const num = parseInt(rank, 10) || 1;
 
-    // Smaller inset so rank stays fully readable
-    const posterW = Math.round(TARGET_W * 0.68);
+    // Smaller inset so rank stays fully readable (extra room when rank is 10)
+    const isTenLayout = num >= 10;
+    const posterW = Math.round(TARGET_W * (isTenLayout ? 0.64 : 0.68));
     const posterH = Math.round(TARGET_H * 0.78);
-    const posterLeft = Math.round(TARGET_W * 0.28);
+    const posterLeft = Math.round(TARGET_W * (isTenLayout ? 0.34 : 0.28));
     const posterTop = Math.round((TARGET_H - posterH) / 2);
     const radius = 28;
 
@@ -813,11 +814,12 @@ app.get("/api/poster", async (req, res) => {
       .png()
       .toBuffer();
 
-    // Rank: smaller, fully on-canvas, frosted glass fill
-    const rankFont = Math.round(TARGET_H * 0.42);
-    const rankX = Math.round(TARGET_W * 0.02);
+    // Rank: fully on-canvas; "10" uses smaller size + tighter tracking so both digits show
+    const isTen = num >= 10;
+    const rankFont = Math.round(TARGET_H * (isTen ? 0.34 : 0.42));
+    const rankX = Math.round(TARGET_W * (isTen ? 0.008 : 0.02));
     const rankBaseline = Math.round(TARGET_H * 0.68);
-    const tracking = num >= 10 ? -0.07 : 0;
+    const tracking = isTen ? -0.10 : 0;
 
     // Frost plate from blurred stage + poster sample
     const frostBase = await sharp({
@@ -825,7 +827,7 @@ app.get("/api/poster", async (req, res) => {
         width: TARGET_W,
         height: TARGET_H,
         channels: 3,
-        background: { r: 28, g: 30, b: 36 },
+        background: { r: 13, g: 13, b: 13 },
       },
     })
       .composite([
@@ -970,7 +972,7 @@ app.get("/api/poster", async (req, res) => {
         width: TARGET_W,
         height: TARGET_H,
         channels: 3,
-        background: { r: 8, g: 8, b: 10 },
+        background: { r: 13, g: 13, b: 13 },
       },
     })
       .composite(composites)
