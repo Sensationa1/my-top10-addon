@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "244";
+const POSTER_CACHE_VERSION = "245";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,10 +38,10 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.4.4",
+  version: "2.4.5",
   name: "Top 10 Trending (Apple TV Style)",
   description:
-    "Top 10 from Trakt/MDBList with Pictorium portraits, adaptive ranks, SF Pro genre · IMDb.",
+    "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
   resources: ["catalog"],
   types: ["series", "movie"],
   catalogs: [
@@ -517,60 +517,77 @@ function renderSvgToPng(svgString, width) {
   return resvg.render().asPng();
 }
 
-function buildPictoriumUrl({ imdbId, tmdbId, type, shape }) {
-  const media = type === "series" ? "series" : "movie";
-  // Prefer IMDb id (stable); fall back to TMDB numeric id
-  const idPart = (imdbId && String(imdbId).startsWith("tt"))
-    ? imdbId
-    : (tmdbId ? String(tmdbId) : "");
-  if (!idPart) return null;
-
+function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   const params = new URLSearchParams();
-  params.set("badges", "0");
-  params.set("ranking", "0");
-  params.set("by", "0");
-  params.set("bq", "0");
-  params.set("cr", "0");
-  params.set("sepstyle", "bottom-pills");
-  params.set("rsrc", "imdb,simkl,anilist,mal,tomatoes,letterboxd");
-  params.set("df", "dmy");
-  params.set("netLogo", "0");
-  params.set("side", "left");
-  params.set("layout", "standard");
-  params.set("freshScope", "ranked");
-  params.set("lang", "en");
-  params.set("gradHeight", "30");
-  params.set("blur", "40");
-  params.set("tint", "20");
-  params.set("bf", "50");
-  params.set("bd", "30");
-  params.set("ts", "60");
-  params.set("bs", "shadow");
-  params.set("rs", "number");
-  params.set("xbs", "default");
-  params.set("bfont", "inter");
-  params.set("qbs", "color");
-  params.set("tscale", "100");
-  params.set("tox", "0");
-  params.set("toy", "0");
-  params.set("exscale", "120");
-  params.set("exox", "0");
-  params.set("exoy", "0");
-  params.set("gscale", "100");
-  params.set("gox", "0");
-  params.set("goy", "0");
-  params.set("qscale", "100");
-  params.set("sepscale", "130");
-  params.set("sepox", "0");
-  params.set("sepoy", "0");
-  params.set("qox", "-10");
-  params.set("qoy", "15");
-  params.set("netscale", "100");
-  params.set("nox", "0");
-  params.set("noy", "0");
-  params.set("rv", "cc6eae9f4a");
+  if (tmdbId) params.set("tmdb_id", String(tmdbId));
+  if (imdbId) params.set("imdb_id", String(imdbId));
+  params.set("stremio_id", stremioId || imdbId || (tmdbId ? `tmdb:${tmdbId}` : ""));
+  params.set("type", type === "series" ? "series" : "movie");
   params.set("shape", shape || "poster");
-  return `https://pictorium-rctu.vercel.app/api/poster/${media}/${idPart}?${params.toString()}`;
+  params.set("pc", "stremio_tv_nuvio");
+  params.set("tmdb_key", process.env.TMDB_API_KEY || "dc1ae8c943c805800112762a3afbc1b6");
+  params.set("mdblist_key", process.env.MDBLIST_API_KEY || "1cym9fkqsk4hvwtesjthxsrr9");
+  params.set("tg", "medium");
+  params.set("bgr", "custom");
+  params.set("bgo", "1");
+  params.set("bgh", "0.35");
+  params.set("tvso", "1");
+  params.set("vpcb", "1");
+  params.set("vcsa", "0.00");
+  params.set("vcb", "0.20");
+  params.set("vcli", "0.40");
+  params.set("vcs", "reference");
+  params.set("hy", "1");
+  params.set("sm", "notch");
+  params.set("_bgr", "custom");
+  params.set("_bgo", "0.2");
+  params.set("_bgh", "0.75");
+  params.set("_vcsa", "0.20");
+  params.set("_vcb", "0.05");
+  params.set("_vcl", "1");
+  params.set("_vcs", "muted");
+  params.set("_hg", "1");
+  params.set("_hr", "1");
+  params.set("_tx", "1");
+  params.set("_sm", "hidden");
+  params.set("bp", "top_left");
+  params.set("_bs", "1.70");
+  params.set("_is", "1.35");
+  params.set("_lp", "center");
+  params.set("_ip", "bottom_center");
+  params.set("_pc", "1");
+  params.set("_soo10", "1");
+  params.set("_bc", "mixed");
+  params.set("_bf", "1.15");
+  params.set("_bgop", "0.00");
+  params.set("_bsa", "0.00");
+  params.set("_bx", "-0.040");
+  params.set("_by", "-0.060");
+  params.set("_ls", "1.30");
+  params.set("fti", "1");
+  params.set("mw", "lb:.2,pc:.2,im:.6");
+  params.set("tw", "rt:.1,pc:.25,im:.61,tm:.04");
+  params.set("rdm", "0");
+  params.set("oas", "top_rated");
+  params.set("fbs", "photoreal");
+  params.set("lmwr", "0.80");
+  params.set("lmhr", "0.40");
+  params.set("lbr", "0.10");
+  params.set("cg", "0");
+  params.set("hur", "1");
+  params.set("sbsw", "1.40");
+  params.set("sbsh", "1.20");
+  params.set("sbp", "0.95");
+  params.set("sbfo", "0.05");
+  params.set(
+    "sp",
+    "default2,-watchlist,-gg_wins,-festival,-pic_noms,-metacritic,-gg_noms,-trending,-trending_broad,-new_release,-just_added,-studio,-director,-cast,-blockbuster,-cult,-foreign,-true_story,-short_film,-mini_series,-binge_ready,-returning,-cancelled,-ended,-physical,-streaming,-cinema,-production,-renewed,premiere@3"
+  );
+  params.set("bdm", "7");
+  params.set("bg1", "tr:4:network");
+  params.set("_bdm", "7");
+  params.set("_bg1", "");
+  return `https://postersplus.slokker.cc/poster?${params.toString()}`;
 }
 
 async function getTmdbData(imdbId, type, existingTmdbId) {
@@ -826,16 +843,17 @@ app.get("/api/poster", async (req, res) => {
       imdbRating = tmdbData.imdbRating || null;
     } catch (_) {}
 
-    // Primary: Pictorium portrait
+    // Primary: PostersPlus portrait
     try {
-      const picUrl = buildPictoriumUrl({
+      const ppUrl = buildPostersPlusUrl({
         imdbId: cleanImdb,
         tmdbId,
+        stremioId: id,
         type: mediaType,
         shape: "poster",
       });
-      if (picUrl) {
-        const r = await axios.get(picUrl, {
+      if (ppUrl) {
+        const r = await axios.get(ppUrl, {
           responseType: "arraybuffer",
           timeout: 15000,
           headers: { Accept: "image/*" },
@@ -846,7 +864,7 @@ app.get("/api/poster", async (req, res) => {
         }
       }
     } catch (e) {
-      console.error("Pictorium:", e.message);
+      console.error("PostersPlus:", e.message);
     }
 
     // Fallback: TMDB portrait poster
