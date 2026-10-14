@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "249";
+const POSTER_CACHE_VERSION = "250";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.4.9",
+  version: "2.5.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -373,29 +373,76 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
       .png()
       .toBuffer();
 
-    // Glassy outline: expand mask slightly, stroke with translucent white
-    const outline = await sharp(pureMask)
-      .blur(1.8)
-      .linear(1.8, -40)
-      .ensureAlpha()
-      .png()
-      .toBuffer();
-    const { data: od, info: oi } = await sharp(outline)
+    // Professional thin glass outline (hi-res): 8-direction pixel dilation ring
+    const { data: mdat, info: mi } = await sharp(pureMask)
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
-    for (let i = 0; i < od.length; i += 4) {
-      const a = od[i + 3];
-      od[i] = 255;
-      od[i + 1] = 255;
-      od[i + 2] = 255;
-      od[i + 3] = Math.round(a * 0.45);
+    const mw = mi.width;
+    const mh = mi.height;
+    const dilate = Buffer.alloc(mdat.length);
+    const radius = Math.max(2, Math.round(Math.min(mw, mh) * 0.012));
+    for (let y = 0; y < mh; y++) {
+      for (let x = 0; x < mw; x++) {
+        const i = (y * mw + x) * 4;
+        let maxA = 0;
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+            if (dx * dx + dy * dy > radius * radius) continue;
+            const sx = x + dx;
+            const sy = y + dy;
+            if (sx < 0 || sy < 0 || sx >= mw || sy >= mh) continue;
+            const a = mdat[(sy * mw + sx) * 4 + 3];
+            if (a > maxA) maxA = a;
+          }
+        }
+        dilate[i] = 255;
+        dilate[i + 1] = 255;
+        dilate[i + 2] = 255;
+        dilate[i + 3] = maxA;
+      }
     }
-    // Subtract inner fill so only ring remains
-    const outlineRing = await sharp(od, {
-      raw: { width: oi.width, height: oi.height, channels: 4 },
+    // Ring = dilated - original (clean edge, no blur haze)
+    const ring = Buffer.alloc(mdat.length);
+    for (let i = 0; i < mdat.length; i += 4) {
+      const a = Math.max(0, dilate[i + 3] - mdat[i + 3]);
+      ring[i] = 245;
+      ring[i + 1] = 248;
+      ring[i + 2] = 255;
+      ring[i + 3] = Math.round(a * 0.55);
+    }
+    // Soft outer contact shadow for separation on bright art
+    const shadow = Buffer.alloc(mdat.length);
+    const sR = radius + 1;
+    for (let y = 0; y < mh; y++) {
+      for (let x = 0; x < mw; x++) {
+        const i = (y * mw + x) * 4;
+        let maxA = 0;
+        for (let dy = -sR; dy <= sR; dy++) {
+          for (let dx = -sR; dx <= sR; dx++) {
+            if (dx * dx + dy * dy > sR * sR) continue;
+            const sx = x + dx;
+            const sy = y + dy;
+            if (sx < 0 || sy < 0 || sx >= mw || sy >= mh) continue;
+            const a = mdat[(sy * mw + sx) * 4 + 3];
+            if (a > maxA) maxA = a;
+          }
+        }
+        const outer = Math.max(0, maxA - mdat[i + 3]);
+        shadow[i] = 0;
+        shadow[i + 1] = 0;
+        shadow[i + 2] = 0;
+        shadow[i + 3] = Math.round(outer * 0.28);
+      }
+    }
+    const outlineRing = await sharp(ring, {
+      raw: { width: mw, height: mh, channels: 4 },
     })
-      .composite([{ input: pureMask, blend: "dest-out" }])
+      .png()
+      .toBuffer();
+    const outlineShadow = await sharp(shadow, {
+      raw: { width: mw, height: mh, channels: 4 },
+    })
       .png()
       .toBuffer();
 
@@ -408,6 +455,7 @@ async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
       },
     })
       .composite([
+        { input: outlineShadow, blend: "over" },
         { input: outlineRing, blend: "over" },
         { input: glassGlyph, blend: "over" },
         { input: softDigit, blend: "over" },
@@ -434,9 +482,9 @@ function buildGenreRatingSvg(width, height, genre, rating) {
   const label = [g, rating].filter(Boolean).join("  ·  ");
   if (!label) return null;
 
-  // Plain SF Pro Thin text only — no frost pill
-  const fontSize = Math.round(height * 0.042);
-  const y = Math.round(height * 0.88);
+  // SF Pro Display Regular (Medium OTF) — no frost pill
+  const fontSize = Math.round(height * 0.052);
+  const y = Math.round(height * 0.905);
   const x = Math.round(width / 2);
   const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
@@ -444,7 +492,7 @@ function buildGenreRatingSvg(width, height, genre, rating) {
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <filter id="tshadow" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.35"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000000" flood-opacity="0.40"/>
     </filter>
   </defs>
   <text
@@ -452,10 +500,10 @@ function buildGenreRatingSvg(width, height, genre, rating) {
     y="${y}"
     text-anchor="middle"
     font-family="SF Pro Display"
-    font-weight="100"
+    font-weight="400"
     font-size="${fontSize}"
     fill="#FFFFFF"
-    letter-spacing="0.10em"
+    letter-spacing="0.08em"
     filter="url(#tshadow)"
   >${safe}</text>
 </svg>`;
@@ -514,9 +562,9 @@ function buildOverlaySvg(width, height, rank) {
 }
 
 function renderSvgToPng(svgString, width) {
-  const { black, semi, sfThin } = resolveFonts();
-  // Only Black (ranks) + Thin (genre) so weight 100 always hits SF Pro Thin
-  const files = [black, sfThin, semi].filter((p) => fs.existsSync(p));
+  const { black, semi, sfMed, sfBold, sfThin } = resolveFonts();
+  // Medium = Regular for genre · rating; Thin/Bold available if needed
+  const files = [sfMed, sfBold, sfThin, black, semi].filter((p) => p && fs.existsSync(p));
   const resvg = new Resvg(svgString, {
     fitTo: { mode: "width", value: width },
     font: {
@@ -891,8 +939,8 @@ app.get("/api/poster", async (req, res) => {
       }).jpeg().toBuffer();
     }
 
-    const TARGET_W = 500;
-    const TARGET_H = 750;
+    const TARGET_W = 1000;
+    const TARGET_H = 1500;
     posterBuffer = await sharp(posterBuffer)
       .resize(TARGET_W, TARGET_H, { fit: "cover", position: "centre" })
       .jpeg({ quality: 92 })
