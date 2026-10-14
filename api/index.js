@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "256";
+const POSTER_CACHE_VERSION = "257";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.5.9",
+  version: "2.6.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -339,8 +339,8 @@ function buildGenreRatingSvg(width, height, genre, rating) {
   if (!label) return null;
 
   // SF Pro Display Thin — subtle bottom meta
-  const fontSize = Math.round(height * 0.038);
-  const y = Math.round(height * 0.94);
+  const fontSize = Math.round(height * 0.055);
+  const y = Math.round(height * 0.93);
   const x = Math.round(width / 2);
   const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
@@ -808,7 +808,7 @@ app.get("/api/poster", async (req, res) => {
     // True 2:3 card — shorter so ranks have room; contain = no content cropped off
     const posterH = Math.round(TARGET_H * 0.58);
     const posterW = Math.round(posterH * (2 / 3)); // exact 2:3
-    const posterLeft = Math.round(TARGET_W * 0.34);
+    const posterLeft = Math.round(TARGET_W * (isTen ? 0.40 : 0.34));
     const posterTop = Math.round((TARGET_H - posterH) / 2);
     const radius = 20;
 
@@ -830,52 +830,166 @@ app.get("/api/poster", async (req, res) => {
       .png()
       .toBuffer();
 
-    // Same font metrics family for 1–10 — shared baseline; 10 only slightly smaller
-    const rankFont = Math.round(TARGET_H * (isTen ? 0.38 : 0.40));
-    const rankX = Math.round(TARGET_W * 0.028);
-    // Shared optical baseline so 10 is not lower than 1–9
+    // Shared baseline; 10 smaller + more left room so digits don't overlap poster
+    const rankFont = Math.round(TARGET_H * (isTen ? 0.32 : 0.40));
+    const rankX = Math.round(TARGET_W * (isTen ? 0.01 : 0.025));
     const rankBaseline = Math.round(TARGET_H * 0.62);
-    const tracking = isTen ? -0.12 : 0;
+    const tracking = isTen ? -0.14 : 0;
 
-    // High-quality glass rank: vector gradient + soft depth (no muddy blur plate)
-    const rankSvg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.92"/>
-      <stop offset="40%" stop-color="#E8EEF5" stop-opacity="0.78"/>
-      <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.42"/>
-    </linearGradient>
-    <filter id="glassDepth" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.40"/>
-      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#000000" flood-opacity="0.28"/>
-    </filter>
-  </defs>
-  <!-- subtle outer glass rim -->
+    // --- Apple frosted glass rank ---
+    // 1) Soft light plate from poster (left side), moderate blur
+    const frostSrc = await sharp(posterBuffer)
+      .resize(TARGET_W, TARGET_H, { fit: "cover", position: "left" })
+      .blur(18)
+      .modulate({ brightness: 1.15, saturation: 0.35 })
+      .linear(1.05, 18)
+      .ensureAlpha()
+      .png()
+      .toBuffer();
+
+    // 2) Frosted white veil (glass)
+    const frostVeil = await sharp({
+      create: {
+        width: TARGET_W,
+        height: TARGET_H,
+        channels: 4,
+        background: { r: 255, g: 255, b: 255, alpha: 0.38 },
+      },
+    })
+      .png()
+      .toBuffer();
+
+    // 3) Top highlight strip for glass refraction feel
+    const highlight = await sharp({
+      create: {
+        width: TARGET_W,
+        height: TARGET_H,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: {
+              width: TARGET_W,
+              height: Math.round(TARGET_H * 0.4),
+              channels: 4,
+              background: { r: 255, g: 255, b: 255, alpha: 0.18 },
+            },
+          })
+            .png()
+            .toBuffer(),
+          top: 0,
+          left: 0,
+        },
+      ])
+      .png()
+      .toBuffer();
+
+    const glassPlate = await sharp(frostSrc)
+      .composite([
+        { input: frostVeil, blend: "over" },
+        { input: highlight, blend: "over" },
+      ])
+      .png()
+      .toBuffer();
+
+    // 4) Crisp vector mask for the digit (no filter on mask = sharp edges)
+    const rankMaskSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
   <text
     x="${rankX}"
     y="${rankBaseline}"
     font-family="Inter Display"
     font-weight="900"
     font-size="${rankFont}"
-    fill="none"
-    stroke="rgba(255,255,255,0.35)"
-    stroke-width="${Math.max(2, Math.round(rankFont * 0.018))}"
+    fill="#ffffff"
     letter-spacing="${tracking}em"
-  >${num}</text>
-  <text
-    x="${rankX}"
-    y="${rankBaseline}"
-    font-family="Inter Display"
-    font-weight="900"
-    font-size="${rankFont}"
-    fill="url(#glass)"
-    letter-spacing="${tracking}em"
-    filter="url(#glassDepth)"
   >${num}</text>
 </svg>`;
+    const rankMask = renderSvgToPng(rankMaskSvg, TARGET_W);
 
-    const glassRank = renderSvgToPng(rankSvg, TARGET_W);
+    // 5) Clip glass through digit
+    let glassRank = await sharp(glassPlate)
+      .composite([{ input: rankMask, blend: "dest-in" }])
+      .png()
+      .toBuffer();
+
+    // 6) Slight overall transparency so stage shows through (true frost)
+    {
+      const { data, info } = await sharp(glassRank)
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      for (let i = 3; i < data.length; i += 4) {
+        data[i] = Math.round(data[i] * 0.90);
+      }
+      glassRank = await sharp(data, {
+        raw: { width: info.width, height: info.height, channels: 4 },
+      })
+        .png()
+        .toBuffer();
+    }
+
+    // 7) Fine white rim for definition on dark stage (hi-res dilate ring)
+    const { data: mdat, info: mi } = await sharp(rankMask)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const mw = mi.width;
+    const mh = mi.height;
+    const rad = 2;
+    const ring = Buffer.alloc(mdat.length);
+    for (let y = 0; y < mh; y++) {
+      for (let x = 0; x < mw; x++) {
+        const i = (y * mw + x) * 4;
+        let maxA = 0;
+        for (let dy = -rad; dy <= rad; dy++) {
+          for (let dx = -rad; dx <= rad; dx++) {
+            if (dx * dx + dy * dy > rad * rad) continue;
+            const sx = x + dx;
+            const sy = y + dy;
+            if (sx < 0 || sy < 0 || sx >= mw || sy >= mh) continue;
+            const a = mdat[(sy * mw + sx) * 4 + 3];
+            if (a > maxA) maxA = a;
+          }
+        }
+        const a = Math.max(0, maxA - mdat[i + 3]);
+        ring[i] = 255;
+        ring[i + 1] = 255;
+        ring[i + 2] = 255;
+        ring[i + 3] = Math.round(a * 0.55);
+      }
+    }
+    const outlineRing = await sharp(ring, {
+      raw: { width: mw, height: mh, channels: 4 },
+    })
+      .png()
+      .toBuffer();
+
+    // Soft contact shadow under glyph
+    const rankShadowSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="rs" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="Inter Display"
+    font-weight="900"
+    font-size="${rankFont}"
+    fill="#000000"
+    fill-opacity="0.35"
+    letter-spacing="${tracking}em"
+    filter="url(#rs)"
+  >${num}</text>
+</svg>`;
+    const rankShadow = renderSvgToPng(rankShadowSvg, TARGET_W);
+
 
     const shadowSvg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
@@ -889,6 +1003,8 @@ app.get("/api/poster", async (req, res) => {
 </svg>`);
 
     const composites = [
+      { input: rankShadow, top: 0, left: 0 },
+      { input: outlineRing, top: 0, left: 0 },
       { input: glassRank, top: 0, left: 0 },
       { input: shadowSvg, top: 0, left: 0 },
       { input: insetPoster, top: posterTop, left: posterLeft },
