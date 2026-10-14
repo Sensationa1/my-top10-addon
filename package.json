@@ -1,6 +1,6 @@
 {
   "name": "my-top10-addon",
-  "version": "3.0.0",
+  "version": "2.2.0",
   "description": "Stremio Top 10 with PostersPlus + Apple TV rank overlays",
   "main": "api/index.js",
   "scripts": {

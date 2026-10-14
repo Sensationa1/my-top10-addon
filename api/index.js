@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "300";
+const POSTER_CACHE_VERSION = "256";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "3.0.0",
+  version: "2.5.9",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -805,60 +805,113 @@ app.get("/api/poster", async (req, res) => {
     const num = parseInt(rank, 10) || 1;
     const isTen = num >= 10;
 
-    // 1. Base Poster (Fill exactly 2:3)
-    const basePoster = await sharp(posterBuffer)
-      .resize(TARGET_W, TARGET_H, { fit: "cover", position: "centre" })
+    // True 2:3 card — shorter so ranks have room; contain = no content cropped off
+    const posterH = Math.round(TARGET_H * 0.58);
+    const posterW = Math.round(posterH * (2 / 3)); // exact 2:3
+    const posterLeft = Math.round(TARGET_W * 0.34);
+    const posterTop = Math.round((TARGET_H - posterH) / 2);
+    const radius = 20;
+
+    const roundedMask = Buffer.from(
+      `<svg width="${posterW}" height="${posterH}" xmlns="http://www.w3.org/2000/svg">
+        <rect width="${posterW}" height="${posterH}" rx="${radius}" ry="${radius}" fill="#fff"/>
+      </svg>`
+    );
+
+    // contain: full artwork visible inside 2:3 frame (letterbox if needed, no hard crop)
+    const insetPoster = await sharp(posterBuffer)
+      .resize(posterW, posterH, {
+        fit: "contain",
+        background: { r: 13, g: 13, b: 13, alpha: 1 },
+        position: "centre",
+      })
+      .ensureAlpha()
+      .composite([{ input: roundedMask, blend: "dest-in" }])
+      .png()
       .toBuffer();
 
-    // 2. Number Overlay (Top-Left)
-    const rankFont = Math.round(TARGET_H * 0.26); // 26% of height, visible but not blocking the whole poster
-    const rankX = Math.round(TARGET_W * (isTen ? 0.01 : 0.03)); 
-    const rankBaseline = Math.round(TARGET_H * 0.03 + rankFont * 0.72); // Top left corner
-    const tracking = isTen ? -0.06 : 0;
+    // Same font metrics family for 1–10 — shared baseline; 10 only slightly smaller
+    const rankFont = Math.round(TARGET_H * (isTen ? 0.38 : 0.40));
+    const rankX = Math.round(TARGET_W * 0.028);
+    // Shared optical baseline so 10 is not lower than 1–9
+    const rankBaseline = Math.round(TARGET_H * 0.62);
+    const tracking = isTen ? -0.12 : 0;
 
+    // High-quality glass rank: vector gradient + soft depth (no muddy blur plate)
     const rankSvg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+<svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
-      <stop offset="100%" stop-color="#E2E8F0" stop-opacity="0.85"/>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.92"/>
+      <stop offset="40%" stop-color="#E8EEF5" stop-opacity="0.78"/>
+      <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.42"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.85"/>
-      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.6"/>
+    <filter id="glassDepth" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.40"/>
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#000000" flood-opacity="0.28"/>
     </filter>
   </defs>
+  <!-- subtle outer glass rim -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
     font-family="Inter Display"
     font-weight="900"
     font-size="${rankFont}"
-    fill="url(#grad)"
+    fill="none"
+    stroke="rgba(255,255,255,0.35)"
+    stroke-width="${Math.max(2, Math.round(rankFont * 0.018))}"
     letter-spacing="${tracking}em"
-    filter="url(#shadow)"
+  >${num}</text>
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="Inter Display"
+    font-weight="900"
+    font-size="${rankFont}"
+    fill="url(#glass)"
+    letter-spacing="${tracking}em"
+    filter="url(#glassDepth)"
   >${num}</text>
 </svg>`;
 
-    const rankPng = renderSvgToPng(rankSvg, TARGET_W);
+    const glassRank = renderSvgToPng(rankSvg, TARGET_W);
 
-    // 3. Composite
+    const shadowSvg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="s" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000" flood-opacity="0.50"/>
+    </filter>
+  </defs>
+  <rect x="${posterLeft}" y="${posterTop}" width="${posterW}" height="${posterH}"
+        rx="${radius}" ry="${radius}" fill="#0d0d0d" filter="url(#s)"/>
+</svg>`);
+
     const composites = [
-      { input: rankPng, top: 0, left: 0 }
+      { input: glassRank, top: 0, left: 0 },
+      { input: shadowSvg, top: 0, left: 0 },
+      { input: insetPoster, top: posterTop, left: posterLeft },
     ];
 
-    // Add Genre/Rating if available (at the bottom)
-    const genreSvg = buildGenreRatingSvg(TARGET_W, TARGET_H, genre, imdbRating);
+    const genreSvg = buildGenreRatingSvg(posterW, posterH, genre, imdbRating);
     if (genreSvg) {
       try {
-        const genrePng = renderSvgToPng(genreSvg, TARGET_W);
-        composites.push({ input: genrePng, top: 0, left: 0 });
+        const genrePng = renderSvgToPng(genreSvg, posterW);
+        composites.push({ input: genrePng, top: posterTop, left: posterLeft });
       } catch (e) {
         console.error("Genre overlay:", e.message);
       }
     }
 
-    const out = await sharp(basePoster)
+    const out = await sharp({
+      create: {
+        width: TARGET_W,
+        height: TARGET_H,
+        channels: 3,
+        background: { r: 13, g: 13, b: 13 },
+      },
+    })
       .composite(composites)
       .jpeg({ quality: 92 })
       .toBuffer();
