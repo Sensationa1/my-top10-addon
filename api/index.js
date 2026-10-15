@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.6.8",
+  version: "2.6.9",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -204,7 +204,6 @@ function shouldExcludeTrendingItem(item, type) {
 }
 
 async function enrichItemFromTmdb(item, type) {
-  // MDBList often has no language/genres — pull from TMDB so filters work
   if (item.original_language && Array.isArray(item.genre_ids) && item.genre_ids.length) {
     return item;
   }
@@ -717,55 +716,53 @@ app.get("/api/poster", async (req, res) => {
 </svg>`;
     const maskPng = renderSvgToPng(maskSvg, TARGET_W);
 
-    // 2. Real Frosted Glass Backdrop: Blur & boost the poster behind the number, then clip to digit mask
+    // 2. Smoky Frosted Glass Backdrop: Rich color saturation + slightly darkened blur so poster hues glow inside like the reference
     const frostedNumberBg = await sharp(fullPoster)
-      .modulate({ brightness: 1.35, saturation: 1.55 })
-      .blur(26)
+      .modulate({ brightness: 0.88, saturation: 1.45 })
+      .blur(22)
       .ensureAlpha()
       .composite([{ input: maskPng, blend: "dest-in" }])
       .png()
       .toBuffer();
 
-    // 3. 4K Apple TV / Netflix Glass Specular & Bevel Overlay
+    // 3. Hybrid Reference + 4K Shiny Frosted Glass SVG
     const rankSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Translucent Milky Frosted Glass Base -->
-    <linearGradient id="glassBody" x1="0%" y1="0%" x2="25%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.82"/>
-      <stop offset="22%" stop-color="#F8FAFC" stop-opacity="0.58"/>
-      <stop offset="52%" stop-color="#E2E8F0" stop-opacity="0.34"/>
-      <stop offset="78%" stop-color="#CBD5E1" stop-opacity="0.44"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.68"/>
+    <!-- Reference-style Smoky Frosted Gradient (Frosty silver-grey top -> dark translucent smoked glass bottom) -->
+    <linearGradient id="smokyGlass" x1="0%" y1="0%" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#E2E8F0" stop-opacity="0.62"/>
+      <stop offset="28%" stop-color="#94A3B8" stop-opacity="0.42"/>
+      <stop offset="62%" stop-color="#1E293B" stop-opacity="0.48"/>
+      <stop offset="100%" stop-color="#090D16" stop-opacity="0.64"/>
     </linearGradient>
 
-    <!-- Crisp Diagonal Specular Shine (Glossy Glass Reflection) -->
-    <linearGradient id="glossShine" x1="0%" y1="0%" x2="85%" y2="85%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
-      <stop offset="18%" stop-color="#FFFFFF" stop-opacity="0.55"/>
-      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.06"/>
-      <stop offset="41%" stop-color="#FFFFFF" stop-opacity="0.0"/>
-      <stop offset="82%" stop-color="#FFFFFF" stop-opacity="0.0"/>
-      <stop offset="100%" stop-color="#E0F2FE" stop-opacity="0.48"/>
+    <!-- 4K Diagonal Specular Glass Sheen (Shiny lens reflection across the upper half) -->
+    <linearGradient id="glossShine" x1="0%" y1="0%" x2="80%" y2="85%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.68"/>
+      <stop offset="20%" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="42%" stop-color="#FFFFFF" stop-opacity="0.04"/>
+      <stop offset="43%" stop-color="#FFFFFF" stop-opacity="0.0"/>
+      <stop offset="85%" stop-color="#FFFFFF" stop-opacity="0.0"/>
+      <stop offset="100%" stop-color="#CBD5E1" stop-opacity="0.25"/>
     </linearGradient>
 
-    <!-- Diamond-Cut 3D Rim Bevel -->
-    <linearGradient id="rimLight" x1="0%" y1="0%" x2="65%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
-      <stop offset="35%" stop-color="#F1F5F9" stop-opacity="0.78"/>
-      <stop offset="68%" stop-color="#94A3B8" stop-opacity="0.22"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.90"/>
+    <!-- Reference-style Bold Metallic Silver Outline Gradient -->
+    <linearGradient id="metallicRim" x1="0%" y1="0%" x2="25%" y2="100%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.98"/>
+      <stop offset="35%" stop-color="#E2E8F0" stop-opacity="0.92"/>
+      <stop offset="72%" stop-color="#94A3B8" stop-opacity="0.82"/>
+      <stop offset="100%" stop-color="#CBD5E1" stop-opacity="0.90"/>
     </linearGradient>
 
-    <!-- Deep Ambient Drop Shadow for Floating Separation -->
+    <!-- Deep Floating Drop Shadow -->
     <filter id="ambientShadow" x="-45%" y="-45%" width="190%" height="190%">
-      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity="0.58"/>
-      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.44"/>
-      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.35"/>
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.65"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.50"/>
     </filter>
   </defs>
 
-  <!-- 1. Floating Shadow -->
+  <!-- 1. Deep Floating Shadow -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
@@ -774,22 +771,27 @@ app.get("/api/poster", async (req, res) => {
     font-size="${rankFont}"
     fill="#000000"
     fill-opacity="0.01"
+    stroke="#000000"
+    stroke-width="8.5"
+    stroke-opacity="0.25"
+    stroke-linejoin="miter"
+     stroke-miterlimit="4"
     letter-spacing="${tracking}em"
     filter="url(#ambientShadow)"
   >${num}</text>
 
-  <!-- 2. Frosted Glass Body Fill -->
+  <!-- 2. Smoky Translucent Frosted Glass Body -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
     font-family="SF Pro Display"
     font-weight="500"
     font-size="${rankFont}"
-    fill="url(#glassBody)"
+    fill="url(#smokyGlass)"
     letter-spacing="${tracking}em"
   >${num}</text>
 
-  <!-- 3. High-Gloss Specular Reflection Band -->
+  <!-- 3. 4K Shiny Diagonal Specular Reflection -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
@@ -800,21 +802,7 @@ app.get("/api/poster", async (req, res) => {
     letter-spacing="${tracking}em"
   >${num}</text>
 
-  <!-- 4. Sub-pixel Inner Top-Left Specular Catchlight -->
-  <text
-    x="${rankX - 1}"
-    y="${rankBaseline - 1.5}"
-    font-family="SF Pro Display"
-    font-weight="500"
-    font-size="${rankFont}"
-    fill="none"
-    stroke="#FFFFFF"
-    stroke-width="1.5"
-    stroke-opacity="0.65"
-    letter-spacing="${tracking}em"
-  >${num}</text>
-
-  <!-- 5. Outer 4K Glass Rim Bevel -->
+  <!-- 4. Bold Reference-Style Metallic Silver Frame (Crisp Mitered Corners) -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
@@ -822,9 +810,26 @@ app.get("/api/poster", async (req, res) => {
     font-weight="500"
     font-size="${rankFont}"
     fill="none"
-    stroke="url(#rimLight)"
-    stroke-width="3.2"
-    stroke-linejoin="round"
+    stroke="url(#metallicRim)"
+    stroke-width="8.5"
+    stroke-linejoin="miter"
+    stroke-miterlimit="4"
+    letter-spacing="${tracking}em"
+  >${num}</text>
+
+  <!-- 5. Razor-Sharp Inner 4K Specular Catchlight on the Bevel -->
+  <text
+    x="${rankX - 0.8}"
+    y="${rankBaseline - 1}"
+    font-family="SF Pro Display"
+    font-weight="500"
+    font-size="${rankFont}"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-width="2"
+    stroke-opacity="0.85"
+    stroke-linejoin="miter"
+    stroke-miterlimit="4"
     letter-spacing="${tracking}em"
   >${num}</text>
 </svg>`;
