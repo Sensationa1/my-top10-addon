@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "263";
+const POSTER_CACHE_VERSION = "264";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.6.6",
+  version: "2.6.7",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -812,121 +812,86 @@ app.get("/api/poster", async (req, res) => {
       .jpeg({ quality: 88, mozjpeg: true })
       .toBuffer();
 
-    // SF Pro Display Medium ranks + frosted glass (fast path: small region only)
-    const rankFont = Math.round(TARGET_H * (isTen ? 0.30 : 0.34));
-    const rankX = Math.round(TARGET_W * 0.03);
-    const rankBaseline = Math.round(TARGET_H * 0.28);
+    // Premium Apple TV / Netflix rank: SF Pro Medium, glassy but clearly visible
+    const rankFont = Math.round(TARGET_H * (isTen ? 0.32 : 0.36));
+    const rankX = Math.round(TARGET_W * 0.032);
+    const rankBaseline = Math.round(TARGET_H * 0.29);
     const tracking = isTen ? -0.12 : 0;
 
-    // Work at rank-box resolution only (much faster than full 1000×1500 frost)
-    const boxW = Math.min(TARGET_W, Math.round(TARGET_W * (isTen ? 0.55 : 0.42)));
-    const boxH = Math.min(TARGET_H, Math.round(TARGET_H * 0.38));
-    const boxLeft = 0;
-    const boxTop = 0;
-
-    const rankMaskSvg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${boxW}" height="${boxH}" xmlns="http://www.w3.org/2000/svg">
-  <text
-    x="${Math.round(TARGET_W * 0.03)}"
-    y="${Math.round(TARGET_H * 0.28)}"
-    font-family="SF Pro Display"
-    font-weight="500"
-    font-size="${rankFont}"
-    fill="#ffffff"
-    letter-spacing="${tracking}em"
-  >${num}</text>
-</svg>`;
-    const rankMask = renderSvgToPng(rankMaskSvg, boxW);
-
-    const region = await sharp(fullPoster)
-      .extract({
-        left: boxLeft,
-        top: boxTop,
-        width: boxW,
-        height: Math.min(boxH, TARGET_H),
-      })
-      .blur(12)
-      .modulate({ brightness: 1.15, saturation: 0.45 })
-      .linear(1.04, 14)
-      .ensureAlpha()
-      .png()
-      .toBuffer();
-
-    const glassOverlay = Buffer.from(
-      `<svg width="${boxW}" height="${boxH}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.48"/>
-            <stop offset="40%" stop-color="#ffffff" stop-opacity="0.22"/>
-            <stop offset="100%" stop-color="#a8b4c4" stop-opacity="0.16"/>
-          </linearGradient>
-        </defs>
-        <rect width="${boxW}" height="${boxH}" fill="url(#g)"/>
-      </svg>`
-    );
-
-    let glassRank = await sharp(region)
-      .resize(boxW, boxH, { fit: "fill" })
-      .composite([{ input: glassOverlay, blend: "over" }])
-      .composite([{ input: rankMask, blend: "dest-in" }])
-      .png()
-      .toBuffer();
-
-    // One alpha pass for transparency
-    {
-      const { data, info } = await sharp(glassRank)
-        .ensureAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-      for (let i = 3; i < data.length; i += 4) {
-        data[i] = Math.round(data[i] * 0.78);
-      }
-      glassRank = await sharp(data, {
-        raw: { width: info.width, height: info.height, channels: 4 },
-      })
-        .png()
-        .toBuffer();
-    }
-
-    // Soft shadow via SVG (cheap)
-    const rankShadowSvg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${boxW}" height="${boxH}" xmlns="http://www.w3.org/2000/svg">
+    // Full-canvas vector rank with metallic glass gradient (crisp, readable)
+    const rankSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <filter id="rs" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.35"/>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.98"/>
+      <stop offset="28%" stop-color="#F1F5F9" stop-opacity="0.92"/>
+      <stop offset="62%" stop-color="#CBD5E1" stop-opacity="0.72"/>
+      <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.48"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.12"/>
+    </linearGradient>
+    <filter id="depth" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000000" flood-opacity="0.35"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.40"/>
     </filter>
   </defs>
+  <!-- depth shadow body -->
   <text
-    x="${Math.round(TARGET_W * 0.03)}"
-    y="${Math.round(TARGET_H * 0.28)}"
+    x="${rankX + 2}"
+    y="${rankBaseline + 3}"
     font-family="SF Pro Display"
     font-weight="500"
     font-size="${rankFont}"
     fill="#000000"
     fill-opacity="0.28"
     letter-spacing="${tracking}em"
-    filter="url(#rs)"
+  >${num}</text>
+  <!-- main metallic glass fill -->
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="SF Pro Display"
+    font-weight="500"
+    font-size="${rankFont}"
+    fill="url(#metal)"
+    letter-spacing="${tracking}em"
+    filter="url(#depth)"
+  >${num}</text>
+  <!-- subtle top sheen overlay (same glyph, lighter) -->
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="SF Pro Display"
+    font-weight="500"
+    font-size="${rankFont}"
+    fill="url(#sheen)"
+    letter-spacing="${tracking}em"
+    opacity="0.55"
   >${num}</text>
 </svg>`;
-    const rankShadow = renderSvgToPng(rankShadowSvg, boxW);
 
+    const rankLayer = renderSvgToPng(rankSvg, TARGET_W);
+
+    // Soft left vignette so ranks pop on bright posters
     const vig = Buffer.from(
       `<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="v" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#000" stop-opacity="0.18"/>
-            <stop offset="40%" stop-color="#000" stop-opacity="0.05"/>
+            <stop offset="0%" stop-color="#000" stop-opacity="0.32"/>
+            <stop offset="42%" stop-color="#000" stop-opacity="0.10"/>
             <stop offset="100%" stop-color="#000" stop-opacity="0"/>
           </linearGradient>
         </defs>
-        <rect width="${Math.round(TARGET_W * 0.42)}" height="${TARGET_H}" fill="url(#v)"/>
+        <rect width="${Math.round(TARGET_W * 0.50)}" height="${TARGET_H}" fill="url(#v)"/>
       </svg>`
     );
 
     const composites = [
       { input: vig, top: 0, left: 0 },
-      { input: rankShadow, top: 0, left: 0 },
-      { input: glassRank, top: 0, left: 0 },
+      { input: rankLayer, top: 0, left: 0 },
     ];
 
     const genreSvg = buildGenreRatingSvg(TARGET_W, TARGET_H, genre, imdbRating);
