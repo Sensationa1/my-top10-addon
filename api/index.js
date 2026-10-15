@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "272";
+const POSTER_CACHE_VERSION = "273";
 
 const TARGET_W = 1000;
 const TARGET_H = 1500;
@@ -368,9 +368,9 @@ function getRankAssets(num) {
 
     <!-- More Prominent Fading Silver Outline (Crisp silver top fading smoothly down) -->
     <linearGradient id="metallicRim" x1="0%" y1="0%" x2="20%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.66"/>
-      <stop offset="32%" stop-color="#E2E8F0" stop-opacity="0.48"/>
-      <stop offset="68%" stop-color="#94A3B8" stop-opacity="0.21"/>
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.50"/>
+      <stop offset="32%" stop-color="#E2E8F0" stop-opacity="0.21"/>
+      <stop offset="68%" stop-color="#94A3B8" stop-opacity="0.00"/>
       <stop offset="100%" stop-color="#64748B" stop-opacity="0.00"/>
     </linearGradient>
 
