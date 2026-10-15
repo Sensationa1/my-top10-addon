@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "264";
+const POSTER_CACHE_VERSION = "265";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.6.7",
+  version: "2.6.8",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -72,7 +72,6 @@ const GENRE_MAP = {
   10759: "ACTION", 10762: "KIDS", 10763: "NEWS", 10764: "REALITY",
   10765: "SCI-FI", 10766: "SOAP", 10767: "TALK", 10768: "WAR",
 };
-
 
 // TMDB Animation = 16. Paired with Japanese language so Pixar/Disney stay.
 const TMDB_ANIMATION_ID = 16;
@@ -266,66 +265,6 @@ function resolveDigitPath(rank) {
   return null;
 }
 
-/**
- * Apple TV / Netflix style rank — metallic gradient, soft depth, top-left.
- * SVG vector at poster resolution for crisp edges (no fuzzy PNG outlines).
- */
-async function loadRankOverlay(targetH, rank, posterBuffer, targetW) {
-  const n = Math.min(10, Math.max(1, parseInt(rank, 10) || 1));
-  const fontSize = Math.round(targetH * 0.30);
-  const leftPad = Math.round(targetW * 0.045);
-  const topPad = Math.round(targetH * 0.04);
-  // baseline for dominant baseline text
-  const baseline = topPad + Math.round(fontSize * 0.82);
-  const tracking = n >= 10 ? -0.06 : 0;
-
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${targetW}" height="${targetH}" viewBox="0 0 ${targetW} ${targetH}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.96"/>
-      <stop offset="35%" stop-color="#F1F5F9" stop-opacity="0.90"/>
-      <stop offset="70%" stop-color="#CBD5E1" stop-opacity="0.55"/>
-      <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.18"/>
-    </linearGradient>
-    <filter id="depth" x="-50%" y="-50%" width="200%" height="200%">
-      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000000" flood-opacity="0.45"/>
-      <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000000" flood-opacity="0.30"/>
-    </filter>
-  </defs>
-  <text
-    x="${leftPad}"
-    y="${baseline}"
-    font-family="Inter Display"
-    font-weight="900"
-    font-size="${fontSize}"
-    fill="url(#metal)"
-    letter-spacing="${tracking}em"
-    filter="url(#depth)"
-  >${n}</text>
-</svg>`;
-
-  try {
-    const buf = renderSvgToPng(svg, targetW);
-    return { buf, left: 0, top: 0 };
-  } catch (e) {
-    console.error("Rank SVG:", e.message);
-    // Fallback: custom digit PNG if SVG fails
-    const digitPath = resolveDigitPath(n);
-    if (!digitPath) return null;
-    const digitH = Math.round(targetH * 0.30);
-    const buf = await sharp(digitPath)
-      .resize({ height: digitH, fit: "inside" })
-      .png()
-      .toBuffer();
-    return {
-      buf,
-      left: Math.round(targetW * 0.04),
-      top: Math.round(targetH * 0.03),
-    };
-  }
-}
-
 function formatGenreLabel(genre) {
   if (!genre) return null;
   const s = String(genre).trim().toLowerCase();
@@ -372,56 +311,8 @@ function getHostUrl(req) {
   return `${protocol}://${host}`;
 }
 
-/**
- * Overlay: rank numbers only (no genre label).
- * Metallic fade top→bottom of each digit, light left vignette.
- */
-function buildOverlaySvg(width, height, rank) {
-  const fontSize = Math.round(height * 0.175);
-  const xPos = Math.round(width * 0.055);
-  const yPos = Math.round(height * 0.035 + fontSize * 0.82);
-  const tracking = String(rank).length > 1 ? "-0.05em" : "0";
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"
-     xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
-      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.95"/>
-      <stop offset="70%" stop-color="#E2E8F0" stop-opacity="0.55"/>
-      <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.12"/>
-    </linearGradient>
-    <linearGradient id="vig" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#000000" stop-opacity="0.36"/>
-      <stop offset="45%" stop-color="#000000" stop-opacity="0.12"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-    </linearGradient>
-    <filter id="rankShadow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.50"/>
-      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.35"/>
-    </filter>
-  </defs>
-
-  <rect width="${Math.round(width * 0.55)}" height="${height}" fill="url(#vig)"/>
-
-  <text
-    x="${xPos}"
-    y="${yPos}"
-    font-family="Inter Display"
-    font-weight="900"
-    font-size="${fontSize}"
-    fill="url(#metal)"
-    letter-spacing="${tracking}"
-    filter="url(#rankShadow)"
-  >${rank}</text>
-</svg>`;
-}
-
 function renderSvgToPng(svgString, width) {
   const { black, semi, sfMed, sfBold, sfThin } = resolveFonts();
-  // Medium = Regular for genre · rating; Thin/Bold available if needed
-  // Medium first = SF Pro Regular for ranks + genre when weight 400
   const files = [sfMed, sfThin, sfBold, black, semi].filter((p) => p && fs.existsSync(p));
   const resvg = new Resvg(svgString, {
     fitTo: { mode: "width", value: width },
@@ -538,10 +429,8 @@ async function getTmdbData(imdbId, type, existingTmdbId) {
     const posterPath = (det && det.poster_path) || (match && match.poster_path);
     const backdropPath = (det && det.backdrop_path) || (match && match.backdrop_path);
     const posterUrl = posterPath ? `https://image.tmdb.org/t/p/w780${posterPath}` : null;
-    // Landscape / detail background
     const backdropUrl = backdropPath ? `https://image.tmdb.org/t/p/w1280${backdropPath}` : null;
 
-    // Prefer FI logo, then EN, then any
     let logoUrl = null;
     const logos = det && det.images && Array.isArray(det.images.logos) ? det.images.logos : [];
     if (logos.length) {
@@ -562,7 +451,6 @@ async function getTmdbData(imdbId, type, existingTmdbId) {
       genre = GENRE_MAP[match.genre_ids[0]] || null;
     }
 
-    // Prefer real IMDb rating via OMDb when key present; else TMDB vote
     let imdbRating = null;
     const tt = imdbId && String(imdbId).startsWith("tt") ? imdbId : null;
     if (tt && process.env.OMDB_API_KEY) {
@@ -591,7 +479,6 @@ async function fetchTrendingList(type) {
   let raw = [];
   const apiKey = process.env.TMDB_API_KEY;
 
-  // Primary: Snoak Trakt / MDBList (fewer unreleased junk titles)
   if (type === "movie") {
     try {
       const res = await axios.get(SNOAK_MOVIES_URL, { timeout: 8000 });
@@ -614,7 +501,6 @@ async function fetchTrendingList(type) {
     }
   }
 
-  // Fallback only if list is empty
   if (!raw.length && apiKey) {
     const media = type === "series" ? "tv" : "movie";
     try {
@@ -631,7 +517,6 @@ async function fetchTrendingList(type) {
   return raw;
 }
 
-/** Attach imdb_id from TMDB external_ids when missing (trending has none). */
 async function resolveImdbId(tmdbId, type) {
   const apiKey = process.env.TMDB_API_KEY;
   if (!apiKey || !tmdbId) return null;
@@ -663,7 +548,6 @@ Install in Stremio</a>
 app.get("/manifest.json", (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
-  // Short cache so catalog order / version updates apply quickly
   res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60");
   res.json(MANIFEST);
 });
@@ -809,67 +693,139 @@ app.get("/api/poster", async (req, res) => {
     // Full-size 2:3 poster (edge-to-edge card)
     const fullPoster = await sharp(posterBuffer)
       .resize(TARGET_W, TARGET_H, { fit: "cover", position: "centre" })
-      .jpeg({ quality: 88, mozjpeg: true })
+      .jpeg({ quality: 92, mozjpeg: true })
       .toBuffer();
 
-    // Premium Apple TV / Netflix rank: SF Pro Medium, glassy but clearly visible
+    // EXACT same size and placement as original
     const rankFont = Math.round(TARGET_H * (isTen ? 0.32 : 0.36));
     const rankX = Math.round(TARGET_W * 0.032);
     const rankBaseline = Math.round(TARGET_H * 0.29);
     const tracking = isTen ? -0.12 : 0;
 
-    // Full-canvas vector rank with metallic glass gradient (crisp, readable)
+    // 1. Alpha mask of the rank number for true backdrop-filter refraction
+    const maskSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="SF Pro Display"
+    font-weight="500"
+    font-size="${rankFont}"
+    fill="#FFFFFF"
+    letter-spacing="${tracking}em"
+  >${num}</text>
+</svg>`;
+    const maskPng = renderSvgToPng(maskSvg, TARGET_W);
+
+    // 2. Real Frosted Glass Backdrop: Blur & boost the poster behind the number, then clip to digit mask
+    const frostedNumberBg = await sharp(fullPoster)
+      .modulate({ brightness: 1.35, saturation: 1.55 })
+      .blur(26)
+      .ensureAlpha()
+      .composite([{ input: maskPng, blend: "dest-in" }])
+      .png()
+      .toBuffer();
+
+    // 3. 4K Apple TV / Netflix Glass Specular & Bevel Overlay
     const rankSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.98"/>
-      <stop offset="28%" stop-color="#F1F5F9" stop-opacity="0.92"/>
-      <stop offset="62%" stop-color="#CBD5E1" stop-opacity="0.72"/>
-      <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.48"/>
+    <!-- Translucent Milky Frosted Glass Base -->
+    <linearGradient id="glassBody" x1="0%" y1="0%" x2="25%" y2="100%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.82"/>
+      <stop offset="22%" stop-color="#F8FAFC" stop-opacity="0.58"/>
+      <stop offset="52%" stop-color="#E2E8F0" stop-opacity="0.34"/>
+      <stop offset="78%" stop-color="#CBD5E1" stop-opacity="0.44"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.68"/>
     </linearGradient>
-    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35"/>
-      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.12"/>
+
+    <!-- Crisp Diagonal Specular Shine (Glossy Glass Reflection) -->
+    <linearGradient id="glossShine" x1="0%" y1="0%" x2="85%" y2="85%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="18%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="41%" stop-color="#FFFFFF" stop-opacity="0.0"/>
+      <stop offset="82%" stop-color="#FFFFFF" stop-opacity="0.0"/>
+      <stop offset="100%" stop-color="#E0F2FE" stop-opacity="0.48"/>
     </linearGradient>
-    <filter id="depth" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000000" flood-opacity="0.35"/>
-      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.40"/>
+
+    <!-- Diamond-Cut 3D Rim Bevel -->
+    <linearGradient id="rimLight" x1="0%" y1="0%" x2="65%" y2="100%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="35%" stop-color="#F1F5F9" stop-opacity="0.78"/>
+      <stop offset="68%" stop-color="#94A3B8" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.90"/>
+    </linearGradient>
+
+    <!-- Deep Ambient Drop Shadow for Floating Separation -->
+    <filter id="ambientShadow" x="-45%" y="-45%" width="190%" height="190%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity="0.58"/>
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.44"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.35"/>
     </filter>
   </defs>
-  <!-- depth shadow body -->
+
+  <!-- 1. Floating Shadow -->
   <text
-    x="${rankX + 2}"
-    y="${rankBaseline + 3}"
+    x="${rankX}"
+    y="${rankBaseline}"
     font-family="SF Pro Display"
     font-weight="500"
     font-size="${rankFont}"
     fill="#000000"
-    fill-opacity="0.28"
+    fill-opacity="0.01"
     letter-spacing="${tracking}em"
+    filter="url(#ambientShadow)"
   >${num}</text>
-  <!-- main metallic glass fill -->
+
+  <!-- 2. Frosted Glass Body Fill -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
     font-family="SF Pro Display"
     font-weight="500"
     font-size="${rankFont}"
-    fill="url(#metal)"
+    fill="url(#glassBody)"
     letter-spacing="${tracking}em"
-    filter="url(#depth)"
   >${num}</text>
-  <!-- subtle top sheen overlay (same glyph, lighter) -->
+
+  <!-- 3. High-Gloss Specular Reflection Band -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
     font-family="SF Pro Display"
     font-weight="500"
     font-size="${rankFont}"
-    fill="url(#sheen)"
+    fill="url(#glossShine)"
     letter-spacing="${tracking}em"
-    opacity="0.55"
+  >${num}</text>
+
+  <!-- 4. Sub-pixel Inner Top-Left Specular Catchlight -->
+  <text
+    x="${rankX - 1}"
+    y="${rankBaseline - 1.5}"
+    font-family="SF Pro Display"
+    font-weight="500"
+    font-size="${rankFont}"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-width="1.5"
+    stroke-opacity="0.65"
+    letter-spacing="${tracking}em"
+  >${num}</text>
+
+  <!-- 5. Outer 4K Glass Rim Bevel -->
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="SF Pro Display"
+    font-weight="500"
+    font-size="${rankFont}"
+    fill="none"
+    stroke="url(#rimLight)"
+    stroke-width="3.2"
+    stroke-linejoin="round"
+    letter-spacing="${tracking}em"
   >${num}</text>
 </svg>`;
 
@@ -891,6 +847,7 @@ app.get("/api/poster", async (req, res) => {
 
     const composites = [
       { input: vig, top: 0, left: 0 },
+      { input: frostedNumberBg, top: 0, left: 0 },
       { input: rankLayer, top: 0, left: 0 },
     ];
 
@@ -906,7 +863,7 @@ app.get("/api/poster", async (req, res) => {
 
     const out = await sharp(fullPoster)
       .composite(composites)
-      .jpeg({ quality: 88, mozjpeg: true })
+      .jpeg({ quality: 92, mozjpeg: true })
       .toBuffer();
 
     res.setHeader("Content-Type", "image/jpeg");
