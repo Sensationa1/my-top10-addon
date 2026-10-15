@@ -368,10 +368,10 @@ function getRankAssets(num) {
 
     <!-- More Prominent Fading Silver Outline (Crisp silver top fading smoothly down) -->
     <linearGradient id="metallicRim" x1="0%" y1="0%" x2="20%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.06"/>
-      <stop offset="32%" stop-color="#E2E8F0" stop-opacity="0.26"/>
-      <stop offset="68%" stop-color="#94A3B8" stop-opacity="0.58"/>
-      <stop offset="100%" stop-color="#64748B" stop-opacity="0.88"/>
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.70"/>
+      <stop offset="32%" stop-color="#E2E8F0" stop-opacity="0.50"/>
+      <stop offset="68%" stop-color="#94A3B8" stop-opacity="0.21"/>
+      <stop offset="100%" stop-color="#64748B" stop-opacity="0.02"/>
     </linearGradient>
 
     <filter id="ambientShadow" x="-45%" y="-45%" width="190%" height="190%">
