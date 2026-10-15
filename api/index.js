@@ -14,7 +14,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "267";
+const POSTER_CACHE_VERSION = "268";
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -38,7 +38,7 @@ function resolveFonts() {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.6.9",
+  version: "2.7.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -312,7 +312,7 @@ function getHostUrl(req) {
 
 function renderSvgToPng(svgString, width) {
   const { black, semi, sfMed, sfBold, sfThin } = resolveFonts();
-  const files = [sfMed, sfThin, sfBold, black, semi].filter((p) => p && fs.existsSync(p));
+  const files = [sfBold, sfMed, sfThin, black, semi].filter((p) => p && fs.existsSync(p));
   const resvg = new Resvg(svgString, {
     fitTo: { mode: "width", value: width },
     font: {
@@ -695,20 +695,20 @@ app.get("/api/poster", async (req, res) => {
       .jpeg({ quality: 92, mozjpeg: true })
       .toBuffer();
 
-    // EXACT same size and placement as original
+    // EXACT same size and placement as original, using Bold (700)
     const rankFont = Math.round(TARGET_H * (isTen ? 0.32 : 0.36));
     const rankX = Math.round(TARGET_W * 0.032);
     const rankBaseline = Math.round(TARGET_H * 0.29);
     const tracking = isTen ? -0.12 : 0;
 
-    // 1. Alpha mask of the rank number for true backdrop-filter refraction
+    // 1. Alpha mask of the bold rank number for true backdrop-filter refraction
     const maskSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
   <text
     x="${rankX}"
     y="${rankBaseline}"
     font-family="SF Pro Display"
-    font-weight="500"
+    font-weight="700"
     font-size="${rankFont}"
     fill="#FFFFFF"
     letter-spacing="${tracking}em"
@@ -716,7 +716,7 @@ app.get("/api/poster", async (req, res) => {
 </svg>`;
     const maskPng = renderSvgToPng(maskSvg, TARGET_W);
 
-    // 2. Smoky Frosted Glass Backdrop: Rich color saturation + slightly darkened blur so poster hues glow inside like the reference
+    // 2. Smoky Frosted Glass Backdrop: Rich color saturation + slightly darkened blur so poster hues glow inside
     const frostedNumberBg = await sharp(fullPoster)
       .modulate({ brightness: 0.88, saturation: 1.45 })
       .blur(22)
@@ -725,40 +725,40 @@ app.get("/api/poster", async (req, res) => {
       .png()
       .toBuffer();
 
-    // 3. Hybrid Reference + 4K Shiny Frosted Glass SVG
+    // 3. Bold Hybrid Frosted Glass with Soft Fading Silver Rim
     const rankSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Reference-style Smoky Frosted Gradient (Frosty silver-grey top -> dark translucent smoked glass bottom) -->
+    <!-- Smoky Frosted Gradient (Frosty silver-grey top -> dark translucent smoked glass bottom) -->
     <linearGradient id="smokyGlass" x1="0%" y1="0%" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#E2E8F0" stop-opacity="0.62"/>
-      <stop offset="28%" stop-color="#94A3B8" stop-opacity="0.42"/>
-      <stop offset="62%" stop-color="#1E293B" stop-opacity="0.48"/>
-      <stop offset="100%" stop-color="#090D16" stop-opacity="0.64"/>
+      <stop offset="0%" stop-color="#E2E8F0" stop-opacity="0.64"/>
+      <stop offset="30%" stop-color="#94A3B8" stop-opacity="0.44"/>
+      <stop offset="65%" stop-color="#1E293B" stop-opacity="0.50"/>
+      <stop offset="100%" stop-color="#090D16" stop-opacity="0.66"/>
     </linearGradient>
 
     <!-- 4K Diagonal Specular Glass Sheen (Shiny lens reflection across the upper half) -->
     <linearGradient id="glossShine" x1="0%" y1="0%" x2="80%" y2="85%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.68"/>
-      <stop offset="20%" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.70"/>
+      <stop offset="20%" stop-color="#FFFFFF" stop-opacity="0.30"/>
       <stop offset="42%" stop-color="#FFFFFF" stop-opacity="0.04"/>
       <stop offset="43%" stop-color="#FFFFFF" stop-opacity="0.0"/>
       <stop offset="85%" stop-color="#FFFFFF" stop-opacity="0.0"/>
-      <stop offset="100%" stop-color="#CBD5E1" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#CBD5E1" stop-opacity="0.22"/>
     </linearGradient>
 
-    <!-- Reference-style Bold Metallic Silver Outline Gradient -->
+    <!-- Soft Fading Silver Border (Subtle top-left catchlight fading out toward the bottom) -->
     <linearGradient id="metallicRim" x1="0%" y1="0%" x2="25%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.98"/>
-      <stop offset="35%" stop-color="#E2E8F0" stop-opacity="0.92"/>
-      <stop offset="72%" stop-color="#94A3B8" stop-opacity="0.82"/>
-      <stop offset="100%" stop-color="#CBD5E1" stop-opacity="0.90"/>
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.60"/>
+      <stop offset="28%" stop-color="#E2E8F0" stop-opacity="0.34"/>
+      <stop offset="65%" stop-color="#94A3B8" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#64748B" stop-opacity="0.03"/>
     </linearGradient>
 
     <!-- Deep Floating Drop Shadow -->
     <filter id="ambientShadow" x="-45%" y="-45%" width="190%" height="190%">
-      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.65"/>
-      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.50"/>
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.62"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.45"/>
     </filter>
   </defs>
 
@@ -767,15 +767,10 @@ app.get("/api/poster", async (req, res) => {
     x="${rankX}"
     y="${rankBaseline}"
     font-family="SF Pro Display"
-    font-weight="500"
+    font-weight="700"
     font-size="${rankFont}"
     fill="#000000"
     fill-opacity="0.01"
-    stroke="#000000"
-    stroke-width="8.5"
-    stroke-opacity="0.25"
-    stroke-linejoin="miter"
-     stroke-miterlimit="4"
     letter-spacing="${tracking}em"
     filter="url(#ambientShadow)"
   >${num}</text>
@@ -785,7 +780,7 @@ app.get("/api/poster", async (req, res) => {
     x="${rankX}"
     y="${rankBaseline}"
     font-family="SF Pro Display"
-    font-weight="500"
+    font-weight="700"
     font-size="${rankFont}"
     fill="url(#smokyGlass)"
     letter-spacing="${tracking}em"
@@ -796,40 +791,38 @@ app.get("/api/poster", async (req, res) => {
     x="${rankX}"
     y="${rankBaseline}"
     font-family="SF Pro Display"
-    font-weight="500"
+    font-weight="700"
     font-size="${rankFont}"
     fill="url(#glossShine)"
     letter-spacing="${tracking}em"
   >${num}</text>
 
-  <!-- 4. Bold Reference-Style Metallic Silver Frame (Crisp Mitered Corners) -->
+  <!-- 4. Soft Fading Silver Glass Rim -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
     font-family="SF Pro Display"
-    font-weight="500"
+    font-weight="700"
     font-size="${rankFont}"
     fill="none"
     stroke="url(#metallicRim)"
-    stroke-width="8.5"
-    stroke-linejoin="miter"
-    stroke-miterlimit="4"
+    stroke-width="3.8"
+    stroke-linejoin="round"
     letter-spacing="${tracking}em"
   >${num}</text>
 
-  <!-- 5. Razor-Sharp Inner 4K Specular Catchlight on the Bevel -->
+  <!-- 5. Delicate Top-Left Specular Edge Glint -->
   <text
-    x="${rankX - 0.8}"
-    y="${rankBaseline - 1}"
+    x="${rankX - 0.6}"
+    y="${rankBaseline - 0.8}"
     font-family="SF Pro Display"
-    font-weight="500"
+    font-weight="700"
     font-size="${rankFont}"
     fill="none"
-    stroke="#FFFFFF"
-    stroke-width="2"
-    stroke-opacity="0.85"
-    stroke-linejoin="miter"
-    stroke-miterlimit="4"
+    stroke="url(#metallicRim)"
+    stroke-width="1.2"
+    stroke-opacity="0.55"
+    stroke-linejoin="round"
     letter-spacing="${tracking}em"
   >${num}</text>
 </svg>`;
