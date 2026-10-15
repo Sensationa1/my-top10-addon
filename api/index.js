@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "269";
+const POSTER_CACHE_VERSION = "270";
 
 const TARGET_W = 1000;
 const TARGET_H = 1500;
@@ -67,7 +67,7 @@ function setPosterCache(key, buf) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.7.2",
+  version: "2.7.3",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -257,6 +257,13 @@ function formatGenreLabel(genre) {
   if (!genre) return null;
   const s = String(genre).trim().toLowerCase();
   if (!s) return null;
+  // Always keep Sci-fi short instead of "Science fiction" or "Sci-fi & fantasy"
+  if (s === "science fiction" || s.includes("sci-fi") || s.includes("sci fi")) {
+    return "Sci-fi";
+  }
+  if (s.includes("action & adventure")) {
+    return "Action";
+  }
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
@@ -265,8 +272,9 @@ function buildGenreRatingSvg(width, height, genre, rating) {
   const label = [g, rating].filter(Boolean).join("  ·  ");
   if (!label) return null;
 
-  const fontSize = Math.round(height * 0.046);
-  const y = Math.round(height * 0.93);
+  // Expanded size & wider tracking for a bolder, more readable bottom badge
+  const fontSize = Math.round(height * 0.055);
+  const y = Math.round(height * 0.935);
   const x = Math.round(width / 2);
   const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
@@ -274,7 +282,7 @@ function buildGenreRatingSvg(width, height, genre, rating) {
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <filter id="tshadow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000000" flood-opacity="0.60"/>
     </filter>
   </defs>
   <text
@@ -282,11 +290,11 @@ function buildGenreRatingSvg(width, height, genre, rating) {
     y="${y}"
     text-anchor="middle"
     font-family="SF Pro Display"
-    font-weight="100"
+    font-weight="300"
     font-size="${fontSize}"
     fill="#FFFFFF"
-    fill-opacity="0.88"
-    letter-spacing="0.12em"
+    fill-opacity="0.92"
+    letter-spacing="0.15em"
     filter="url(#tshadow)"
   >${safe}</text>
 </svg>`;
@@ -599,7 +607,14 @@ async function getTmdbData(imdbId, type, existingTmdbId) {
 
     let genre = null;
     if (det && Array.isArray(det.genres) && det.genres[0]) {
-      genre = String(det.genres[0].name || "").toUpperCase();
+      const rawName = String(det.genres[0].name || "").trim();
+      if (/science fiction|sci-fi/i.test(rawName)) {
+        genre = "SCI-FI";
+      } else if (/action & adventure/i.test(rawName)) {
+        genre = "ACTION";
+      } else {
+        genre = rawName.toUpperCase();
+      }
     } else if (match && Array.isArray(match.genre_ids) && match.genre_ids.length) {
       genre = GENRE_MAP[match.genre_ids[0]] || null;
     }
