@@ -4,8 +4,15 @@ const axios = require("axios");
 const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
+const http = require("http");
+const https = require("https");
 const { Resvg } = require("@resvg/resvg-js");
 require("dotenv").config();
+
+// Reuse TCP/TLS connections across requests for much faster API & image downloads
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 });
+const api = axios.create({ httpAgent, httpsAgent });
 
 const app = express();
 app.use(cors());
@@ -14,7 +21,10 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "268";
+const POSTER_CACHE_VERSION = "269";
+
+const TARGET_W = 1000;
+const TARGET_H = 1500;
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -27,18 +37,37 @@ const FONT_SF_MED_ALT = path.join(__dirname, "..", "fonts", "SFPRODISPLAYMEDIUM.
 const FONT_SF_BOLD_ALT = path.join(__dirname, "..", "fonts", "SFPRODISPLAYBOLD.OTF");
 const FONT_SF_THIN_ALT = path.join(__dirname, "..", "fonts", "SFPRODISPLAYTHIN.TTF");
 
-function resolveFonts() {
+// Resolve fonts once at startup instead of checking disk on every SVG render
+let CACHED_FONT_FILES = null;
+function getFontFiles() {
+  if (CACHED_FONT_FILES) return CACHED_FONT_FILES;
   const black = fs.existsSync(FONT_BLACK) ? FONT_BLACK : FONT_BLACK_ALT;
   const semi = fs.existsSync(FONT_SEMI) ? FONT_SEMI : FONT_SEMI_ALT;
   const sfMed = fs.existsSync(FONT_SF_MED) ? FONT_SF_MED : FONT_SF_MED_ALT;
   const sfBold = fs.existsSync(FONT_SF_BOLD) ? FONT_SF_BOLD : FONT_SF_BOLD_ALT;
   const sfThin = fs.existsSync(FONT_SF_THIN) ? FONT_SF_THIN : FONT_SF_THIN_ALT;
-  return { black, semi, sfMed, sfBold, sfThin };
+  CACHED_FONT_FILES = [sfBold, sfMed, sfThin, black, semi].filter((p) => p && fs.existsSync(p));
+  return CACHED_FONT_FILES;
+}
+
+// In-memory caches to avoid redundant API hits and re-renders
+const tmdbCache = new Map();
+const catalogCache = new Map();
+const posterMemoryCache = new Map(); // key -> Buffer (max 25 posters in RAM)
+const rankAssetCache = new Map();    // rank (1..10) -> { maskPng, rankLayer }
+let CACHED_VIGNETTE_PNG = null;
+
+function setPosterCache(key, buf) {
+  if (posterMemoryCache.size >= 25) {
+    const oldestKey = posterMemoryCache.keys().next().value;
+    posterMemoryCache.delete(oldestKey);
+  }
+  posterMemoryCache.set(key, buf);
 }
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.7.0",
+  version: "2.7.2",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
@@ -73,10 +102,8 @@ const GENRE_MAP = {
   10765: "SCI-FI", 10766: "SOAP", 10767: "TALK", 10768: "WAR",
 };
 
-// TMDB Animation = 16. Paired with Japanese language so Pixar/Disney stay.
 const TMDB_ANIMATION_ID = 16;
 
-// MDBList JSON has almost no genre/lang — catch common anime titles by name.
 const ANIME_TITLE_RE =
   /\b(anime|one piece|naruto|boruto|demon slayer|kimetsu|jujutsu kaisen|attack on titan|shingeki|clevatess|solo leveling|frieren|bleach|dragon ball|chainsaw man|spy x family|my hero academia|boku no hero|hunter x hunter|tokyo ghoul|death note|evangelion|studio ghibli|ghibli|pokemon|pokémon|digimon|sailor moon|inuyasha|fullmetal|haikyuu|black clover|one punch|mob psycho|vinland saga|dandadan|kaiju no\.?\s*8|blue lock|oshi no ko)\b/i;
 
@@ -113,44 +140,13 @@ function isAnimeItem(item) {
   return false;
 }
 
-/** TMDB lookup — MDBList items lack genre/language fields */
-async function isAnimeViaTmdb(item, type) {
-  if (isAnimeItem(item)) return true;
-  const apiKey = process.env.TMDB_API_KEY;
-  const imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id);
-  if (!apiKey || !imdbId || !String(imdbId).startsWith("tt")) return false;
-  try {
-    const findRes = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
-      params: { api_key: apiKey, external_source: "imdb_id" },
-      timeout: 4000,
-    });
-    const isSeries = type === "series";
-    const match =
-      (isSeries ? findRes.data.tv_results : findRes.data.movie_results) &&
-      (isSeries ? findRes.data.tv_results : findRes.data.movie_results)[0];
-    if (!match) return false;
-    const lang = String(match.original_language || "").toLowerCase();
-    const isJapanese = lang === "ja" || lang === "jp";
-    const hasAnim =
-      Array.isArray(match.genre_ids) && match.genre_ids.some((g) => Number(g) === TMDB_ANIMATION_ID);
-    if (isJapanese && hasAnim) return true;
-    if (ANIME_TITLE_RE.test(String(match.name || match.title || ""))) return true;
-    return false;
-  } catch (_) {
-    return false;
-  }
-}
-
-// TV genres to exclude: News, Kids, Talk. Animation+JA = anime.
-const EXCLUDE_TV_GENRES = new Set([10763, 10762, 10767]); // news, kids, talk
+const EXCLUDE_TV_GENRES = new Set([10763, 10762, 10767]);
 const FAMILY_GENRE = 10751;
 
-// Always drop Chinese / regional Chinese variants
 const BLOCKED_LANGS = new Set([
   "zh", "cn", "zh-cn", "zh-tw", "zh-hk", "yue", "cmn", "zh-hans", "zh-hant",
 ]);
 
-// Languages treated as mainstream / widely known for this catalog
 const KNOWN_LANGS = new Set([
   "en", "fi", "sv", "no", "da", "de", "fr", "es", "it", "pt",
   "ko", "ja", "nl", "pl", "tr", "hi", "ru", "uk",
@@ -165,13 +161,9 @@ function isObscureInternational(item) {
   const lang = normalizeLang(raw);
   if (!lang) return false;
 
-  // Chinese always out
   if (BLOCKED_LANGS.has(raw) || BLOCKED_LANGS.has(lang) || lang === "zh") return true;
-
-  // English and other known languages stay
   if (KNOWN_LANGS.has(lang)) return false;
 
-  // Unknown language: only keep if clearly popular / well-rated on TMDB
   const votes = Number(item.vote_count || 0);
   const popularity = Number(item.popularity || 0);
   if (votes >= 800 || popularity >= 80) return false;
@@ -188,13 +180,11 @@ function shouldExcludeTrendingItem(item, type) {
 
   if (isSeries) {
     if (genreIds.some((g) => EXCLUDE_TV_GENRES.has(g))) return true;
-    // Kids animation / pure kids cartoons
     if (genreIds.includes(TMDB_ANIMATION_ID) && (genreIds.includes(10762) || genreIds.includes(FAMILY_GENRE))) {
       return true;
     }
   }
 
-  // Anime: Japanese + Animation
   const lang = normalizeLang(item.original_language);
   const isJapanese = lang === "ja" || lang === "jp";
   if (isJapanese && genreIds.includes(TMDB_ANIMATION_ID)) return true;
@@ -210,18 +200,24 @@ async function enrichItemFromTmdb(item, type) {
   const apiKey = process.env.TMDB_API_KEY;
   const imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id);
   if (!apiKey || !imdbId || !String(imdbId).startsWith("tt")) return item;
+
+  const cacheKey = `enrich:${type}:${imdbId}`;
+  if (tmdbCache.has(cacheKey)) {
+    return { ...item, ...tmdbCache.get(cacheKey) };
+  }
+
   try {
-    const findRes = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
+    const findRes = await api.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
       params: { api_key: apiKey, external_source: "imdb_id" },
-      timeout: 4000,
+      timeout: 3500,
     });
     const isSeries = type === "series";
     const match =
       (isSeries ? findRes.data.tv_results : findRes.data.movie_results) &&
       (isSeries ? findRes.data.tv_results : findRes.data.movie_results)[0];
     if (!match) return item;
-    return {
-      ...item,
+
+    const extra = {
       original_language: item.original_language || match.original_language,
       genre_ids: (item.genre_ids && item.genre_ids.length) ? item.genre_ids : (match.genre_ids || []),
       vote_count: item.vote_count || match.vote_count,
@@ -231,6 +227,8 @@ async function enrichItemFromTmdb(item, type) {
       id: item.tmdb_id || item.tmdbid || match.id || item.id,
       tmdb_id: item.tmdb_id || item.tmdbid || match.id,
     };
+    tmdbCache.set(cacheKey, extra);
+    return { ...item, ...extra };
   } catch (_) {
     return item;
   }
@@ -242,9 +240,9 @@ async function filterTrendingList(raw, type, limit = 10) {
   for (let i = 0; i < raw.length; i += chunkSize) {
     const chunk = raw.slice(i, i + chunkSize);
     const processed = await Promise.all(chunk.map(async (item) => {
+      if (isAnimeItem(item)) return null;
       const enriched = await enrichItemFromTmdb(item, type);
       if (shouldExcludeTrendingItem(enriched, type)) return null;
-      if (await isAnimeViaTmdb(enriched, type)) return null;
       return enriched;
     }));
     for (const res of processed) {
@@ -253,15 +251,6 @@ async function filterTrendingList(raw, type, limit = 10) {
     if (out.length >= limit) break;
   }
   return out;
-}
-
-function resolveDigitPath(rank) {
-  const n = Math.min(10, Math.max(1, parseInt(rank, 10) || 1));
-  const a = path.join(process.cwd(), "digits", `${n}.png`);
-  const b = path.join(__dirname, "..", "digits", `${n}.png`);
-  if (fs.existsSync(a)) return a;
-  if (fs.existsSync(b)) return b;
-  return null;
 }
 
 function formatGenreLabel(genre) {
@@ -276,7 +265,6 @@ function buildGenreRatingSvg(width, height, genre, rating) {
   const label = [g, rating].filter(Boolean).join("  ·  ");
   if (!label) return null;
 
-  // SF Pro Display Thin — subtle bottom meta
   const fontSize = Math.round(height * 0.046);
   const y = Math.round(height * 0.93);
   const x = Math.round(width / 2);
@@ -311,8 +299,7 @@ function getHostUrl(req) {
 }
 
 function renderSvgToPng(svgString, width) {
-  const { black, semi, sfMed, sfBold, sfThin } = resolveFonts();
-  const files = [sfBold, sfMed, sfThin, black, semi].filter((p) => p && fs.existsSync(p));
+  const files = getFontFiles();
   const resvg = new Resvg(svgString, {
     fitTo: { mode: "width", value: width },
     font: {
@@ -322,6 +309,158 @@ function renderSvgToPng(svgString, width) {
     },
   });
   return resvg.render().asPng();
+}
+
+/**
+ * Pre-renders and caches the static SVG layers for each rank (1..10) and left vignette
+ * so we never re-rasterize fonts for the numbers on every poster load.
+ */
+function getRankAssets(num) {
+  if (rankAssetCache.has(num)) return rankAssetCache.get(num);
+
+  const isTen = num >= 10;
+  const rankFont = Math.round(TARGET_H * (isTen ? 0.32 : 0.36));
+  const rankX = Math.round(TARGET_W * 0.032);
+  const rankBaseline = Math.round(TARGET_H * 0.29);
+  const tracking = isTen ? -0.12 : 0;
+
+  const maskSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="SF Pro Display"
+    font-weight="700"
+    font-size="${rankFont}"
+    fill="#FFFFFF"
+    letter-spacing="${tracking}em"
+  >${num}</text>
+</svg>`;
+
+  const rankSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Unchanged Smoky Frosted Face -->
+    <linearGradient id="smokyGlass" x1="0%" y1="0%" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#E2E8F0" stop-opacity="0.64"/>
+      <stop offset="30%" stop-color="#94A3B8" stop-opacity="0.44"/>
+      <stop offset="65%" stop-color="#1E293B" stop-opacity="0.50"/>
+      <stop offset="100%" stop-color="#090D16" stop-opacity="0.66"/>
+    </linearGradient>
+
+    <!-- Unchanged 4K Diagonal Specular Glass Sheen -->
+    <linearGradient id="glossShine" x1="0%" y1="0%" x2="80%" y2="85%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.70"/>
+      <stop offset="20%" stop-color="#FFFFFF" stop-opacity="0.30"/>
+      <stop offset="42%" stop-color="#FFFFFF" stop-opacity="0.04"/>
+      <stop offset="43%" stop-color="#FFFFFF" stop-opacity="0.0"/>
+      <stop offset="85%" stop-color="#FFFFFF" stop-opacity="0.0"/>
+      <stop offset="100%" stop-color="#CBD5E1" stop-opacity="0.22"/>
+    </linearGradient>
+
+    <!-- More Prominent Fading Silver Outline (Crisp silver top fading smoothly down) -->
+    <linearGradient id="metallicRim" x1="0%" y1="0%" x2="20%" y2="100%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.88"/>
+      <stop offset="32%" stop-color="#E2E8F0" stop-opacity="0.58"/>
+      <stop offset="68%" stop-color="#94A3B8" stop-opacity="0.26"/>
+      <stop offset="100%" stop-color="#64748B" stop-opacity="0.06"/>
+    </linearGradient>
+
+    <filter id="ambientShadow" x="-45%" y="-45%" width="190%" height="190%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.62"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- 1. Deep Floating Shadow -->
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="SF Pro Display"
+    font-weight="700"
+    font-size="${rankFont}"
+    fill="#000000"
+    fill-opacity="0.01"
+    letter-spacing="${tracking}em"
+    filter="url(#ambientShadow)"
+  >${num}</text>
+
+  <!-- 2. Smoky Translucent Frosted Glass Body (Face unchanged) -->
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="SF Pro Display"
+    font-weight="700"
+    font-size="${rankFont}"
+    fill="url(#smokyGlass)"
+    letter-spacing="${tracking}em"
+  >${num}</text>
+
+  <!-- 3. 4K Shiny Diagonal Specular Reflection (Face unchanged) -->
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="SF Pro Display"
+    font-weight="700"
+    font-size="${rankFont}"
+    fill="url(#glossShine)"
+    letter-spacing="${tracking}em"
+  >${num}</text>
+
+  <!-- 4. Thicker Fading Silver Glass Rim (6.5px) -->
+  <text
+    x="${rankX}"
+    y="${rankBaseline}"
+    font-family="SF Pro Display"
+    font-weight="700"
+    font-size="${rankFont}"
+    fill="none"
+    stroke="url(#metallicRim)"
+    stroke-width="6.5"
+    stroke-linejoin="round"
+    letter-spacing="${tracking}em"
+  >${num}</text>
+
+  <!-- 5. Crisp Top-Left Specular Edge Glint (2.2px) -->
+  <text
+    x="${rankX - 0.7}"
+    y="${rankBaseline - 0.9}"
+    font-family="SF Pro Display"
+    font-weight="700"
+    font-size="${rankFont}"
+    fill="none"
+    stroke="url(#metallicRim)"
+    stroke-width="2.2"
+    stroke-opacity="0.75"
+    stroke-linejoin="round"
+    letter-spacing="${tracking}em"
+  >${num}</text>
+</svg>`;
+
+  const assets = {
+    maskPng: renderSvgToPng(maskSvg, TARGET_W),
+    rankLayer: renderSvgToPng(rankSvg, TARGET_W),
+  };
+  rankAssetCache.set(num, assets);
+  return assets;
+}
+
+async function getVignettePng() {
+  if (CACHED_VIGNETTE_PNG) return CACHED_VIGNETTE_PNG;
+  const vigSvg = Buffer.from(
+    `<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="v" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#000" stop-opacity="0.32"/>
+          <stop offset="42%" stop-color="#000" stop-opacity="0.10"/>
+          <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <rect width="${Math.round(TARGET_W * 0.50)}" height="${TARGET_H}" fill="url(#v)"/>
+    </svg>`
+  );
+  CACHED_VIGNETTE_PNG = await sharp(vigSvg).png().toBuffer();
+  return CACHED_VIGNETTE_PNG;
 }
 
 function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
@@ -394,15 +533,21 @@ async function getTmdbData(imdbId, type, existingTmdbId) {
   const empty = { posterUrl: null, backdropUrl: null, logoUrl: null, genre: null, tmdbId: existingTmdbId || null, imdbRating: null };
   if (!apiKey) return empty;
 
+  const cacheKey = `tmdb:${type}:${imdbId || ""}:${existingTmdbId || ""}`;
+  const cached = tmdbCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < 3600_000) {
+    return cached.data;
+  }
+
   const isSeries = type === "series";
   try {
     let match = null;
     let tmdbId = existingTmdbId ? Number(existingTmdbId) || existingTmdbId : null;
 
     if (!tmdbId && imdbId && String(imdbId).startsWith("tt")) {
-      const findRes = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
+      const findRes = await api.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
         params: { api_key: apiKey, external_source: "imdb_id" },
-        timeout: 4500,
+        timeout: 3500,
       });
       const results = isSeries ? findRes.data.tv_results : findRes.data.movie_results;
       match = results && results[0];
@@ -412,18 +557,27 @@ async function getTmdbData(imdbId, type, existingTmdbId) {
     if (!tmdbId) return empty;
 
     const pathType = isSeries ? `tv/${tmdbId}` : `movie/${tmdbId}`;
-    let det = null;
-    try {
-      const detRes = await axios.get(`https://api.themoviedb.org/3/${pathType}`, {
+    const tt = imdbId && String(imdbId).startsWith("tt") ? imdbId : null;
+
+    const [detRes, omdbRes] = await Promise.allSettled([
+      api.get(`https://api.themoviedb.org/3/${pathType}`, {
         params: {
           api_key: apiKey,
           append_to_response: "images",
           include_image_language: "fi,en,null",
         },
-        timeout: 5000,
-      });
-      det = detRes.data;
-    } catch (_) {}
+        timeout: 4000,
+      }),
+      tt && process.env.OMDB_API_KEY
+        ? api.get("https://www.omdbapi.com/", {
+            params: { i: tt, apikey: process.env.OMDB_API_KEY },
+            timeout: 2800,
+          })
+        : Promise.resolve(null),
+    ]);
+
+    const det = detRes.status === "fulfilled" && detRes.value ? detRes.value.data : null;
+    const omdbData = omdbRes.status === "fulfilled" && omdbRes.value ? omdbRes.value.data : null;
 
     const posterPath = (det && det.poster_path) || (match && match.poster_path);
     const backdropPath = (det && det.backdrop_path) || (match && match.backdrop_path);
@@ -451,23 +605,15 @@ async function getTmdbData(imdbId, type, existingTmdbId) {
     }
 
     let imdbRating = null;
-    const tt = imdbId && String(imdbId).startsWith("tt") ? imdbId : null;
-    if (tt && process.env.OMDB_API_KEY) {
-      try {
-        const o = await axios.get("https://www.omdbapi.com/", {
-          params: { i: tt, apikey: process.env.OMDB_API_KEY },
-          timeout: 3500,
-        });
-        if (o.data && o.data.imdbRating && o.data.imdbRating !== "N/A") {
-          imdbRating = o.data.imdbRating;
-        }
-      } catch (_) {}
-    }
-    if (!imdbRating && det && det.vote_average != null && Number(det.vote_average) > 0) {
+    if (omdbData && omdbData.imdbRating && omdbData.imdbRating !== "N/A") {
+      imdbRating = omdbData.imdbRating;
+    } else if (det && det.vote_average != null && Number(det.vote_average) > 0) {
       imdbRating = Number(det.vote_average).toFixed(1);
     }
 
-    return { posterUrl, backdropUrl, logoUrl, genre, tmdbId, imdbRating };
+    const result = { posterUrl, backdropUrl, logoUrl, genre, tmdbId, imdbRating };
+    tmdbCache.set(cacheKey, { ts: Date.now(), data: result });
+    return result;
   } catch (err) {
     console.error(`TMDB ${imdbId || existingTmdbId}:`, err.message);
     return empty;
@@ -480,19 +626,19 @@ async function fetchTrendingList(type) {
 
   if (type === "movie") {
     try {
-      const res = await axios.get(SNOAK_MOVIES_URL, { timeout: 8000 });
+      const res = await api.get(SNOAK_MOVIES_URL, { timeout: 6000 });
       if (Array.isArray(res.data)) raw = res.data;
     } catch (err) {
       console.error("MDBList movies:", err.message);
     }
   } else {
     try {
-      const res = await axios.get(SNOAK_SHOWS_URL, { timeout: 8000 });
+      const res = await api.get(SNOAK_SHOWS_URL, { timeout: 6000 });
       if (Array.isArray(res.data)) raw = res.data;
     } catch (err) {
       console.error("MDBList shows:", err.message);
       try {
-        const res = await axios.get(SNOAK_SHOWS_ALT_URL, { timeout: 8000 });
+        const res = await api.get(SNOAK_SHOWS_ALT_URL, { timeout: 6000 });
         if (Array.isArray(res.data)) raw = res.data;
       } catch (err2) {
         console.error("MDBList shows alt:", err2.message);
@@ -503,9 +649,9 @@ async function fetchTrendingList(type) {
   if (!raw.length && apiKey) {
     const media = type === "series" ? "tv" : "movie";
     try {
-      const r = await axios.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
+      const r = await api.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
         params: { api_key: apiKey },
-        timeout: 6000,
+        timeout: 5000,
       });
       raw = r.data.results || [];
     } catch (err) {
@@ -521,9 +667,9 @@ async function resolveImdbId(tmdbId, type) {
   if (!apiKey || !tmdbId) return null;
   try {
     const pathType = type === "series" ? `tv/${tmdbId}` : `movie/${tmdbId}`;
-    const r = await axios.get(`https://api.themoviedb.org/3/${pathType}/external_ids`, {
+    const r = await api.get(`https://api.themoviedb.org/3/${pathType}/external_ids`, {
       params: { api_key: apiKey },
-      timeout: 4000,
+      timeout: 3500,
     });
     return r.data && r.data.imdb_id ? r.data.imdb_id : null;
   } catch (_) {
@@ -558,6 +704,12 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
   const hostUrl = getHostUrl(req);
   if (type !== "movie" && type !== "series") return res.json({ metas: [] });
 
+  const cachedCat = catalogCache.get(type);
+  if (cachedCat && Date.now() - cachedCat.ts < 600_000) {
+    res.setHeader("Cache-Control", "public, max-age=900, s-maxage=900");
+    return res.json({ metas: cachedCat.metas });
+  }
+
   try {
     const raw = await fetchTrendingList(type);
     const filtered = await filterTrendingList(raw, type, 10);
@@ -579,18 +731,36 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 
       let background = null;
       let logo = null;
+      let genre = null;
+      let imdbRating = null;
+      let posterUrl = null;
+
       try {
         const tmdbData = await getTmdbData(imdbId, type, tmdbId);
         if (tmdbData.tmdbId) tmdbId = tmdbData.tmdbId;
         background = tmdbData.backdropUrl || null;
         logo = tmdbData.logoUrl || null;
+        genre = tmdbData.genre || null;
+        imdbRating = tmdbData.imdbRating || null;
+        posterUrl = tmdbData.posterUrl || null;
       } catch (_) {}
+
+      const posterParams = new URLSearchParams({
+        id: imdbId || idToUse,
+        rank: String(rank),
+        type,
+        tmdb: String(tmdbId || ""),
+        g: genre || "",
+        r: imdbRating || "",
+        p: posterUrl || "",
+        v: POSTER_CACHE_VERSION,
+      });
 
       const meta = {
         id: idToUse,
         type,
         name: `${rank}. ${title}`,
-        poster: `${hostUrl}/api/poster?id=${encodeURIComponent(imdbId || idToUse)}&rank=${rank}&type=${type}&tmdb=${encodeURIComponent(tmdbId || "")}&v=${POSTER_CACHE_VERSION}`,
+        poster: `${hostUrl}/api/poster?${posterParams.toString()}`,
         posterShape: "poster",
         description: item.description || item.overview || "",
       };
@@ -610,6 +780,8 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
       .sort((a, b) => a.rank - b.rank)
       .map((r) => r.meta);
 
+    catalogCache.set(type, { ts: Date.now(), metas });
+
     res.setHeader("Cache-Control", "public, max-age=900, s-maxage=900");
     res.json({ metas });
   } catch (err) {
@@ -619,232 +791,108 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
 });
 
 app.get("/api/poster", async (req, res) => {
-  const { id, rank, type, tmdb } = req.query;
+  const { id, rank, type, tmdb, g, r, p } = req.query;
   if (!id) return res.status(400).send("Missing ID");
 
+  const num = Math.min(10, Math.max(1, parseInt(rank, 10) || 1));
+  const mediaType = type === "series" ? "series" : "movie";
+  const memKey = `${id}:${num}:${mediaType}:${POSTER_CACHE_VERSION}`;
+
+  if (posterMemoryCache.has(memKey)) {
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=604800, s-maxage=604800, stale-while-revalidate=86400");
+    return res.send(posterMemoryCache.get(memKey));
+  }
+
   try {
-    let posterBuffer = null;
-    const mediaType = type === "series" ? "series" : "movie";
     const cleanImdb = id.startsWith("tt") ? id : null;
     let tmdbId = tmdb || null;
+    let genre = g || null;
+    let imdbRating = r || null;
+    let fallbackPosterUrl = p || null;
 
-    let genre = null;
-    let imdbRating = null;
+    const ppUrl = buildPostersPlusUrl({
+      imdbId: cleanImdb,
+      tmdbId,
+      stremioId: id,
+      type: mediaType,
+      shape: "poster",
+    });
 
-    // Resolve TMDB + genre + rating
-    try {
-      const tmdbData = await getTmdbData(cleanImdb, mediaType, tmdbId);
-      if (tmdbData.tmdbId) tmdbId = tmdbData.tmdbId;
-      genre = tmdbData.genre || null;
-      imdbRating = tmdbData.imdbRating || null;
-    } catch (_) {}
+    const needsMetaLookup = !genre && !imdbRating && !fallbackPosterUrl;
 
-    // Primary: PostersPlus portrait
-    try {
-      const ppUrl = buildPostersPlusUrl({
-        imdbId: cleanImdb,
-        tmdbId,
-        stremioId: id,
-        type: mediaType,
-        shape: "poster",
-      });
-      if (ppUrl) {
-        const r = await axios.get(ppUrl, {
-          responseType: "arraybuffer",
-          timeout: 15000,
-          headers: { Accept: "image/*" },
-          maxRedirects: 5,
-        });
-        if (r.data && r.data.byteLength > 1000) {
-          posterBuffer = Buffer.from(r.data);
-        }
-      }
-    } catch (e) {
-      console.error("PostersPlus:", e.message);
+    const [ppRes, tmdbData] = await Promise.all([
+      api.get(ppUrl, {
+        responseType: "arraybuffer",
+        timeout: 6500,
+        headers: { Accept: "image/*" },
+        maxRedirects: 3,
+      }).catch(() => null),
+      needsMetaLookup
+        ? getTmdbData(cleanImdb, mediaType, tmdbId).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    if (tmdbData) {
+      if (!genre) genre = tmdbData.genre;
+      if (!imdbRating) imdbRating = tmdbData.imdbRating;
+      if (!fallbackPosterUrl) fallbackPosterUrl = tmdbData.posterUrl;
     }
 
-    // Fallback: TMDB portrait poster
+    let posterBuffer = null;
+    if (ppRes && ppRes.data && ppRes.data.byteLength > 1000) {
+      posterBuffer = Buffer.from(ppRes.data);
+    }
+
     if (!posterBuffer) {
-      try {
-        const tmdbData = await getTmdbData(cleanImdb, mediaType, tmdbId);
-        if (tmdbData.posterUrl) {
-          const r = await axios.get(tmdbData.posterUrl, {
-            responseType: "arraybuffer", timeout: 4500,
-          });
-          posterBuffer = Buffer.from(r.data);
+      if (!fallbackPosterUrl && !needsMetaLookup) {
+        const td = await getTmdbData(cleanImdb, mediaType, tmdbId).catch(() => null);
+        if (td) {
+          fallbackPosterUrl = td.posterUrl;
+          if (!genre) genre = td.genre;
+          if (!imdbRating) imdbRating = td.imdbRating;
         }
-        if (!genre) genre = tmdbData.genre;
-        if (!imdbRating) imdbRating = tmdbData.imdbRating;
-      } catch (_) {}
+      }
+      if (fallbackPosterUrl) {
+        try {
+          const tmdbImg = await api.get(fallbackPosterUrl, {
+            responseType: "arraybuffer",
+            timeout: 3500,
+          });
+          posterBuffer = Buffer.from(tmdbImg.data);
+        } catch (_) {}
+      }
     }
 
     if (!posterBuffer) {
       posterBuffer = await sharp({
         create: { width: 500, height: 750, channels: 3, background: { r: 18, g: 18, b: 24 } },
-      }).jpeg().toBuffer();
+      }).png().toBuffer();
     }
 
-    const TARGET_W = 1000;
-    const TARGET_H = 1500; // 2:3 full-bleed portrait
-    const num = parseInt(rank, 10) || 1;
-    const isTen = num >= 10;
-
-    // Full-size 2:3 poster (edge-to-edge card)
-    const fullPoster = await sharp(posterBuffer)
+    const { data: rawPoster, info: rawInfo } = await sharp(posterBuffer)
       .resize(TARGET_W, TARGET_H, { fit: "cover", position: "centre" })
-      .jpeg({ quality: 92, mozjpeg: true })
-      .toBuffer();
+      .raw()
+      .toBuffer({ resolveWithObject: true });
 
-    // EXACT same size and placement as original, using Bold (700)
-    const rankFont = Math.round(TARGET_H * (isTen ? 0.32 : 0.36));
-    const rankX = Math.round(TARGET_W * 0.032);
-    const rankBaseline = Math.round(TARGET_H * 0.29);
-    const tracking = isTen ? -0.12 : 0;
+    const rawInput = {
+      raw: { width: rawInfo.width, height: rawInfo.height, channels: rawInfo.channels },
+    };
 
-    // 1. Alpha mask of the bold rank number for true backdrop-filter refraction
-    const maskSvg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
-  <text
-    x="${rankX}"
-    y="${rankBaseline}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="#FFFFFF"
-    letter-spacing="${tracking}em"
-  >${num}</text>
-</svg>`;
-    const maskPng = renderSvgToPng(maskSvg, TARGET_W);
-
-    // 2. Smoky Frosted Glass Backdrop: Rich color saturation + slightly darkened blur so poster hues glow inside
-    const frostedNumberBg = await sharp(fullPoster)
-      .modulate({ brightness: 0.88, saturation: 1.45 })
-      .blur(22)
-      .ensureAlpha()
-      .composite([{ input: maskPng, blend: "dest-in" }])
-      .png()
-      .toBuffer();
-
-    // 3. Bold Hybrid Frosted Glass with Soft Fading Silver Rim
-    const rankSvg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <!-- Smoky Frosted Gradient (Frosty silver-grey top -> dark translucent smoked glass bottom) -->
-    <linearGradient id="smokyGlass" x1="0%" y1="0%" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#E2E8F0" stop-opacity="0.64"/>
-      <stop offset="30%" stop-color="#94A3B8" stop-opacity="0.44"/>
-      <stop offset="65%" stop-color="#1E293B" stop-opacity="0.50"/>
-      <stop offset="100%" stop-color="#090D16" stop-opacity="0.66"/>
-    </linearGradient>
-
-    <!-- 4K Diagonal Specular Glass Sheen (Shiny lens reflection across the upper half) -->
-    <linearGradient id="glossShine" x1="0%" y1="0%" x2="80%" y2="85%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.70"/>
-      <stop offset="20%" stop-color="#FFFFFF" stop-opacity="0.30"/>
-      <stop offset="42%" stop-color="#FFFFFF" stop-opacity="0.04"/>
-      <stop offset="43%" stop-color="#FFFFFF" stop-opacity="0.0"/>
-      <stop offset="85%" stop-color="#FFFFFF" stop-opacity="0.0"/>
-      <stop offset="100%" stop-color="#CBD5E1" stop-opacity="0.22"/>
-    </linearGradient>
-
-    <!-- Soft Fading Silver Border (Subtle top-left catchlight fading out toward the bottom) -->
-    <linearGradient id="metallicRim" x1="0%" y1="0%" x2="25%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.60"/>
-      <stop offset="28%" stop-color="#E2E8F0" stop-opacity="0.34"/>
-      <stop offset="65%" stop-color="#94A3B8" stop-opacity="0.14"/>
-      <stop offset="100%" stop-color="#64748B" stop-opacity="0.03"/>
-    </linearGradient>
-
-    <!-- Deep Floating Drop Shadow -->
-    <filter id="ambientShadow" x="-45%" y="-45%" width="190%" height="190%">
-      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.62"/>
-      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.45"/>
-    </filter>
-  </defs>
-
-  <!-- 1. Deep Floating Shadow -->
-  <text
-    x="${rankX}"
-    y="${rankBaseline}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="#000000"
-    fill-opacity="0.01"
-    letter-spacing="${tracking}em"
-    filter="url(#ambientShadow)"
-  >${num}</text>
-
-  <!-- 2. Smoky Translucent Frosted Glass Body -->
-  <text
-    x="${rankX}"
-    y="${rankBaseline}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="url(#smokyGlass)"
-    letter-spacing="${tracking}em"
-  >${num}</text>
-
-  <!-- 3. 4K Shiny Diagonal Specular Reflection -->
-  <text
-    x="${rankX}"
-    y="${rankBaseline}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="url(#glossShine)"
-    letter-spacing="${tracking}em"
-  >${num}</text>
-
-  <!-- 4. Soft Fading Silver Glass Rim -->
-  <text
-    x="${rankX}"
-    y="${rankBaseline}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="none"
-    stroke="url(#metallicRim)"
-    stroke-width="3.8"
-    stroke-linejoin="round"
-    letter-spacing="${tracking}em"
-  >${num}</text>
-
-  <!-- 5. Delicate Top-Left Specular Edge Glint -->
-  <text
-    x="${rankX - 0.6}"
-    y="${rankBaseline - 0.8}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="none"
-    stroke="url(#metallicRim)"
-    stroke-width="1.2"
-    stroke-opacity="0.55"
-    stroke-linejoin="round"
-    letter-spacing="${tracking}em"
-  >${num}</text>
-</svg>`;
-
-    const rankLayer = renderSvgToPng(rankSvg, TARGET_W);
-
-    // Soft left vignette so ranks pop on bright posters
-    const vig = Buffer.from(
-      `<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="v" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#000" stop-opacity="0.32"/>
-            <stop offset="42%" stop-color="#000" stop-opacity="0.10"/>
-            <stop offset="100%" stop-color="#000" stop-opacity="0"/>
-          </linearGradient>
-        </defs>
-        <rect width="${Math.round(TARGET_W * 0.50)}" height="${TARGET_H}" fill="url(#v)"/>
-      </svg>`
-    );
+    const { maskPng, rankLayer } = getRankAssets(num);
+    const [vigPng, frostedNumberBg] = await Promise.all([
+      getVignettePng(),
+      sharp(rawPoster, rawInput)
+        .modulate({ brightness: 0.88, saturation: 1.45 })
+        .blur(22)
+        .ensureAlpha()
+        .composite([{ input: maskPng, blend: "dest-in" }])
+        .png({ compressionLevel: 1 })
+        .toBuffer(),
+    ]);
 
     const composites = [
-      { input: vig, top: 0, left: 0 },
+      { input: vigPng, top: 0, left: 0 },
       { input: frostedNumberBg, top: 0, left: 0 },
       { input: rankLayer, top: 0, left: 0 },
     ];
@@ -859,10 +907,12 @@ app.get("/api/poster", async (req, res) => {
       }
     }
 
-    const out = await sharp(fullPoster)
+    const out = await sharp(rawPoster, rawInput)
       .composite(composites)
-      .jpeg({ quality: 92, mozjpeg: true })
+      .jpeg({ quality: 90, mozjpeg: false, chromaSubsampling: "4:2:0" })
       .toBuffer();
+
+    setPosterCache(memKey, out);
 
     res.setHeader("Content-Type", "image/jpeg");
     res.setHeader("Cache-Control", "public, max-age=604800, s-maxage=604800, stale-while-revalidate=86400");
