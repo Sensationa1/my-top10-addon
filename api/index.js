@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "277";
+const POSTER_CACHE_VERSION = "278";
 
 const TARGET_W = 1000;
 const TARGET_H = 1500;
@@ -67,10 +67,10 @@ function setPosterCache(key, buf) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.7.3",
+  version: "2.7.4",
   name: "Top 10 Trending (Apple TV Style)",
   description:
-    "Top 10 from Trakt/MDBList with PostersPlus portraits, adaptive ranks, SF Pro genre · IMDb.",
+    "Top 10 from TMDB trending today with PostersPlus portraits, frosted ranks, SF Pro genre · IMDb.",
   resources: ["catalog"],
   types: ["series", "movie"],
   catalogs: [
@@ -366,21 +366,26 @@ function getRankAssets(num) {
       <stop offset="100%" stop-color="#CBD5E1" stop-opacity="0.22"/>
     </linearGradient>
 
-    <!-- More Prominent Fading Silver Outline (Crisp silver top fading smoothly down) -->
-    <linearGradient id="metallicRim" x1="0%" y1="0%" x2="20%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.75"/>
-      <stop offset="32%" stop-color="#E2E8F0" stop-opacity="0.50"/>
-      <stop offset="68%" stop-color="#94A3B8" stop-opacity="0.06"/>
+    <!-- Professional glass rim: bright top edge, soft fade to transparent (no heavy outline) -->
+    <linearGradient id="metallicRim" x1="0%" y1="0%" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="22%" stop-color="#F1F5F9" stop-opacity="0.32"/>
+      <stop offset="55%" stop-color="#94A3B8" stop-opacity="0.10"/>
       <stop offset="100%" stop-color="#64748B" stop-opacity="0.00"/>
+    </linearGradient>
+    <linearGradient id="rimHighlight" x1="0%" y1="0%" x2="30%" y2="100%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.70"/>
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.00"/>
     </linearGradient>
 
     <filter id="ambientShadow" x="-45%" y="-45%" width="190%" height="190%">
-      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.62"/>
-      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000000" flood-opacity="0.55"/>
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000000" flood-opacity="0.40"/>
     </filter>
   </defs>
 
-  <!-- 1. Deep Floating Shadow -->
+  <!-- 1. Deep floating shadow -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
@@ -393,7 +398,7 @@ function getRankAssets(num) {
     filter="url(#ambientShadow)"
   >${num}</text>
 
-  <!-- 2. Smoky Translucent Frosted Glass Body (Face unchanged) -->
+  <!-- 2. Smoky frosted glass face (kept) -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
@@ -404,7 +409,7 @@ function getRankAssets(num) {
     letter-spacing="${tracking}em"
   >${num}</text>
 
-  <!-- 3. 4K Shiny Diagonal Specular Reflection (Face unchanged) -->
+  <!-- 3. Diagonal specular sheen (kept) -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
@@ -415,7 +420,7 @@ function getRankAssets(num) {
     letter-spacing="${tracking}em"
   >${num}</text>
 
-  <!-- 4. Thicker Fading Silver Glass Rim (6.5px) -->
+  <!-- 4. Single refined fading rim (hairline, not chunky) -->
   <text
     x="${rankX}"
     y="${rankBaseline}"
@@ -424,23 +429,25 @@ function getRankAssets(num) {
     font-size="${rankFont}"
     fill="none"
     stroke="url(#metallicRim)"
-    stroke-width="6.5"
+    stroke-width="${Math.max(2.2, rankFont * 0.0065)}"
     stroke-linejoin="round"
+    stroke-linecap="round"
+    paint-order="stroke fill"
     letter-spacing="${tracking}em"
   >${num}</text>
 
-  <!-- 5. Crisp Top-Left Specular Edge Glint (2.2px) -->
+  <!-- 5. Ultra-fine top-left light catch (barely there) -->
   <text
-    x="${rankX - 0.7}"
-    y="${rankBaseline - 0.9}"
+    x="${rankX - 0.4}"
+    y="${rankBaseline - 0.5}"
     font-family="SF Pro Display"
     font-weight="700"
     font-size="${rankFont}"
     fill="none"
-    stroke="url(#metallicRim)"
-    stroke-width="2.2"
-    stroke-opacity="0.75"
+    stroke="url(#rimHighlight)"
+    stroke-width="${Math.max(1.1, rankFont * 0.003)}"
     stroke-linejoin="round"
+    stroke-linecap="round"
     letter-spacing="${tracking}em"
   >${num}</text>
 </svg>`;
@@ -638,39 +645,38 @@ async function getTmdbData(imdbId, type, existingTmdbId) {
 async function fetchTrendingList(type) {
   let raw = [];
   const apiKey = process.env.TMDB_API_KEY;
+  const media = type === "series" ? "tv" : "movie";
 
-  if (type === "movie") {
-    try {
-      const res = await api.get(SNOAK_MOVIES_URL, { timeout: 6000 });
-      if (Array.isArray(res.data)) raw = res.data;
-    } catch (err) {
-      console.error("MDBList movies:", err.message);
-    }
-  } else {
-    try {
-      const res = await api.get(SNOAK_SHOWS_URL, { timeout: 6000 });
-      if (Array.isArray(res.data)) raw = res.data;
-    } catch (err) {
-      console.error("MDBList shows:", err.message);
-      try {
-        const res = await api.get(SNOAK_SHOWS_ALT_URL, { timeout: 6000 });
-        if (Array.isArray(res.data)) raw = res.data;
-      } catch (err2) {
-        console.error("MDBList shows alt:", err2.message);
-      }
-    }
-  }
-
-  if (!raw.length && apiKey) {
-    const media = type === "series" ? "tv" : "movie";
+  // Primary: TMDB trending today (movies / TV)
+  if (apiKey) {
     try {
       const r = await api.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
         params: { api_key: apiKey },
-        timeout: 5000,
+        timeout: 6000,
       });
       raw = r.data.results || [];
     } catch (err) {
-      console.error(`TMDB fallback ${media}:`, err.message);
+      console.error(`TMDB trending ${media}/day:`, err.message);
+    }
+  }
+
+  // Fallback: MDBList if TMDB empty
+  if (!raw.length) {
+    try {
+      if (type === "movie") {
+        const res = await api.get(SNOAK_MOVIES_URL, { timeout: 6000 });
+        if (Array.isArray(res.data)) raw = res.data;
+      } else {
+        try {
+          const res = await api.get(SNOAK_SHOWS_URL, { timeout: 6000 });
+          if (Array.isArray(res.data)) raw = res.data;
+        } catch (_) {
+          const res = await api.get(SNOAK_SHOWS_ALT_URL, { timeout: 6000 });
+          if (Array.isArray(res.data)) raw = res.data;
+        }
+      }
+    } catch (err) {
+      console.error("MDBList fallback:", err.message);
     }
   }
 
