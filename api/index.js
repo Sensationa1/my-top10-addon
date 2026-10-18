@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "279";
+const POSTER_CACHE_VERSION = "280";
 
 const TARGET_W = 1000;
 const TARGET_H = 1500;
@@ -73,11 +73,14 @@ async function refreshCatalog(type, hostUrl) {
   try {
     const metas = await buildCatalogMetas(type, hostUrl);
     catalogCache.set(type, { ts: Date.now(), metas });
-    // Fire-and-forget poster warm for top items
-    for (const m of metas.slice(0, 10)) {
-      if (m.poster) {
-        api.get(m.poster, { responseType: "arraybuffer", timeout: 20000, httpAgent, httpsAgent }).catch(() => {});
-      }
+    // Warm PostersPlus+rank renders into memory (sequential pairs to avoid melting PP)
+    const urls = metas.map((m) => m.poster).filter(Boolean);
+    for (let i = 0; i < urls.length; i += 2) {
+      await Promise.all(
+        urls.slice(i, i + 2).map((u) =>
+          api.get(u, { responseType: "arraybuffer", timeout: 25000, httpAgent, httpsAgent }).catch(() => null)
+        )
+      );
     }
   } catch (e) {
     console.error("refreshCatalog", type, e.message);
@@ -88,7 +91,7 @@ async function refreshCatalog(type, hostUrl) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.7.5",
+  version: "2.7.6",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from TMDB trending today with PostersPlus portraits, frosted ranks, SF Pro genre · IMDb.",
@@ -847,11 +850,14 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
     res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=3600");
     res.json({ metas });
     // Warm posters after responding (don't await)
-    setImmediate(() => {
-      for (const m of metas) {
-        if (m.poster) {
-          api.get(m.poster, { responseType: "arraybuffer", timeout: 25000, httpAgent, httpsAgent }).catch(() => {});
-        }
+    setImmediate(async () => {
+      const urls = metas.map((m) => m.poster).filter(Boolean);
+      for (let i = 0; i < urls.length; i += 2) {
+        await Promise.all(
+          urls.slice(i, i + 2).map((u) =>
+            api.get(u, { responseType: "arraybuffer", timeout: 25000, httpAgent, httpsAgent }).catch(() => null)
+          )
+        );
       }
     });
   } catch (err) {
@@ -864,6 +870,18 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
   }
 });
 
+
+app.get("/api/warm", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  const hostUrl = getHostUrl(req);
+  // Return immediately; work in background
+  res.json({ ok: true, warming: true });
+  setImmediate(() => {
+    refreshCatalog("series", hostUrl);
+    refreshCatalog("movie", hostUrl);
+  });
+});
+
 app.get("/api/poster", async (req, res) => {
   const { id, rank, type, tmdb, g, r, p } = req.query;
   if (!id) return res.status(400).send("Missing ID");
@@ -874,7 +892,7 @@ app.get("/api/poster", async (req, res) => {
 
   if (posterMemoryCache.has(memKey)) {
     res.setHeader("Content-Type", "image/jpeg");
-    res.setHeader("Cache-Control", "public, max-age=604800, s-maxage=604800, stale-while-revalidate=86400");
+    res.setHeader("Cache-Control", "public, max-age=2592000, s-maxage=2592000, stale-while-revalidate=604800, immutable");
     return res.send(posterMemoryCache.get(memKey));
   }
 
@@ -885,62 +903,33 @@ app.get("/api/poster", async (req, res) => {
     let imdbRating = r || null;
     let fallbackPosterUrl = p || null;
 
-    // Fast path: use TMDB poster URL from catalog (p=) first — usually <200ms
-    // PostersPlus only if needed (slow upstream)
+    // ONLY PostersPlus — never TMDB/other art as the base poster
     let posterBuffer = null;
-    if (fallbackPosterUrl && /^https?:\/\//i.test(fallbackPosterUrl)) {
-      try {
-        const r = await api.get(fallbackPosterUrl, {
-          responseType: "arraybuffer",
-          timeout: 3500,
-          headers: { Accept: "image/*" },
-          maxRedirects: 3,
-        });
-        if (r.data && r.data.byteLength > 1000) posterBuffer = Buffer.from(r.data);
-      } catch (_) {}
-    }
-
-    if (!posterBuffer) {
-      const ppUrl = buildPostersPlusUrl({
-        imdbId: cleanImdb,
-        tmdbId,
-        stremioId: id,
-        type: mediaType,
-        shape: "poster",
+    const ppUrl = buildPostersPlusUrl({
+      imdbId: cleanImdb,
+      tmdbId,
+      stremioId: id,
+      type: mediaType,
+      shape: "poster",
+    });
+    try {
+      const ppRes = await api.get(ppUrl, {
+        responseType: "arraybuffer",
+        timeout: 12000,
+        headers: { Accept: "image/*" },
+        maxRedirects: 5,
+        httpAgent,
+        httpsAgent,
       });
-      try {
-        const ppRes = await api.get(ppUrl, {
-          responseType: "arraybuffer",
-          timeout: 4000,
-          headers: { Accept: "image/*" },
-          maxRedirects: 3,
-        });
-        if (ppRes.data && ppRes.data.byteLength > 1000) {
-          posterBuffer = Buffer.from(ppRes.data);
-        }
-      } catch (_) {}
+      if (ppRes.data && ppRes.data.byteLength > 1000) {
+        posterBuffer = Buffer.from(ppRes.data);
+      }
+    } catch (e) {
+      console.error("PostersPlus:", e.message);
     }
 
     if (!posterBuffer) {
-      try {
-        const td = await getTmdbData(cleanImdb, mediaType, tmdbId).catch(() => null);
-        if (td) {
-          if (!genre) genre = td.genre;
-          if (!imdbRating) imdbRating = td.imdbRating;
-          if (td.posterUrl) {
-            const tmdbImg = await api.get(td.posterUrl, {
-              responseType: "arraybuffer",
-              timeout: 3500,
-            });
-            if (tmdbImg.data && tmdbImg.data.byteLength > 1000) {
-              posterBuffer = Buffer.from(tmdbImg.data);
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    if (!posterBuffer) {
+      // Solid placeholder only if PP fails — not another poster provider
       posterBuffer = await sharp({
         create: { width: 500, height: 750, channels: 3, background: { r: 18, g: 18, b: 24 } },
       }).png().toBuffer();
@@ -960,7 +949,7 @@ app.get("/api/poster", async (req, res) => {
       getVignettePng(),
       sharp(rawPoster, rawInput)
         .modulate({ brightness: 0.88, saturation: 1.45 })
-        .blur(22)
+        .blur(14)
         .ensureAlpha()
         .composite([{ input: maskPng, blend: "dest-in" }])
         .png({ compressionLevel: 1 })
@@ -991,7 +980,7 @@ app.get("/api/poster", async (req, res) => {
     setPosterCache(memKey, out);
 
     res.setHeader("Content-Type", "image/jpeg");
-    res.setHeader("Cache-Control", "public, max-age=604800, s-maxage=604800, stale-while-revalidate=86400");
+    res.setHeader("Cache-Control", "public, max-age=2592000, s-maxage=2592000, stale-while-revalidate=604800, immutable");
     return res.send(out);
   } catch (err) {
     console.error("Poster error:", err.message, err.stack);

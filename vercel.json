@@ -5,11 +5,26 @@
       "src": "api/index.js",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["fonts/**"]
+        "includeFiles": ["fonts/**"],
+        "maxDuration": 60
       }
     }
   ],
   "routes": [
+    {
+      "src": "/api/poster(.*)",
+      "headers": {
+        "Cache-Control": "public, max-age=2592000, s-maxage=2592000, stale-while-revalidate=604800"
+      },
+      "dest": "api/index.js"
+    },
+    {
+      "src": "/catalog/(.*)",
+      "headers": {
+        "Cache-Control": "public, max-age=120, s-maxage=600, stale-while-revalidate=3600"
+      },
+      "dest": "api/index.js"
+    },
     {
       "src": "/(.*)",
       "dest": "api/index.js"
