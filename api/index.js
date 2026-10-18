@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "278";
+const POSTER_CACHE_VERSION = "279";
 
 const TARGET_W = 1000;
 const TARGET_H = 1500;
@@ -58,16 +58,37 @@ const rankAssetCache = new Map();    // rank (1..10) -> { maskPng, rankLayer }
 let CACHED_VIGNETTE_PNG = null;
 
 function setPosterCache(key, buf) {
-  if (posterMemoryCache.size >= 25) {
+  if (posterMemoryCache.size >= 60) {
     const oldestKey = posterMemoryCache.keys().next().value;
     posterMemoryCache.delete(oldestKey);
   }
   posterMemoryCache.set(key, buf);
 }
 
+/** Background catalog refresh — never blocks the response */
+const catalogRefreshing = new Set();
+async function refreshCatalog(type, hostUrl) {
+  if (catalogRefreshing.has(type)) return;
+  catalogRefreshing.add(type);
+  try {
+    const metas = await buildCatalogMetas(type, hostUrl);
+    catalogCache.set(type, { ts: Date.now(), metas });
+    // Fire-and-forget poster warm for top items
+    for (const m of metas.slice(0, 10)) {
+      if (m.poster) {
+        api.get(m.poster, { responseType: "arraybuffer", timeout: 20000, httpAgent, httpsAgent }).catch(() => {});
+      }
+    }
+  } catch (e) {
+    console.error("refreshCatalog", type, e.message);
+  } finally {
+    catalogRefreshing.delete(type);
+  }
+}
+
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.7.4",
+  version: "2.7.5",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from TMDB trending today with PostersPlus portraits, frosted ranks, SF Pro genre · IMDb.",
@@ -718,54 +739,54 @@ app.get("/manifest.json", (req, res) => {
   res.json(MANIFEST);
 });
 
-app.get("/catalog/:type/:id.json", async (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "*");
-  const { type } = req.params;
-  const hostUrl = getHostUrl(req);
-  if (type !== "movie" && type !== "series") return res.json({ metas: [] });
+/**
+ * Fast catalog build: TMDB trending fields only + parallel IMDb resolve.
+ * No per-item getTmdbData (that was the main catalog delay).
+ */
+async function buildCatalogMetas(type, hostUrl) {
+  const raw = await fetchTrendingList(type);
+  // Prefer items that already look like TMDB results (have genre_ids / original_language)
+  const filtered = await filterTrendingList(raw, type, 14);
+  const slice = filtered.slice(0, 12);
 
-  const cachedCat = catalogCache.get(type);
-  if (cachedCat && Date.now() - cachedCat.ts < 600_000) {
-    res.setHeader("Cache-Control", "public, max-age=900, s-maxage=900");
-    return res.json({ metas: cachedCat.metas });
-  }
-
-  try {
-    const raw = await fetchTrendingList(type);
-    const filtered = await filterTrendingList(raw, type, 10);
-
-    const metaPromises = filtered.map(async (item, i) => {
+  const rows = await Promise.all(
+    slice.map(async (item, i) => {
       let tmdbId = item.tmdb_id || item.tmdbid || item.id || null;
       if (tmdbId && String(tmdbId).startsWith("tt")) tmdbId = null;
-      let imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id) || null;
-      
+      let imdbId =
+        item.imdb_id ||
+        item.imdbid ||
+        (item.external_ids && item.external_ids.imdb_id) ||
+        null;
       if (!imdbId && tmdbId) {
         imdbId = await resolveImdbId(tmdbId, type);
       }
-      
       const idToUse = imdbId || (tmdbId ? `tmdb:${tmdbId}` : null);
       if (!idToUse) return null;
 
+      // Genre + rating from trending payload (instant)
+      let genre = null;
+      const gids = Array.isArray(item.genre_ids) ? item.genre_ids : [];
+      if (gids.length && GENRE_MAP[gids[0]]) genre = GENRE_MAP[gids[0]];
+      else if (item.genres && item.genres[0]) {
+        genre = String(item.genres[0].name || item.genres[0]).toUpperCase();
+      }
+      let imdbRating = null;
+      if (item.vote_average != null && Number(item.vote_average) > 0) {
+        imdbRating = Number(item.vote_average).toFixed(1);
+      }
+
+      const posterPath = item.poster_path || null;
+      const posterUrl = posterPath
+        ? `https://image.tmdb.org/t/p/w780${posterPath}`
+        : null;
+      const backdropPath = item.backdrop_path || null;
+      const background = backdropPath
+        ? `https://image.tmdb.org/t/p/w1280${backdropPath}`
+        : null;
+
       const title = item.title || item.name || "Unknown";
       const rank = i + 1;
-
-      let background = null;
-      let logo = null;
-      let genre = null;
-      let imdbRating = null;
-      let posterUrl = null;
-
-      try {
-        const tmdbData = await getTmdbData(imdbId, type, tmdbId);
-        if (tmdbData.tmdbId) tmdbId = tmdbData.tmdbId;
-        background = tmdbData.backdropUrl || null;
-        logo = tmdbData.logoUrl || null;
-        genre = tmdbData.genre || null;
-        imdbRating = tmdbData.imdbRating || null;
-        posterUrl = tmdbData.posterUrl || null;
-      } catch (_) {}
-
       const posterParams = new URLSearchParams({
         id: imdbId || idToUse,
         rank: String(rank),
@@ -783,30 +804,62 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
         name: `${rank}. ${title}`,
         poster: `${hostUrl}/api/poster?${posterParams.toString()}`,
         posterShape: "poster",
-        description: item.description || item.overview || "",
+        description: item.overview || item.description || "",
       };
-      
       if (background) meta.background = background;
-      if (logo) meta.logo = logo;
-      
       const rd = item.release_date || item.first_air_date || item.released || null;
       if (rd) meta.releaseInfo = String(rd).slice(0, 10);
-
       return { meta, rank };
-    });
+    })
+  );
 
-    const resolved = await Promise.all(metaPromises);
-    const metas = resolved
-      .filter((r) => r && r.meta)
-      .sort((a, b) => a.rank - b.rank)
-      .map((r) => r.meta);
+  return rows
+    .filter((r) => r && r.meta)
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, 10)
+    .map((r) => r.meta);
+}
 
+app.get("/catalog/:type/:id.json", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "*");
+  const { type } = req.params;
+  const hostUrl = getHostUrl(req);
+  if (type !== "movie" && type !== "series") return res.json({ metas: [] });
+
+  const cachedCat = catalogCache.get(type);
+  const maxAge = 30 * 60 * 1000; // 30 min fresh
+  const staleAge = 6 * 60 * 60 * 1000; // serve stale up to 6h
+
+  // Instant path: any cache hit returns immediately
+  if (cachedCat && Date.now() - cachedCat.ts < staleAge) {
+    res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=3600");
+    res.json({ metas: cachedCat.metas });
+    if (Date.now() - cachedCat.ts > maxAge) {
+      refreshCatalog(type, hostUrl); // background
+    }
+    return;
+  }
+
+  try {
+    const metas = await buildCatalogMetas(type, hostUrl);
     catalogCache.set(type, { ts: Date.now(), metas });
-
-    res.setHeader("Cache-Control", "public, max-age=900, s-maxage=900");
+    res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=3600");
     res.json({ metas });
+    // Warm posters after responding (don't await)
+    setImmediate(() => {
+      for (const m of metas) {
+        if (m.poster) {
+          api.get(m.poster, { responseType: "arraybuffer", timeout: 25000, httpAgent, httpsAgent }).catch(() => {});
+        }
+      }
+    });
   } catch (err) {
     console.error(`Catalog (${type}):`, err.message);
+    if (cachedCat) {
+      res.setHeader("Cache-Control", "public, max-age=60");
+      return res.json({ metas: cachedCat.metas });
+    }
     res.json({ metas: [] });
   }
 });
@@ -832,57 +885,59 @@ app.get("/api/poster", async (req, res) => {
     let imdbRating = r || null;
     let fallbackPosterUrl = p || null;
 
-    const ppUrl = buildPostersPlusUrl({
-      imdbId: cleanImdb,
-      tmdbId,
-      stremioId: id,
-      type: mediaType,
-      shape: "poster",
-    });
-
-    const needsMetaLookup = !genre && !imdbRating && !fallbackPosterUrl;
-
-    const [ppRes, tmdbData] = await Promise.all([
-      api.get(ppUrl, {
-        responseType: "arraybuffer",
-        timeout: 6500,
-        headers: { Accept: "image/*" },
-        maxRedirects: 3,
-      }).catch(() => null),
-      needsMetaLookup
-        ? getTmdbData(cleanImdb, mediaType, tmdbId).catch(() => null)
-        : Promise.resolve(null),
-    ]);
-
-    if (tmdbData) {
-      if (!genre) genre = tmdbData.genre;
-      if (!imdbRating) imdbRating = tmdbData.imdbRating;
-      if (!fallbackPosterUrl) fallbackPosterUrl = tmdbData.posterUrl;
-    }
-
+    // Fast path: use TMDB poster URL from catalog (p=) first — usually <200ms
+    // PostersPlus only if needed (slow upstream)
     let posterBuffer = null;
-    if (ppRes && ppRes.data && ppRes.data.byteLength > 1000) {
-      posterBuffer = Buffer.from(ppRes.data);
+    if (fallbackPosterUrl && /^https?:\/\//i.test(fallbackPosterUrl)) {
+      try {
+        const r = await api.get(fallbackPosterUrl, {
+          responseType: "arraybuffer",
+          timeout: 3500,
+          headers: { Accept: "image/*" },
+          maxRedirects: 3,
+        });
+        if (r.data && r.data.byteLength > 1000) posterBuffer = Buffer.from(r.data);
+      } catch (_) {}
     }
 
     if (!posterBuffer) {
-      if (!fallbackPosterUrl && !needsMetaLookup) {
+      const ppUrl = buildPostersPlusUrl({
+        imdbId: cleanImdb,
+        tmdbId,
+        stremioId: id,
+        type: mediaType,
+        shape: "poster",
+      });
+      try {
+        const ppRes = await api.get(ppUrl, {
+          responseType: "arraybuffer",
+          timeout: 4000,
+          headers: { Accept: "image/*" },
+          maxRedirects: 3,
+        });
+        if (ppRes.data && ppRes.data.byteLength > 1000) {
+          posterBuffer = Buffer.from(ppRes.data);
+        }
+      } catch (_) {}
+    }
+
+    if (!posterBuffer) {
+      try {
         const td = await getTmdbData(cleanImdb, mediaType, tmdbId).catch(() => null);
         if (td) {
-          fallbackPosterUrl = td.posterUrl;
           if (!genre) genre = td.genre;
           if (!imdbRating) imdbRating = td.imdbRating;
+          if (td.posterUrl) {
+            const tmdbImg = await api.get(td.posterUrl, {
+              responseType: "arraybuffer",
+              timeout: 3500,
+            });
+            if (tmdbImg.data && tmdbImg.data.byteLength > 1000) {
+              posterBuffer = Buffer.from(tmdbImg.data);
+            }
+          }
         }
-      }
-      if (fallbackPosterUrl) {
-        try {
-          const tmdbImg = await api.get(fallbackPosterUrl, {
-            responseType: "arraybuffer",
-            timeout: 3500,
-          });
-          posterBuffer = Buffer.from(tmdbImg.data);
-        } catch (_) {}
-      }
+      } catch (_) {}
     }
 
     if (!posterBuffer) {
@@ -943,5 +998,18 @@ app.get("/api/poster", async (req, res) => {
     return res.status(500).send("Error rendering poster");
   }
 });
+
+// Warm rank SVG + catalogs so first user hit is instant
+try {
+  for (let n = 1; n <= 10; n++) getRankAssets(n);
+  getVignettePng().catch(() => {});
+} catch (_) {}
+setTimeout(() => {
+  const base = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "http://127.0.0.1:3000";
+  refreshCatalog("series", base);
+  refreshCatalog("movie", base);
+}, 500);
 
 module.exports = app;
