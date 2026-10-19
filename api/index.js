@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "282";
+const POSTER_CACHE_VERSION = "283";
 
 const TARGET_W = 1000;
 const TARGET_H = 1500;
@@ -91,7 +91,7 @@ async function refreshCatalog(type, hostUrl) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.7.8",
+  version: "2.7.9",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from TMDB trending today with PostersPlus portraits, frosted ranks, SF Pro genre · IMDb.",
@@ -200,13 +200,12 @@ function shouldExcludeTrendingItem(item, type) {
   if (isObscureInternational(item)) return true;
 
   const genreIds = Array.isArray(item.genre_ids) ? item.genre_ids.map(Number) : [];
-  const isSeries = type === "series";
+  // Exclude ALL animation (movies + series), not only anime/kids
+  if (genreIds.includes(TMDB_ANIMATION_ID)) return true;
 
+  const isSeries = type === "series";
   if (isSeries) {
     if (genreIds.some((g) => EXCLUDE_TV_GENRES.has(g))) return true;
-    if (genreIds.includes(TMDB_ANIMATION_ID) && (genreIds.includes(10762) || genreIds.includes(FAMILY_GENRE))) {
-      return true;
-    }
   }
 
   const lang = normalizeLang(item.original_language);
@@ -900,7 +899,7 @@ async function buildCatalogMetas(type, hostUrl) {
       const meta = {
         id: idToUse,
         type,
-        name: `${rank}. ${title}`,
+        name: title,
         poster: `${hostUrl}/api/poster?${posterParams.toString()}`,
         posterShape: "poster",
         description: item.overview || item.description || "",
