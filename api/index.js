@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "283";
+const POSTER_CACHE_VERSION = "284";
 
 const TARGET_W = 1000;
 const TARGET_H = 1500;
@@ -72,7 +72,7 @@ async function refreshCatalog(type, hostUrl) {
   catalogRefreshing.add(type);
   try {
     const metas = await buildCatalogMetas(type, hostUrl);
-    catalogCache.set(type, { ts: Date.now(), metas });
+    if (metas.length) catalogCache.set(type, { ts: Date.now(), metas });
     // Warm PostersPlus+rank renders into memory (sequential pairs to avoid melting PP)
     const urls = metas.map((m) => m.poster).filter(Boolean);
     for (let i = 0; i < urls.length; i += 2) {
@@ -91,7 +91,7 @@ async function refreshCatalog(type, hostUrl) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.7.9",
+  version: "2.8.0",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from TMDB trending today with PostersPlus portraits, frosted ranks, SF Pro genre · IMDb.",
@@ -761,22 +761,21 @@ async function fetchTrendingList(type) {
   const media = type === "series" ? "tv" : "movie";
 
   // Primary: TMDB trending today (movies / TV)
-  if (apiKey) {
-    try {
-      const [r1, r2] = await Promise.all([
-        api.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
-          params: { api_key: apiKey, page: 1 },
-          timeout: 6000,
-        }),
-        api.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
-          params: { api_key: apiKey, page: 2 },
-          timeout: 6000,
-        }).catch(() => null),
-      ]);
-      raw = [...(r1.data.results || []), ...((r2 && r2.data && r2.data.results) || [])];
-    } catch (err) {
-      console.error(`TMDB trending ${media}/day:`, err.message);
-    }
+  const tmdbKey = apiKey || "dc1ae8c943c805800112762a3afbc1b6";
+  try {
+    const [r1, r2] = await Promise.all([
+      api.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
+        params: { api_key: tmdbKey, page: 1 },
+        timeout: 8000,
+      }),
+      api.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
+        params: { api_key: tmdbKey, page: 2 },
+        timeout: 8000,
+      }).catch(() => null),
+    ]);
+    raw = [...(r1.data.results || []), ...((r2 && r2.data && r2.data.results) || [])];
+  } catch (err) {
+    console.error(`TMDB trending ${media}/day:`, err.message);
   }
 
   // Fallback: MDBList if TMDB empty
@@ -803,8 +802,8 @@ async function fetchTrendingList(type) {
 }
 
 async function resolveImdbId(tmdbId, type) {
-  const apiKey = process.env.TMDB_API_KEY;
-  if (!apiKey || !tmdbId) return null;
+  const apiKey = process.env.TMDB_API_KEY || "dc1ae8c943c805800112762a3afbc1b6";
+  if (!tmdbId) return null;
   try {
     const pathType = type === "series" ? `tv/${tmdbId}` : `movie/${tmdbId}`;
     const r = await api.get(`https://api.themoviedb.org/3/${pathType}/external_ids`, {
@@ -844,8 +843,8 @@ app.get("/manifest.json", (req, res) => {
 async function buildCatalogMetas(type, hostUrl) {
   const raw = await fetchTrendingList(type);
   // Prefer items that already look like TMDB results (have genre_ids / original_language)
-  const filtered = await filterTrendingList(raw, type, 14);
-  const slice = filtered.slice(0, 12);
+  const filtered = await filterTrendingList(raw, type, 25);
+  const slice = filtered.slice(0, 25);
 
   const rows = await Promise.all(
     slice.map(async (item, i) => {
@@ -859,8 +858,8 @@ async function buildCatalogMetas(type, hostUrl) {
       if (!imdbId && tmdbId) {
         imdbId = await resolveImdbId(tmdbId, type);
       }
-      const idToUse = imdbId || (tmdbId ? `tmdb:${tmdbId}` : null);
-      if (!idToUse) return null;
+      if (!imdbId || !String(imdbId).startsWith("tt")) return null;
+      const idToUse = imdbId;
 
       // Genre + rating from trending payload (instant)
       let genre = null;
@@ -926,38 +925,43 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
   if (type !== "movie" && type !== "series") return res.json({ metas: [] });
 
   const cachedCat = catalogCache.get(type);
-  const maxAge = 30 * 60 * 1000; // 30 min fresh
-  const staleAge = 6 * 60 * 60 * 1000; // serve stale up to 6h
+  const maxAge = 30 * 60 * 1000;
+  const staleAge = 6 * 60 * 60 * 1000;
+  const hasGoodCache =
+    cachedCat &&
+    Array.isArray(cachedCat.metas) &&
+    cachedCat.metas.length > 0 &&
+    Date.now() - cachedCat.ts < staleAge;
 
-  // Instant path: any cache hit returns immediately
-  if (cachedCat && Date.now() - cachedCat.ts < staleAge) {
+  // Never serve cached EMPTY list (movies broke after digital filter)
+  if (hasGoodCache) {
     res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=3600");
     res.json({ metas: cachedCat.metas });
-    if (Date.now() - cachedCat.ts > maxAge) {
-      refreshCatalog(type, hostUrl); // background
-    }
+    if (Date.now() - cachedCat.ts > maxAge) refreshCatalog(type, hostUrl);
     return;
   }
+  if (cachedCat) catalogCache.delete(type);
 
   try {
     const metas = await buildCatalogMetas(type, hostUrl);
-    catalogCache.set(type, { ts: Date.now(), metas });
+    if (metas.length) catalogCache.set(type, { ts: Date.now(), metas });
     res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=3600");
     res.json({ metas });
-    // Warm posters after responding (don't await)
-    setImmediate(async () => {
-      const urls = metas.map((m) => m.poster).filter(Boolean);
-      for (let i = 0; i < urls.length; i += 2) {
-        await Promise.all(
-          urls.slice(i, i + 2).map((u) =>
-            api.get(u, { responseType: "arraybuffer", timeout: 25000, httpAgent, httpsAgent }).catch(() => null)
-          )
-        );
-      }
-    });
+    if (metas.length) {
+      setImmediate(async () => {
+        const urls = metas.map((m) => m.poster).filter(Boolean);
+        for (let i = 0; i < urls.length; i += 2) {
+          await Promise.all(
+            urls.slice(i, i + 2).map((u) =>
+              api.get(u, { responseType: "arraybuffer", timeout: 25000, httpAgent, httpsAgent }).catch(() => null)
+            )
+          );
+        }
+      });
+    }
   } catch (err) {
     console.error(`Catalog (${type}):`, err.message);
-    if (cachedCat) {
+    if (hasGoodCache) {
       res.setHeader("Cache-Control", "public, max-age=60");
       return res.json({ metas: cachedCat.metas });
     }
