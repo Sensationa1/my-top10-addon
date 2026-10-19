@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "281";
+const POSTER_CACHE_VERSION = "282";
 
 const TARGET_W = 1000;
 const TARGET_H = 1500;
@@ -91,7 +91,7 @@ async function refreshCatalog(type, hostUrl) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.7.7",
+  version: "2.7.8",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from TMDB trending today with PostersPlus portraits, frosted ranks, SF Pro genre · IMDb.",
@@ -277,11 +277,10 @@ function isFutureDate(s) {
 function isUnreleasedItem(item, type) {
   if (type === "movie") {
     const rd = item.release_date || item.released || null;
-    if (!rd) return true; // no date → treat as not safely released
-    if (isFutureDate(rd)) return true;
+    // Future theatrical/digital date → out. Missing date → keep (trending usually has dates)
+    if (rd && isFutureDate(rd)) return true;
     return false;
   }
-  // series: exclude not-yet-aired shows
   const fd = item.first_air_date || item.release_date || null;
   if (fd && isFutureDate(fd)) return true;
   return false;
@@ -346,32 +345,24 @@ async function hasDigitalRelease(tmdbId) {
 
 async function filterTrendingList(raw, type, limit = 10) {
   const out = [];
-  const chunkSize = 12;
-  // Pull extra candidates — digital filter may drop theatrical-only
-  const want = Math.max(limit * 3, 30);
+  const chunkSize = 20;
   for (let i = 0; i < raw.length && out.length < limit; i += chunkSize) {
     const chunk = raw.slice(i, i + chunkSize);
+    // TMDB trending already has genre_ids + dates — keep this sync-fast
     const processed = await Promise.all(
       chunk.map(async (item) => {
         if (isAnimeItem(item)) return null;
+        // Only enrich when language/genres missing (MDBList fallback path)
         const enriched = await enrichItemFromTmdb(item, type);
         if (shouldExcludeTrendingItem(enriched, type)) return null;
+        // Drop not-yet-released (future premiere / first air)
         if (isUnreleasedItem(enriched, type)) return null;
-
-        if (type === "movie") {
-          let tmdbId = enriched.tmdb_id || enriched.tmdbid || enriched.id || null;
-          if (tmdbId && String(tmdbId).startsWith("tt")) tmdbId = null;
-          // Must have a past digital (or physical) release date on TMDB
-          const digital = await hasDigitalRelease(tmdbId);
-          if (!digital) return null;
-        }
         return enriched;
       })
     );
     for (const res of processed) {
       if (res && out.length < limit) out.push(res);
     }
-    if (i > want && out.length >= limit) break;
   }
   return out;
 }
@@ -773,11 +764,17 @@ async function fetchTrendingList(type) {
   // Primary: TMDB trending today (movies / TV)
   if (apiKey) {
     try {
-      const r = await api.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
-        params: { api_key: apiKey },
-        timeout: 6000,
-      });
-      raw = r.data.results || [];
+      const [r1, r2] = await Promise.all([
+        api.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
+          params: { api_key: apiKey, page: 1 },
+          timeout: 6000,
+        }),
+        api.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
+          params: { api_key: apiKey, page: 2 },
+          timeout: 6000,
+        }).catch(() => null),
+      ]);
+      raw = [...(r1.data.results || []), ...((r2 && r2.data && r2.data.results) || [])];
     } catch (err) {
       console.error(`TMDB trending ${media}/day:`, err.message);
     }
