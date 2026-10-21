@@ -21,10 +21,10 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "284";
+const POSTER_CACHE_VERSION = "285";
 
-const TARGET_W = 1000;
-const TARGET_H = 1500;
+const TARGET_W = 720;
+const TARGET_H = 1080;
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -55,6 +55,7 @@ const tmdbCache = new Map();
 const catalogCache = new Map();
 const posterMemoryCache = new Map(); // key -> Buffer (max 25 posters in RAM)
 const rankAssetCache = new Map();    // rank (1..10) -> { maskPng, rankLayer }
+const genrePngCache = new Map();     // "GENRE|7.5" -> png buffer
 let CACHED_VIGNETTE_PNG = null;
 
 function setPosterCache(key, buf) {
@@ -91,7 +92,7 @@ async function refreshCatalog(type, hostUrl) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.8.0",
+  version: "2.8.1",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 from TMDB trending today with PostersPlus portraits, frosted ranks, SF Pro genre · IMDb.",
@@ -1028,52 +1029,43 @@ app.get("/api/poster", async (req, res) => {
     }
 
     if (!posterBuffer) {
-      // Solid placeholder only if PP fails — not another poster provider
       posterBuffer = await sharp({
-        create: { width: 500, height: 750, channels: 3, background: { r: 18, g: 18, b: 24 } },
-      }).png().toBuffer();
+        create: { width: 360, height: 540, channels: 3, background: { r: 18, g: 18, b: 24 } },
+      }).jpeg().toBuffer();
     }
 
-    const { data: rawPoster, info: rawInfo } = await sharp(posterBuffer)
-      .resize(TARGET_W, TARGET_H, { fit: "cover", position: "centre" })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
-    const rawInput = {
-      raw: { width: rawInfo.width, height: rawInfo.height, channels: rawInfo.channels },
-    };
-
-    const { maskPng, rankLayer } = getRankAssets(num);
-    const [vigPng, frostedNumberBg] = await Promise.all([
-      getVignettePng(),
-      sharp(rawPoster, rawInput)
-        .modulate({ brightness: 0.88, saturation: 1.45 })
-        .blur(14)
-        .ensureAlpha()
-        .composite([{ input: maskPng, blend: "dest-in" }])
-        .png({ compressionLevel: 1 })
-        .toBuffer(),
-    ]);
+    // FAST path: no full-poster blur (that was the slowdown vs digit PNGs).
+    // Rank glass is pure SVG (pre-cached). One resize + one composite.
+    const { rankLayer } = getRankAssets(num);
+    const vigPng = await getVignettePng();
 
     const composites = [
       { input: vigPng, top: 0, left: 0 },
-      { input: frostedNumberBg, top: 0, left: 0 },
       { input: rankLayer, top: 0, left: 0 },
     ];
 
     const genreSvg = buildGenreRatingSvg(TARGET_W, TARGET_H, genre, imdbRating);
     if (genreSvg) {
       try {
-        const genrePng = renderSvgToPng(genreSvg, TARGET_W);
+        const gKey = `${genre || ""}|${imdbRating || ""}`;
+        let genrePng = genrePngCache.get(gKey);
+        if (!genrePng) {
+          genrePng = renderSvgToPng(genreSvg, TARGET_W);
+          if (genrePngCache.size > 80) {
+            genrePngCache.delete(genrePngCache.keys().next().value);
+          }
+          genrePngCache.set(gKey, genrePng);
+        }
         composites.push({ input: genrePng, top: 0, left: 0 });
       } catch (e) {
         console.error("Genre overlay:", e.message);
       }
     }
 
-    const out = await sharp(rawPoster, rawInput)
+    const out = await sharp(posterBuffer)
+      .resize(TARGET_W, TARGET_H, { fit: "cover", position: "centre" })
       .composite(composites)
-      .jpeg({ quality: 90, mozjpeg: false, chromaSubsampling: "4:2:0" })
+      .jpeg({ quality: 85, chromaSubsampling: "4:2:0" })
       .toBuffer();
 
     setPosterCache(memKey, out);
