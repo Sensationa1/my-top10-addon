@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "285";
+const POSTER_CACHE_VERSION = "286";
 
 const TARGET_W = 720;
 const TARGET_H = 1080;
@@ -68,21 +68,26 @@ function setPosterCache(key, buf) {
 
 /** Background catalog refresh — never blocks the response */
 const catalogRefreshing = new Set();
+async function warmPosterUrls(urls) {
+  // Higher concurrency — posters already rate-limit at PostersPlus; empty row is worse
+  for (let i = 0; i < urls.length; i += 4) {
+    await Promise.all(
+      urls.slice(i, i + 4).map((u) =>
+        api.get(u, { responseType: "arraybuffer", timeout: 30000, httpAgent, httpsAgent }).catch(() => null)
+      )
+    );
+  }
+}
+
 async function refreshCatalog(type, hostUrl) {
   if (catalogRefreshing.has(type)) return;
   catalogRefreshing.add(type);
   try {
     const metas = await buildCatalogMetas(type, hostUrl);
-    if (metas.length) catalogCache.set(type, { ts: Date.now(), metas });
-    // Warm PostersPlus+rank renders into memory (sequential pairs to avoid melting PP)
-    const urls = metas.map((m) => m.poster).filter(Boolean);
-    for (let i = 0; i < urls.length; i += 2) {
-      await Promise.all(
-        urls.slice(i, i + 2).map((u) =>
-          api.get(u, { responseType: "arraybuffer", timeout: 25000, httpAgent, httpsAgent }).catch(() => null)
-        )
-      );
-    }
+    if (!metas.length) return;
+    // Warm ranked posters FIRST, then publish list — avoids blank posters on refresh
+    await warmPosterUrls(metas.map((m) => m.poster).filter(Boolean));
+    catalogCache.set(type, { ts: Date.now(), metas });
   } catch (e) {
     console.error("refreshCatalog", type, e.message);
   } finally {
@@ -92,10 +97,10 @@ async function refreshCatalog(type, hostUrl) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.8.1",
+  version: "2.8.2",
   name: "Top 10 Trending (Apple TV Style)",
   description:
-    "Top 10 from TMDB trending today with PostersPlus portraits, frosted ranks, SF Pro genre · IMDb.",
+    "Top 10 TMDB trending today (anime allowed). PostersPlus + frosted ranks. Cached warm on refresh.",
   resources: ["catalog"],
   types: ["series", "movie"],
   catalogs: [
@@ -197,22 +202,14 @@ function isObscureInternational(item) {
 
 function shouldExcludeTrendingItem(item, type) {
   if (!item) return true;
-  if (isAnimeItem(item)) return true;
   if (isObscureInternational(item)) return true;
 
   const genreIds = Array.isArray(item.genre_ids) ? item.genre_ids.map(Number) : [];
-  // Exclude ALL animation (movies + series), not only anime/kids
-  if (genreIds.includes(TMDB_ANIMATION_ID)) return true;
-
+  // Anime / animation ALLOWED again. Still drop news / kids / talk shows.
   const isSeries = type === "series";
   if (isSeries) {
     if (genreIds.some((g) => EXCLUDE_TV_GENRES.has(g))) return true;
   }
-
-  const lang = normalizeLang(item.original_language);
-  const isJapanese = lang === "ja" || lang === "jp";
-  if (isJapanese && genreIds.includes(TMDB_ANIMATION_ID)) return true;
-  if (ANIME_TITLE_RE.test(String(item.title || item.name || ""))) return true;
 
   return false;
 }
@@ -934,35 +931,32 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
     cachedCat.metas.length > 0 &&
     Date.now() - cachedCat.ts < staleAge;
 
-  // Never serve cached EMPTY list (movies broke after digital filter)
+  // Always prefer any non-empty cache so the row never goes blank during refresh
   if (hasGoodCache) {
     res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=3600");
     res.json({ metas: cachedCat.metas });
-    if (Date.now() - cachedCat.ts > maxAge) refreshCatalog(type, hostUrl);
+    if (Date.now() - cachedCat.ts > maxAge) refreshCatalog(type, hostUrl); // swaps only after warm
     return;
   }
-  if (cachedCat) catalogCache.delete(type);
 
   try {
     const metas = await buildCatalogMetas(type, hostUrl);
-    if (metas.length) catalogCache.set(type, { ts: Date.now(), metas });
+    if (metas.length) {
+      // Cold start: warm a few posters in parallel then respond (rest in background)
+      const urls = metas.map((m) => m.poster).filter(Boolean);
+      await Promise.all(
+        urls.slice(0, 4).map((u) =>
+          api.get(u, { responseType: "arraybuffer", timeout: 20000, httpAgent, httpsAgent }).catch(() => null)
+        )
+      );
+      catalogCache.set(type, { ts: Date.now(), metas });
+      setImmediate(() => warmPosterUrls(urls.slice(4)));
+    }
     res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=3600");
     res.json({ metas });
-    if (metas.length) {
-      setImmediate(async () => {
-        const urls = metas.map((m) => m.poster).filter(Boolean);
-        for (let i = 0; i < urls.length; i += 2) {
-          await Promise.all(
-            urls.slice(i, i + 2).map((u) =>
-              api.get(u, { responseType: "arraybuffer", timeout: 25000, httpAgent, httpsAgent }).catch(() => null)
-            )
-          );
-        }
-      });
-    }
   } catch (err) {
     console.error(`Catalog (${type}):`, err.message);
-    if (hasGoodCache) {
+    if (cachedCat && cachedCat.metas && cachedCat.metas.length) {
       res.setHeader("Cache-Control", "public, max-age=60");
       return res.json({ metas: cachedCat.metas });
     }
