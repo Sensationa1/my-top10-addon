@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "287";
+const POSTER_CACHE_VERSION = "288";
 
 const TARGET_W = 720;
 const TARGET_H = 1080;
@@ -68,6 +68,40 @@ function setPosterCache(key, buf) {
 
 /** Background catalog refresh — never blocks the response */
 const catalogRefreshing = new Set();
+
+/** Catalog day key: flips at 12:00 Europe/Helsinki so the list updates once per day at noon. */
+function getCatalogDayKey(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Helsinki",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  let y = Number(get("year"));
+  let m = Number(get("month"));
+  let d = Number(get("day"));
+  const hour = Number(get("hour"));
+  // Before noon → still yesterday's catalog day
+  if (hour < 12) {
+    const utcGuess = Date.UTC(y, m - 1, d) - 24 * 60 * 60 * 1000;
+    const prev = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Helsinki",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date(utcGuess));
+    const gp = (t) => prev.find((p) => p.type === t)?.value;
+    y = Number(gp("year"));
+    m = Number(gp("month"));
+    d = Number(gp("day"));
+  }
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+
 async function warmPosterUrls(urls) {
   // Higher concurrency — posters already rate-limit at PostersPlus; empty row is worse
   for (let i = 0; i < urls.length; i += 4) {
@@ -87,7 +121,7 @@ async function refreshCatalog(type, hostUrl) {
     if (!metas.length) return;
     // Warm ranked posters FIRST, then publish list — avoids blank posters on refresh
     await warmPosterUrls(metas.map((m) => m.poster).filter(Boolean));
-    catalogCache.set(type, { ts: Date.now(), metas });
+    catalogCache.set(type, { ts: Date.now(), metas, dayKey: getCatalogDayKey() });
   } catch (e) {
     console.error("refreshCatalog", type, e.message);
   } finally {
@@ -97,10 +131,10 @@ async function refreshCatalog(type, hostUrl) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.8.3",
+  version: "2.8.4",
   name: "Top 10 Trending (Apple TV Style)",
   description:
-    "Top 10 TMDB trending today (anime allowed). PostersPlus + frosted ranks. Cached warm on refresh.",
+    "Top 10 TMDB trending. Refreshes daily at 12:00 Europe/Helsinki. PostersPlus + frosted ranks.",
   resources: ["catalog"],
   types: ["series", "movie"],
   catalogs: [
@@ -619,7 +653,7 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("fbs", "photoreal");
   params.set("lmwr", "0.80");
   params.set("lmhr", "0.40");
-  params.set("lbr", "0.12");
+  params.set("lbr", "0.15");
   params.set("cg", "0");
   params.set("rsd", "0");
   params.set("hur", "1");
@@ -900,36 +934,40 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
   if (type !== "movie" && type !== "series") return res.json({ metas: [] });
 
   const cachedCat = catalogCache.get(type);
-  const maxAge = 30 * 60 * 1000;
-  const staleAge = 6 * 60 * 60 * 1000;
+  const dayKey = getCatalogDayKey();
   const hasGoodCache =
     cachedCat &&
     Array.isArray(cachedCat.metas) &&
     cachedCat.metas.length > 0 &&
-    Date.now() - cachedCat.ts < staleAge;
+    cachedCat.dayKey === dayKey;
 
-  // Always prefer any non-empty cache so the row never goes blank during refresh
+  // Same catalog day (noon→noon Helsinki): serve cache, no rebuild
   if (hasGoodCache) {
-    res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=3600");
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ metas: cachedCat.metas });
+  }
+
+  // New day (or empty): rebuild. Keep old list visible until warm finishes if we have one.
+  if (cachedCat && cachedCat.metas && cachedCat.metas.length) {
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60");
     res.json({ metas: cachedCat.metas });
-    if (Date.now() - cachedCat.ts > maxAge) refreshCatalog(type, hostUrl); // swaps only after warm
+    refreshCatalog(type, hostUrl); // swaps after posters warm, new dayKey
     return;
   }
 
   try {
     const metas = await buildCatalogMetas(type, hostUrl);
     if (metas.length) {
-      // Cold start: warm a few posters in parallel then respond (rest in background)
       const urls = metas.map((m) => m.poster).filter(Boolean);
       await Promise.all(
         urls.slice(0, 4).map((u) =>
           api.get(u, { responseType: "arraybuffer", timeout: 20000, httpAgent, httpsAgent }).catch(() => null)
         )
       );
-      catalogCache.set(type, { ts: Date.now(), metas });
+      catalogCache.set(type, { ts: Date.now(), metas, dayKey });
       setImmediate(() => warmPosterUrls(urls.slice(4)));
     }
-    res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=3600");
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400");
     res.json({ metas });
   } catch (err) {
     console.error(`Catalog (${type}):`, err.message);
