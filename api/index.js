@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "286";
+const POSTER_CACHE_VERSION = "287";
 
 const TARGET_W = 720;
 const TARGET_H = 1080;
@@ -97,7 +97,7 @@ async function refreshCatalog(type, hostUrl) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.8.2",
+  version: "2.8.3",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 TMDB trending today (anime allowed). PostersPlus + frosted ranks. Cached warm on refresh.",
@@ -286,18 +286,14 @@ function isUnreleasedItem(item, type) {
 /** TMDB release type 4 = Digital. Cache per movie id. */
 const digitalReleaseCache = new Map();
 async function hasDigitalRelease(tmdbId) {
-  if (!tmdbId) return false;
+  if (!tmdbId) return true;
   const key = String(tmdbId);
   if (digitalReleaseCache.has(key)) return digitalReleaseCache.get(key);
-  const apiKey = process.env.TMDB_API_KEY;
-  if (!apiKey) {
-    digitalReleaseCache.set(key, true); // no key → don't block
-    return true;
-  }
+  const apiKey = process.env.TMDB_API_KEY || "dc1ae8c943c805800112762a3afbc1b6";
   try {
     const r = await api.get(`https://api.themoviedb.org/3/movie/${tmdbId}/release_dates`, {
       params: { api_key: apiKey },
-      timeout: 4000,
+      timeout: 5000,
       httpAgent,
       httpsAgent,
     });
@@ -305,10 +301,12 @@ async function hasDigitalRelease(tmdbId) {
     const today = new Date();
     const t0 = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
     let ok = false;
+    let sawDigitalOrPhysical = false;
     for (const country of results) {
       for (const rel of country.release_dates || []) {
-        // type 4 = Digital, 5 = Physical (also home release)
+        // 4 = Digital, 5 = Physical
         if (rel.type !== 4 && rel.type !== 5) continue;
+        sawDigitalOrPhysical = true;
         const d = parseYmd(rel.release_date);
         if (d && d.getTime() <= t0) {
           ok = true;
@@ -317,43 +315,32 @@ async function hasDigitalRelease(tmdbId) {
       }
       if (ok) break;
     }
-    // Fallback: if no digital/physical rows at all, allow if theatrical already out
-    // (some regions omit digital tags). Still never allow pure future titles.
-    if (!ok) {
-      for (const country of results) {
-        for (const rel of country.release_dates || []) {
-          if (rel.type === 3 || rel.type === 2) {
-            const d = parseYmd(rel.release_date);
-            if (d && d.getTime() <= t0) {
-              // theatrical out — still require digital preference: reject theatrical-only
-              // User asked digital only → leave ok false
-            }
-          }
-        }
-      }
-    }
+    // No digital/physical rows in TMDB at all → treat as not digitally out yet
+    if (!sawDigitalOrPhysical) ok = false;
     digitalReleaseCache.set(key, ok);
     return ok;
   } catch (_) {
-    digitalReleaseCache.set(key, false);
-    return false;
+    // API blip: do not empty the whole movie row
+    digitalReleaseCache.set(key, true);
+    return true;
   }
 }
 
 async function filterTrendingList(raw, type, limit = 10) {
   const out = [];
-  const chunkSize = 20;
+  const chunkSize = 15;
   for (let i = 0; i < raw.length && out.length < limit; i += chunkSize) {
     const chunk = raw.slice(i, i + chunkSize);
-    // TMDB trending already has genre_ids + dates — keep this sync-fast
     const processed = await Promise.all(
       chunk.map(async (item) => {
-        if (isAnimeItem(item)) return null;
-        // Only enrich when language/genres missing (MDBList fallback path)
         const enriched = await enrichItemFromTmdb(item, type);
         if (shouldExcludeTrendingItem(enriched, type)) return null;
-        // Drop not-yet-released (future premiere / first air)
         if (isUnreleasedItem(enriched, type)) return null;
+        // Movies: only if digital/physical home release already out
+        if (type === "movie") {
+          const tid = enriched.tmdb_id || enriched.tmdbid || enriched.id;
+          if (tid && !(await hasDigitalRelease(tid))) return null;
+        }
         return enriched;
       })
     );
@@ -597,60 +584,50 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("type", type === "series" ? "series" : "movie");
   params.set("shape", shape || "poster");
   params.set("pc", "stremio_tv_nuvio");
+  params.set("sbi", "0.010");
   params.set("tmdb_key", process.env.TMDB_API_KEY || "dc1ae8c943c805800112762a3afbc1b6");
   params.set("mdblist_key", process.env.MDBLIST_API_KEY || "1cym9fkqsk4hvwtesjthxsrr9");
-  params.set("tg", "medium");
+  params.set("tg", "off");
   params.set("bgr", "custom");
-  params.set("bgo", "1");
+  params.set("bgo", "0.3");
   params.set("bgh", "0.55");
   params.set("tvso", "1");
+  params.set("vpct", "1");
   params.set("vpcb", "1");
-  params.set("vcsa", "0.00");
-  params.set("vcb", "0.20");
-  params.set("vcli", "0.40");
-  params.set("vcs", "reference");
-  params.set("hy", "1");
+  params.set("vcsa", "1.55");
+  params.set("vcb", "0.60");
+  params.set("vcli", "1.60");
+  params.set("vcs", "muted");
+  params.set("hg", "1");
   params.set("sm", "hidden");
-  params.set("_bgr", "custom");
-  params.set("_bgo", "0.2");
-  params.set("_bgh", "0.75");
-  params.set("_vcsa", "0.20");
-  params.set("_vcb", "0.05");
-  params.set("_vcl", "1");
-  params.set("_vcs", "muted");
-  params.set("_hg", "1");
-  params.set("_hr", "1");
-  params.set("_tx", "1");
+  params.set("_vcsa", "2.00");
+  params.set("_vcb", "1.00");
+  params.set("_vcli", "1.30");
+  params.set("_vcs", "shade");
+  params.set("_hg", "0");
+  params.set("_sm", "sash");
   params.set("bp", "top_left");
-  params.set("_bs", "1.70");
-  params.set("_is", "1.35");
-  params.set("_lp", "center");
-  params.set("_ip", "bottom_center");
-  params.set("_pc", "1");
-  params.set("_soo10", "1");
-  params.set("_bc", "mixed");
-  params.set("_bf", "1.15");
-  params.set("_bgop", "0.00");
-  params.set("_bsa", "0.00");
-  params.set("_bx", "-0.040");
-  params.set("_by", "-0.060");
-  params.set("_ls", "1.30");
+  params.set("_cl", "off");
   params.set("fti", "1");
-  params.set("mw", "lb:.2,pc:.2,im:.6");
-  params.set("tw", "rt:.1,pc:.25,im:.61,tm:.04");
+  params.set("trs", "direct");
+  params.set("mw", "lb:.25,pc:.1,im:.4,mal:.25");
+  params.set("tw", "pc:.1,im:.5,mc:.15,mal:.25");
   params.set("rdm", "0");
-  params.set("oas", "top_rated");
+  params.set("ll", "fi");
+  params.set("lp", "native,custom,english,neutral,native_if_original,original,text");
+  params.set("lls", "fi");
   params.set("fbs", "photoreal");
   params.set("lmwr", "0.80");
   params.set("lmhr", "0.40");
-  params.set("lbr", "0.19");
+  params.set("lbr", "0.12");
   params.set("cg", "0");
+  params.set("rsd", "0");
   params.set("hur", "1");
-  params.set("bdm", "7");
-  params.set("bg1", "tr:4:network");
-  params.set("_bdm", "7");
-  params.set("_bg1", "");
-  params.set("bls", "1.10");
+  params.set(
+    "_sp",
+    "default2,-pic_noms,-gg_noms,-trending_broad,-new_release,-new_season,-season_finale,-studio,-blockbuster,-returning,-airing,-premiere,-physical,-streaming,trending@0,cinema@1,just_added@3,production@4,renewed@5,cast@9,director@10,cult@11,foreign@12,true_story@13,short_film@14,mini_series@15,binge_ready@16"
+  );
+  params.set("bdm", "0");
   return `https://postersplus.slokker.cc/poster?${params.toString()}`;
 }
 
@@ -841,7 +818,7 @@ app.get("/manifest.json", (req, res) => {
 async function buildCatalogMetas(type, hostUrl) {
   const raw = await fetchTrendingList(type);
   // Prefer items that already look like TMDB results (have genre_ids / original_language)
-  const filtered = await filterTrendingList(raw, type, 25);
+  const filtered = await filterTrendingList(raw, type, 40);
   const slice = filtered.slice(0, 25);
 
   const rows = await Promise.all(
