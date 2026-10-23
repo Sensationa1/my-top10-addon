@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "288";
+const POSTER_CACHE_VERSION = "291";
 
 const TARGET_W = 720;
 const TARGET_H = 1080;
@@ -59,7 +59,7 @@ const genrePngCache = new Map();     // "GENRE|7.5" -> png buffer
 let CACHED_VIGNETTE_PNG = null;
 
 function setPosterCache(key, buf) {
-  if (posterMemoryCache.size >= 60) {
+  if (posterMemoryCache.size >= 80) {
     const oldestKey = posterMemoryCache.keys().next().value;
     posterMemoryCache.delete(oldestKey);
   }
@@ -103,14 +103,12 @@ function getCatalogDayKey(now = new Date()) {
 
 
 async function warmPosterUrls(urls) {
-  // Higher concurrency — posters already rate-limit at PostersPlus; empty row is worse
-  for (let i = 0; i < urls.length; i += 4) {
-    await Promise.all(
-      urls.slice(i, i + 4).map((u) =>
-        api.get(u, { responseType: "arraybuffer", timeout: 30000, httpAgent, httpsAgent }).catch(() => null)
-      )
-    );
-  }
+  // Top 10 only — fire all in parallel so ranks are in memory before the row is shown
+  await Promise.all(
+    urls.map((u) =>
+      api.get(u, { responseType: "arraybuffer", timeout: 45000, httpAgent, httpsAgent }).catch(() => null)
+    )
+  );
 }
 
 async function refreshCatalog(type, hostUrl) {
@@ -131,7 +129,7 @@ async function refreshCatalog(type, hostUrl) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.8.4",
+  version: "2.8.7",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 TMDB trending. Refreshes daily at 12:00 Europe/Helsinki. PostersPlus + frosted ranks.",
@@ -234,12 +232,19 @@ function isObscureInternational(item) {
   return true;
 }
 
+function isCyberpunkEdgerunners(item) {
+  const t = String(item.title || item.name || item.original_name || item.original_title || "").toLowerCase();
+  // Only allowed anime exception
+  return /cyberpunk/.test(t) && /edge\s*runners|edgerunners/.test(t);
+}
+
 function shouldExcludeTrendingItem(item, type) {
   if (!item) return true;
   if (isObscureInternational(item)) return true;
+  // Block all anime except Cyberpunk: Edgerunners
+  if (isAnimeItem(item) && !isCyberpunkEdgerunners(item)) return true;
 
   const genreIds = Array.isArray(item.genre_ids) ? item.genre_ids.map(Number) : [];
-  // Anime / animation ALLOWED again. Still drop news / kids / talk shows.
   const isSeries = type === "series";
   if (isSeries) {
     if (genreIds.some((g) => EXCLUDE_TV_GENRES.has(g))) return true;
@@ -621,7 +626,7 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("sbi", "0.010");
   params.set("tmdb_key", process.env.TMDB_API_KEY || "dc1ae8c943c805800112762a3afbc1b6");
   params.set("mdblist_key", process.env.MDBLIST_API_KEY || "1cym9fkqsk4hvwtesjthxsrr9");
-  params.set("tg", "off");
+  params.set("tg", "low");
   params.set("bgr", "custom");
   params.set("bgo", "0.3");
   params.set("bgh", "0.55");
@@ -634,12 +639,14 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("vcs", "muted");
   params.set("hg", "1");
   params.set("sm", "hidden");
+  params.set("_bgr", "off");
   params.set("_vcsa", "2.00");
   params.set("_vcb", "1.00");
   params.set("_vcli", "1.30");
   params.set("_vcs", "shade");
-  params.set("_hg", "0");
-  params.set("_sm", "sash");
+  params.set("_hy", "1");
+  params.set("_hr", "1");
+  params.set("_art", "original");
   params.set("bp", "top_left");
   params.set("_cl", "off");
   params.set("fti", "1");
@@ -647,20 +654,16 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("mw", "lb:.25,pc:.1,im:.4,mal:.25");
   params.set("tw", "pc:.1,im:.5,mc:.15,mal:.25");
   params.set("rdm", "0");
+  params.set("pp", "random");
   params.set("ll", "fi");
   params.set("lp", "native,custom,english,neutral,native_if_original,original,text");
   params.set("lls", "fi");
   params.set("fbs", "photoreal");
   params.set("lmwr", "0.80");
   params.set("lmhr", "0.40");
-  params.set("lbr", "0.15");
+  params.set("lbr", "0.20");
   params.set("cg", "0");
-  params.set("rsd", "0");
   params.set("hur", "1");
-  params.set(
-    "_sp",
-    "default2,-pic_noms,-gg_noms,-trending_broad,-new_release,-new_season,-season_finale,-studio,-blockbuster,-returning,-airing,-premiere,-physical,-streaming,trending@0,cinema@1,just_added@3,production@4,renewed@5,cast@9,director@10,cult@11,foreign@12,true_story@13,short_film@14,mini_series@15,binge_ready@16"
-  );
   params.set("bdm", "0");
   return `https://postersplus.slokker.cc/poster?${params.toString()}`;
 }
@@ -959,13 +962,9 @@ app.get("/catalog/:type/:id.json", async (req, res) => {
     const metas = await buildCatalogMetas(type, hostUrl);
     if (metas.length) {
       const urls = metas.map((m) => m.poster).filter(Boolean);
-      await Promise.all(
-        urls.slice(0, 4).map((u) =>
-          api.get(u, { responseType: "arraybuffer", timeout: 20000, httpAgent, httpsAgent }).catch(() => null)
-        )
-      );
+      // Full warm before publish — prevents empty poster slots on first open
+      await warmPosterUrls(urls);
       catalogCache.set(type, { ts: Date.now(), metas, dayKey });
-      setImmediate(() => warmPosterUrls(urls.slice(4)));
     }
     res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400");
     res.json({ metas });
@@ -1074,7 +1073,7 @@ app.get("/api/poster", async (req, res) => {
     const out = await sharp(posterBuffer)
       .resize(TARGET_W, TARGET_H, { fit: "cover", position: "centre" })
       .composite(composites)
-      .jpeg({ quality: 85, chromaSubsampling: "4:2:0" })
+      .jpeg({ quality: 82, chromaSubsampling: "4:2:0", mozjpeg: true })
       .toBuffer();
 
     setPosterCache(memKey, out);
