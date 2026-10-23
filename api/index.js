@@ -21,7 +21,7 @@ const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
 const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
 const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
 
-const POSTER_CACHE_VERSION = "291";
+const POSTER_CACHE_VERSION = "292";
 
 const TARGET_W = 720;
 const TARGET_H = 1080;
@@ -129,7 +129,7 @@ async function refreshCatalog(type, hostUrl) {
 
 const MANIFEST = {
   id: "com.sensationa1.top10.cloud",
-  version: "2.8.7",
+  version: "2.8.8",
   name: "Top 10 Trending (Apple TV Style)",
   description:
     "Top 10 TMDB trending. Refreshes daily at 12:00 Europe/Helsinki. PostersPlus + frosted ranks.",
@@ -626,7 +626,7 @@ function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
   params.set("sbi", "0.010");
   params.set("tmdb_key", process.env.TMDB_API_KEY || "dc1ae8c943c805800112762a3afbc1b6");
   params.set("mdblist_key", process.env.MDBLIST_API_KEY || "1cym9fkqsk4hvwtesjthxsrr9");
-  params.set("tg", "low");
+  params.set("tg", "off");
   params.set("bgr", "custom");
   params.set("bgo", "0.3");
   params.set("bgh", "0.55");
