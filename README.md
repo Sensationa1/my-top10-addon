@@ -1,4 +1,4 @@
-# Nuvio Top 10 · Platinum v5.1
+# Nuvio Top 10 · Platinum v5.2
 
 Drop-in update for your **existing** personal Vercel add-on. The manifest ID and movie/series catalog IDs remain unchanged, so your Xperience home rows should not need re-adding.
 
@@ -35,3 +35,9 @@ Run `npm install`, then `npm test`. Seven automated mocked tests cover independe
 **Performance:** Catalog JSON is not blocked on poster rendering. The first uncached catalog request still requires TMDB digital-release and IMDb lookups; on Vercel instances without previous memory, it may take longer. CDN caching is used for subsequent requests, and there is no persistent database. These are mocked functional tests, not a live API or Nuvio production benchmark.
 
 **Visual preview (older preview image is no longer exact; it only illustrates the premium direction):** `Nuvio_Top10_v4_rank_preview.png` uses placeholder artwork and shows the design direction; actual poster art continues coming from your Posters+ instance.
+
+
+## v5.2 refinements
+- Pulled ranks **2–9** slightly inward and reduced them a touch so they no longer clip against the left edge.
+- Switched displayed rating to **IMDb-first** lookup through MDBList API, with safe fallback if unavailable.
+- Updated Posters+ preset to your exact Slokker instance configuration.

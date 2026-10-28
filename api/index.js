@@ -1,5 +1,5 @@
 "use strict";
-// Top 10 for Nuvio | v5.1.0. Strict digital-release gate; premium side-rank cinematic layout.
+// Top 10 for Nuvio | v5.2.0. Strict digital-release gate; premium side-rank cinematic layout.
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -27,7 +27,7 @@ const POSTERSPLUS_BASE = (process.env.POSTERSPLUS_BASE_URL || 'https://posterspl
 const POSTER_WIDTH = Math.max(720, Math.min(2160, Number(process.env.POSTER_WIDTH || 1080) || 1080));
 const TARGET_W = Math.round(POSTER_WIDTH / 2) * 2;
 const TARGET_H = Math.round(TARGET_W * 1.5);
-const POSTER_CACHE_VERSION = 'v510-side-rank-clean-meta';
+const POSTER_CACHE_VERSION = 'v520-side-rank-imdb';
 const DIGITAL_RELEASE_STRICT = process.env.DIGITAL_RELEASE_STRICT !== 'false';
 const digitalCache = new Map();
 const digitalInFlight = new Map();
@@ -40,6 +40,7 @@ const posterCache = new Map();
 const posterInFlight = new Map();
 const rankAssetCache = new Map();
 const genrePngCache = new Map();
+const imdbRatingCache = new Map();
 let CACHED_BACKGROUND_OVERLAY_PNG = null;
 let CACHED_CARD_FRAME_PNG = null;
 
@@ -58,7 +59,7 @@ const MANIFEST = {
   id: 'com.sensationa1.top10.cloud',
   version: '5.1.0',
   name: 'Top 10 Trending (Apple TV Style)',
-  description: 'Premium cinematic Top 10 for Nuvio. Strict digital-release movies with elite side-rank poster design and refined Apple TV-style metadata.',
+  description: 'Premium cinematic Top 10 for Nuvio. Strict digital-release movies with elite side-rank poster design, IMDb ratings, and refined Apple TV-style metadata.',
   resources: ['catalog'],
   types: ['movie','series'],
   idPrefixes: ['tt'],
@@ -245,12 +246,56 @@ function tmdbBackdrop(item){
   const path=String(item.backdrop_path || '');
   return /^\/[\w\-.]+$/.test(path) ? `https://image.tmdb.org/t/p/w1280${path}` : '';
 }
-function rankPosterUrl(host,item,type,rank,imdb){
+function rankPosterUrl(host,item,type,rank,imdb,displayRating){
   const p = new URLSearchParams({id:imdb, rank:String(rank),type,
     tmdb:cleanTmdb(item.tmdb_id||item.tmdbid||item.id),
-    g:genreFromItem(item), r: Number(item.vote_average)>0?Number(item.vote_average).toFixed(1):'',
+    g:genreFromItem(item), r: displayRating || '',
     p:tmdbPoster(item), n:String(item.title||item.name||''), v:POSTER_CACHE_VERSION});
   return `${host}/api/poster?${p.toString()}`;
+}
+
+function normalizeRating(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n.toFixed(1) : '';
+}
+function extractImdbRating(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  const candidates = [
+    payload.imdb_rating,
+    payload.imdbRating,
+    payload?.ratings?.imdb,
+    payload?.scores?.imdb,
+    payload?.score?.imdb,
+    payload?.score_average?.imdb,
+    payload?.rating?.imdb,
+    payload?.imdbrating,
+    payload?.imdb?.rating
+  ];
+  for (const c of candidates) {
+    const v = normalizeRating(c);
+    if (v) return v;
+  }
+  return '';
+}
+async function imdbRatingFor(tmdbId, type, fallback) {
+  const tmdb = cleanTmdb(tmdbId);
+  const fallbackRating = normalizeRating(fallback);
+  if (!tmdb || !MDBLIST_KEY) return fallbackRating;
+  const key = `${type}:${tmdb}`;
+  const cached = imdbRatingCache.get(key);
+  if (cached && Date.now() - cached.ts < 7 * 24 * 60 * 60 * 1000) return cached.value || fallbackRating;
+  const mediaPath = type === 'series' ? 'show' : 'movie';
+  const url = `https://api.mdblist.com/tmdb/${mediaPath}/${tmdb}?apikey=${MDBLIST_KEY}`;
+  try {
+    const res = await api.get(url, { timeout: Number(process.env.MDBLIST_TIMEOUT_MS || 3500) });
+    const value = extractImdbRating(res.data) || fallbackRating;
+    imdbRatingCache.set(key, { value, ts: Date.now() });
+    return value;
+  } catch (err) {
+    LOG('IMDb rating lookup failed', type, tmdb, err.message);
+    imdbRatingCache.set(key, { value: fallbackRating, ts: Date.now() });
+    return fallbackRating;
+  }
 }
 async function buildCatalog(type,host) {
   const raw = await fetchCandidates(type);
@@ -273,7 +318,9 @@ async function buildCatalog(type,host) {
           if (digital!==true) return null;
         }
         const id=await resolveImdbId(item,type);
-        return validImdb(id) ? {item,id} : null;
+        if (!validImdb(id)) return null;
+        const imdbRating = await imdbRatingFor(item.tmdb_id||item.tmdbid||item.id, type, item.vote_average);
+        return {item,id,imdbRating};
       });
       for(const result of results) {
         if(!result || usedImdb.has(result.id) || resolved.length>=10)continue;
@@ -290,9 +337,9 @@ async function buildCatalog(type,host) {
   }
   if(!resolved.length) throw new Error(`No confirmed ${type==='movie'?'digital movies':'shows'} with IMDb IDs`);
   if(resolved.length<10) LOG('Only',resolved.length,'eligible',type,'titles found');
-  return resolved.map(({item,id},i)=>{
+  return resolved.map(({item,id,imdbRating},i)=>{
     const meta={id,type,name:String(item.title||item.name||'Untitled'),
-      poster:rankPosterUrl(host,item,type,i+1,id),posterShape:'poster',
+      poster:rankPosterUrl(host,item,type,i+1,id,imdbRating),posterShape:'poster',
       description:String(item.overview||item.description||'')};
     const bg=tmdbBackdrop(item);
     if(bg)meta.background=bg;
@@ -425,11 +472,13 @@ function renderSvgToPng(svgString, width) {
  */
 function getRankAssets(num) {
   if (rankAssetCache.has(num)) return rankAssetCache.get(num);
-  const isTen = Number(num) === 10;
-  const railCenterX = Math.round(TARGET_W * 0.132);
+  const value = Number(num);
+  const isTen = value === 10;
+  const isOne = value === 1;
+  const railCenterX = Math.round(TARGET_W * (isTen || isOne ? 0.132 : 0.158));
   const rankY = Math.round(TARGET_H * 0.60);
-  const rankFont = Math.round(TARGET_H * (isTen ? 0.285 : 0.335));
-  const tracking = isTen ? '-0.055em' : '-0.07em';
+  const rankFont = Math.round(TARGET_H * (isTen ? 0.285 : isOne ? 0.335 : 0.302));
+  const tracking = isTen ? '-0.055em' : '-0.06em';
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -510,14 +559,15 @@ function buildPostersPlusUrl({imdbId,tmdbId,stremioId,type}) {
   params.set('sbi','0.010');
   if(TMDB_KEY)params.set('tmdb_key',TMDB_KEY);
   if(MDBLIST_KEY)params.set('mdblist_key',MDBLIST_KEY);
-  // Preserve original artwork design (textless film art + title-logo where available).
+  // Use the exact Posters+ tuning specified for your personal Nuvio instance.
   const presets={tg:'off',bgr:'custom',bgo:'0.3',bgh:'0.55',tvso:'1',vpct:'1',vpcb:'1',
     vcsa:'1.55',vcb:'0.60',vcli:'1.60',vcs:'muted',hg:'1',sm:'hidden',
     _bgr:'off',_vcsa:'2.00',_vcb:'1.00',_vcli:'1.30',_vcs:'shade',
     _hy:'1',_hr:'1',_art:'original',bp:'top_left',_cl:'off',fti:'1',trs:'direct',
     mw:'lb:.25,pc:.1,im:.4,mal:.25',tw:'pc:.1,im:.5,mc:.15,mal:.25',
+    amw:'mal:.5,al:.2,ki:.3',atw:'mal:.5,al:.2,ki:.3',
     rdm:'0',pp:'random',ll:'fi',lp:'native,custom,english,neutral,native_if_original,original,text',
-    lls:'fi',fbs:'photoreal',lmwr:'0.80',lmhr:'0.40',lbr:'0.20',cg:'0',hur:'1',bdm:'0'};
+    fbs:'photoreal',lmwr:'0.80',lmhr:'0.40',lbr:'0.12',cg:'0',hur:'1',bdm:'7',bg1:'tr:1:network,studio:24:0.074'};
   Object.entries(presets).forEach(([k,v])=>params.set(k,v));
   return `${POSTERSPLUS_BASE}/poster?${params.toString()}`;
 }
