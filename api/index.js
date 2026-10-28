@@ -1,5 +1,5 @@
 "use strict";
-// Top 10 for Nuvio | v3.0.0. Catalogs are NEVER blocked by poster generation.
+// Top 10 for Nuvio | v4.0.0. Strict digital-release gate; premium silver cinematic rankings.
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -24,10 +24,13 @@ const MDBLIST_KEY = process.env.MDBLIST_API_KEY || '';
 const TMDB_BASE = (process.env.TMDB_API_BASE || 'https://api.themoviedb.org/3').replace(/\/$/, '');
 const MDBLIST_BASE = (process.env.MDBLIST_BASE || 'https://mdblist.com').replace(/\/$/, '');
 const POSTERSPLUS_BASE = (process.env.POSTERSPLUS_BASE_URL || 'https://postersplus.slokker.cc').replace(/\/$/, '');
-const POSTER_WIDTH = Math.max(720, Math.min(1440, Number(process.env.POSTER_WIDTH || 1080) || 1080));
+const POSTER_WIDTH = Math.max(720, Math.min(2160, Number(process.env.POSTER_WIDTH || 1080) || 1080));
 const TARGET_W = Math.round(POSTER_WIDTH / 2) * 2;
 const TARGET_H = Math.round(TARGET_W * 1.5);
-const POSTER_CACHE_VERSION = 'v300';
+const POSTER_CACHE_VERSION = 'v400-silver';
+const DIGITAL_RELEASE_STRICT = process.env.DIGITAL_RELEASE_STRICT !== 'false';
+const digitalCache = new Map();
+const digitalInFlight = new Map();
 const CATALOG_TTL = 6 * 60 * 60 * 1000;
 const CATALOG_SUCCESS_HEADER = 'public, max-age=60, s-maxage=21600, stale-while-revalidate=86400, stale-if-error=86400';
 const LOG = (...args) => console.log('[top10]', ...args);
@@ -52,9 +55,9 @@ const GENRE_MAP = {
 };
 const MANIFEST = {
   id: 'com.sensationa1.top10.cloud',
-  version: '3.0.0',
+  version: '4.0.0',
   name: 'Top 10 Trending (Apple TV Style)',
-  description: 'Premium cinematic Top 10 movies and series for Nuvio. Fast cached catalogs, frosted-glass ranking.',
+  description: 'Premium cinematic Top 10 for Nuvio. Strict digital-release movies and refined platinum-silver rankings.',
   resources: ['catalog'],
   types: ['movie','series'],
   idPrefixes: ['tt'],
@@ -168,20 +171,65 @@ async function resolveImdbId(item,type) {
     return found;
   }catch(_){return null;}
 }
+/**
+ * TMDB release type 4 is Digital; type 3 is theatrical, 5 physical.
+ * For movies we only accept a confirmed digital date on/before today.
+ * An unknown date, an API error, or a scheduled future date is NOT confirmation.
+ * Values are cached separately so many catalog refreshes do not hammer TMDB.
+ */
 async function digitalStatus(tmdbId) {
-  if(!cleanTmdb(tmdbId)) return null;
-  try {
-    const data = await tmdbGet(`/movie/${tmdbId}/release_dates`,{},3500);
-    const today=new Date().toISOString().slice(0,10);
-    let hasKnown=false;
-    for(const country of data.results || []) for(const r of country.release_dates || []) {
-      if(r.type!==4 && r.type!==5) continue;
-      hasKnown=true;
-      if (String(r.release_date || '').slice(0,10)<=today) return true;
+  tmdbId = cleanTmdb(tmdbId);
+  if (!tmdbId) return null;
+  const now = Date.now();
+  const hit = digitalCache.get(tmdbId);
+  if (hit && hit.expiry > now) return hit.value;
+  if (digitalInFlight.has(tmdbId)) return digitalInFlight.get(tmdbId);
+  const pending = (async () => {
+    try {
+      const data = await tmdbGet(`/movie/${tmdbId}/release_dates`, {}, 4000);
+      const today = new Date().toISOString().slice(0,10);
+      const dates = (data?.results || []).flatMap(c => c?.release_dates || [])
+        .filter(r => Number(r.type) === 4)
+        .map(r => String(r.release_date || '').slice(0,10))
+        .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d));
+      const available = dates.some(d => d <= today);
+      // A film can have a theatrical date in the past and a digital date in the future.
+      // Both missing and future-only digital dates are excluded in strict mode.
+      putLru(digitalCache, tmdbId,
+        {value: available, expiry: now + (available ? 24*3600000 : 3*3600000)}, 600);
+      return available;
+    } catch(e) {
+      LOG('Digital release check unavailable',tmdbId,e.message);
+      // Retry uncertain API responses; never treat a failure as a confirmed release.
+      putLru(digitalCache, tmdbId, {value:null,expiry:now+5*60000},600);
+      return null;
+    } finally {
+      digitalInFlight.delete(tmdbId);
     }
-    return hasKnown ? false : null; // Unknown is not proof the movie is unavailable.
-  }catch(_){return null;}
+  })();
+  digitalInFlight.set(tmdbId,pending);
+  return pending;
 }
+
+/** Additional popular movies with confirmed digital release dates in TMDB's
+ *  discover index. Only fetched when the trending candidates cannot fill 10.
+ *  Regions broaden coverage; digitalStatus still independently validates every
+ *  selected movie against all available dated type-4 records.
+ */
+async function extraDigitalCandidates() {
+  if (!TMDB_KEY) return [];
+  const today = new Date().toISOString().slice(0,10);
+  const regions = ['US','FI','GB'];
+  const calls = regions.flatMap(region => [1,2].map(page =>
+    tmdbGet('/discover/movie', {
+      region, page, with_release_type:4, 'release_date.lte':today,
+      sort_by:'popularity.desc', include_adult:false, 'vote_count.gte':30
+    },5500).then(rawList).catch(e => {LOG('Digital discover failed',region,page,e.message);return [];})
+  ));
+  const result = await Promise.all(calls);
+  return distinct(result.flat()).slice(0,100);
+}
+
 function genreFromItem(item) {
   const gid=Array.isArray(item.genre_ids) ? Number(item.genre_ids[0]) : null;
   if (GENRE_MAP[gid]) return GENRE_MAP[gid];
@@ -190,7 +238,7 @@ function genreFromItem(item) {
 }
 function tmdbPoster(item){
   const path=String(item.poster_path || '');
-  return /^\/[\w\-.]+$/.test(path) ? `https://image.tmdb.org/t/p/w1280${path}` : '';
+  return /^\/[\w\-.]+$/.test(path) ? `https://image.tmdb.org/t/p/original${path}` : '';
 }
 function tmdbBackdrop(item){
   const path=String(item.backdrop_path || '');
@@ -205,28 +253,42 @@ function rankPosterUrl(host,item,type,rank,imdb){
 }
 async function buildCatalog(type,host) {
   const raw = await fetchCandidates(type);
-  if(!raw.length) throw new Error(`No ${type} candidates from TMDB or MDBList`);
-  const allowed=raw.filter(item=>!excluded(item,type)&&released(item,type));
-  // Digital availability is a preference, not a reason to return an empty catalog.
-  let preferred = allowed;
-  if(type==='movie' && TMDB_KEY) {
-    const front=allowed.slice(0,22);
-    const status=await mapLimited(front,6,async item=>digitalStatus(item.tmdb_id||item.tmdbid||item.id));
-    const good=front.filter((item,i)=>status[i]!==false);
-    const withheld=front.filter((item,i)=>status[i]===false);
-    preferred=[...good,...allowed.slice(22),...withheld];
-  }
+  let queue = distinct(raw).filter(item => !excluded(item,type) && released(item,type));
   const resolved=[];
-  for(let i=0;i<preferred.length && resolved.length<10;i+=12) {
-    const group=preferred.slice(i,i+12);
-    const ids=await mapLimited(group,6,async item=>resolveImdbId(item,type));
-    for(let j=0;j<group.length && resolved.length<10;j++) {
-      if(!validImdb(ids[j])) continue;
-      if(resolved.some(x=>x.id===ids[j])) continue;
-      resolved.push({item:group[j],id:ids[j]});
+  const usedImdb=new Set();
+  const checkedTmdb=new Set();
+  async function fill(candidates) {
+    for (let i=0; i<candidates.length && resolved.length<10; i+=12) {
+      const group=candidates.slice(i,i+12).filter(item => {
+        const tmdb=cleanTmdb(item.tmdb_id||item.tmdbid||item.id);
+        if (!tmdb || checkedTmdb.has(tmdb)) return false;
+        checkedTmdb.add(tmdb);
+        return true;
+      });
+      if(!group.length)continue;
+      const results=await mapLimited(group,8,async item=>{
+        if (type==='movie' && DIGITAL_RELEASE_STRICT) {
+          const digital=await digitalStatus(item.tmdb_id||item.tmdbid||item.id);
+          if (digital!==true) return null;
+        }
+        const id=await resolveImdbId(item,type);
+        return validImdb(id) ? {item,id} : null;
+      });
+      for(const result of results) {
+        if(!result || usedImdb.has(result.id) || resolved.length>=10)continue;
+        usedImdb.add(result.id);
+        resolved.push(result);
+      }
     }
   }
-  if(!resolved.length) throw new Error(`No playable IMDb IDs for ${type}`);
+  await fill(queue);
+  if(type==='movie' && resolved.length<10) {
+    const extra=await extraDigitalCandidates();
+    queue=extra.filter(item=>!excluded(item,'movie')&&released(item,'movie'));
+    await fill(queue);
+  }
+  if(!resolved.length) throw new Error(`No confirmed ${type==='movie'?'digital movies':'shows'} with IMDb IDs`);
+  if(resolved.length<10) LOG('Only',resolved.length,'eligible',type,'titles found');
   return resolved.map(({item,id},i)=>{
     const meta={id,type,name:String(item.title||item.name||'Untitled'),
       poster:rankPosterUrl(host,item,type,i+1,id),posterShape:'poster',
@@ -238,6 +300,7 @@ async function buildCatalog(type,host) {
     return meta;
   });
 }
+
 function catalogValid(type,id){return (type==='movie'&&id==='top10_trending_movies')||(type==='series'&&id==='top10_trending_shows');}
 async function getCatalog(type,host,force=false){
   const key=`${type}:${host}`;
@@ -357,138 +420,56 @@ function renderSvgToPng(svgString, width) {
  */
 function getRankAssets(num) {
   if (rankAssetCache.has(num)) return rankAssetCache.get(num);
-
+  // Inter Display Black = modern compact geometry, strong silhouette. Numbers
+  // are intentionally on TOP-LEFT like the previous edition, but larger,
+  // clearer, and with a restrained platinum satin finish (not smoky glass).
   const isTen = num >= 10;
-  const rankFont = Math.round(TARGET_H * (isTen ? 0.32 : 0.36));
-  const rankX = Math.round(TARGET_W * 0.032);
-  const rankBaseline = Math.round(TARGET_H * 0.29);
-  const tracking = isTen ? -0.12 : 0;
-
-  const maskSvg = `<?xml version="1.0" encoding="UTF-8"?>
+  const rankFont = Math.round(TARGET_H * (isTen ? 0.345 : 0.415));
+  const rankX = Math.round(TARGET_W * (isTen ? 0.025 : 0.035));
+  const rankBaseline = Math.round(TARGET_H * 0.39);
+  const tracking = isTen ? '-0.10em' : '-0.055em';
+  const faceFont = 'Inter Display';
+  const sx=Math.max(1.2,rankFont*0.004);
+  const stroke=Math.max(2.4,rankFont*0.010);
+  const textAttrs=`x="${rankX}" y="${rankBaseline}" font-family="${faceFont}" font-weight="900" font-size="${rankFont}" letter-spacing="${tracking}" stroke-linejoin="round" paint-order="stroke fill"`;
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
-  <text
-    x="${rankX}"
-    y="${rankBaseline}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="#FFFFFF"
-    letter-spacing="${tracking}em"
-  >${num}</text>
+ <defs>
+  <!-- Apple-like silver: a smooth satin metal face rather than noisy glass. -->
+  <linearGradient id="silver" x1="0%" y1="0%" x2="18%" y2="100%">
+    <stop offset="0%" stop-color="#FFFFFF"/>
+    <stop offset="22%" stop-color="#F4F7FA"/>
+    <stop offset="48%" stop-color="#CCD5DF"/>
+    <stop offset="68%" stop-color="#F9FAFC"/>
+    <stop offset="100%" stop-color="#8D9AAA"/>
+  </linearGradient>
+  <linearGradient id="sheen" x1="0%" y1="0%" x2="95%" y2="92%">
+    <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.68"/>
+    <stop offset="34%" stop-color="#FFFFFF" stop-opacity="0.11"/>
+    <stop offset="52%" stop-color="#FFFFFF" stop-opacity="0.00"/>
+    <stop offset="100%" stop-color="#0C1726" stop-opacity="0.18"/>
+  </linearGradient>
+  <linearGradient id="edge" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.90"/>
+    <stop offset="47%" stop-color="#F0F5FC" stop-opacity="0.25"/>
+    <stop offset="100%" stop-color="#101A27" stop-opacity="0.42"/>
+  </linearGradient>
+  <filter id="lift" x="-55%" y="-55%" width="210%" height="210%">
+    <feDropShadow dx="2" dy="${Math.round(rankFont*.015)}" stdDeviation="${Math.round(rankFont*.019)}" flood-color="#000000" flood-opacity="0.72"/>
+    <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.45"/>
+  </filter>
+ </defs>
+ <!-- Discreet separation from busy artwork, without bright glow. -->
+ <text ${textAttrs} fill="#080D15" stroke="#080D15" stroke-width="${stroke*2.4}" filter="url(#lift)">${num}</text>
+ <!-- Solid pearl/metal fill for immediate legibility at TV distances. -->
+ <text ${textAttrs} fill="url(#silver)" stroke="#263341" stroke-opacity="0.63" stroke-width="${stroke}">${num}</text>
+ <!-- Diffuse diagonal glass-like light, ultra subtle. -->
+ <text ${textAttrs} fill="url(#sheen)">${num}</text>
+ <!-- Fine light-catching silver outer contour. -->
+ <text ${textAttrs} fill="none" stroke="url(#edge)" stroke-width="${sx}">${num}</text>
 </svg>`;
-
-  const rankSvg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <!-- Unchanged Smoky Frosted Face -->
-    <linearGradient id="smokyGlass" x1="0%" y1="0%" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#E2E8F0" stop-opacity="0.64"/>
-      <stop offset="30%" stop-color="#94A3B8" stop-opacity="0.44"/>
-      <stop offset="65%" stop-color="#1E293B" stop-opacity="0.50"/>
-      <stop offset="100%" stop-color="#090D16" stop-opacity="0.66"/>
-    </linearGradient>
-
-    <!-- Unchanged 4K Diagonal Specular Glass Sheen -->
-    <linearGradient id="glossShine" x1="0%" y1="0%" x2="80%" y2="85%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.70"/>
-      <stop offset="20%" stop-color="#FFFFFF" stop-opacity="0.30"/>
-      <stop offset="42%" stop-color="#FFFFFF" stop-opacity="0.04"/>
-      <stop offset="43%" stop-color="#FFFFFF" stop-opacity="0.0"/>
-      <stop offset="85%" stop-color="#FFFFFF" stop-opacity="0.0"/>
-      <stop offset="100%" stop-color="#CBD5E1" stop-opacity="0.22"/>
-    </linearGradient>
-
-    <!-- Professional glass rim: bright top edge, soft fade to transparent (no heavy outline) -->
-    <linearGradient id="metallicRim" x1="0%" y1="0%" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55"/>
-      <stop offset="22%" stop-color="#F1F5F9" stop-opacity="0.39"/>
-      <stop offset="55%" stop-color="#94A3B8" stop-opacity="0.10"/>
-      <stop offset="100%" stop-color="#64748B" stop-opacity="0.00"/>
-    </linearGradient>
-    <linearGradient id="rimHighlight" x1="0%" y1="0%" x2="30%" y2="100%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.70"/>
-      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.15"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.00"/>
-    </linearGradient>
-
-    <filter id="ambientShadow" x="-45%" y="-45%" width="190%" height="190%">
-      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000000" flood-opacity="0.55"/>
-      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000000" flood-opacity="0.40"/>
-    </filter>
-  </defs>
-
-  <!-- 1. Deep floating shadow -->
-  <text
-    x="${rankX}"
-    y="${rankBaseline}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="#000000"
-    fill-opacity="0.01"
-    letter-spacing="${tracking}em"
-    filter="url(#ambientShadow)"
-  >${num}</text>
-
-  <!-- 2. Smoky frosted glass face (kept) -->
-  <text
-    x="${rankX}"
-    y="${rankBaseline}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="url(#smokyGlass)"
-    letter-spacing="${tracking}em"
-  >${num}</text>
-
-  <!-- 3. Diagonal specular sheen (kept) -->
-  <text
-    x="${rankX}"
-    y="${rankBaseline}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="url(#glossShine)"
-    letter-spacing="${tracking}em"
-  >${num}</text>
-
-  <!-- 4. Single refined fading rim (hairline, not chunky) -->
-  <text
-    x="${rankX}"
-    y="${rankBaseline}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="none"
-    stroke="url(#metallicRim)"
-    stroke-width="${Math.max(2.2, rankFont * 0.0065)}"
-    stroke-linejoin="round"
-    stroke-linecap="round"
-    paint-order="stroke fill"
-    letter-spacing="${tracking}em"
-  >${num}</text>
-
-  <!-- 5. Ultra-fine top-left light catch (barely there) -->
-  <text
-    x="${rankX - 0.4}"
-    y="${rankBaseline - 0.5}"
-    font-family="SF Pro Display"
-    font-weight="700"
-    font-size="${rankFont}"
-    fill="none"
-    stroke="url(#rimHighlight)"
-    stroke-width="${Math.max(1.1, rankFont * 0.003)}"
-    stroke-linejoin="round"
-    stroke-linecap="round"
-    letter-spacing="${tracking}em"
-  >${num}</text>
-</svg>`;
-
-  const assets = {
-    maskPng: null,
-    rankLayer: renderSvgToPng(rankSvg, TARGET_W),
-  };
-  rankAssetCache.set(num, assets);
+  const assets = {rankLayer: renderSvgToPng(svg, TARGET_W)};
+  rankAssetCache.set(num,assets);
   return assets;
 }
 
@@ -576,7 +557,7 @@ app.get('/catalog/:type/:id.json',async(req,res)=>{
   }
 });
 app.get('/api/status',(_req,res)=>res.set('Cache-Control','no-store').json({
-  ok:true,version:MANIFEST.version,tmdbConfigured:Boolean(TMDB_KEY),posterWidth:TARGET_W,
+  ok:true,version:MANIFEST.version,tmdbConfigured:Boolean(TMDB_KEY),digitalReleaseStrict:DIGITAL_RELEASE_STRICT,posterWidth:TARGET_W,
   posterCacheItems:posterCache.size,catalogs:[...catalogCache.values()].map(v=>({items:v.metas.length,ageSeconds:Math.round((Date.now()-v.ts)/1000)})),
 }));
 app.get('/api/poster',async(req,res)=>{
@@ -651,7 +632,7 @@ app.get('/',(req,res)=>{
  <title>Top 10 — Nuvio</title><style>
  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 72% 10%,#202a39 0%,#0d121c 40%,#080a0f 80%);color:#f2f5f8;font:16px -apple-system,BlinkMacSystemFont,Inter,Arial,sans-serif;display:grid;place-items:center;padding:24px}
  main{width:min(620px,100%);padding:56px 42px;border-radius:28px;border:1px solid #ffffff16;background:#ffffff08;box-shadow:0 22px 80px #0008}small{color:#9ca9bc;letter-spacing:.3em;font-weight:600}h1{font-size:clamp(2.8rem,6vw,4.2rem);letter-spacing:-.06em;margin:14px 0}p{color:#b8c3d1;line-height:1.6}a{color:#dbe7f8;text-decoration:none}nav{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}nav a{border-radius:14px;background:#ffffff14;border:1px solid #ffffff22;padding:12px 18px}nav a:hover{background:#ffffff24}footer{font-size:12px;color:#8290a4;margin-top:36px}
- </style><main><small>NUVIO • CINEMATIC CATALOGS</small><h1>Top 10<span style="color:#a5afbd">.</span></h1><p>Trending films and series, curated daily. Premium artwork, crystalline ranks, built for a seamless home screen.</p><nav><a href="${h}/manifest.json">Manifest</a><a href="${h}/api/status">System status</a><a href="stremio://${req.get('host')}/manifest.json">Install in Stremio</a></nav><footer>Version ${MANIFEST.version} · Apple TV-inspired independent add-on · Nuvio-compatible</footer></main></html>`);
+ </style><main><small>NUVIO • CINEMATIC CATALOGS</small><h1>Top 10<span style="color:#a5afbd">.</span></h1><p>Trending films and series, curated daily. Premium artwork, satin-silver ranks, built for a seamless home screen.</p><nav><a href="${h}/manifest.json">Manifest</a><a href="${h}/api/status">System status</a><a href="stremio://${req.get('host')}/manifest.json">Install in Stremio</a></nav><footer>Version ${MANIFEST.version} · Apple TV-inspired independent add-on · Nuvio-compatible</footer></main></html>`);
 });
 module.exports=app;
 if(require.main===module){app.listen(Number(process.env.PORT||3000),()=>LOG('Listening on',process.env.PORT||3000));}

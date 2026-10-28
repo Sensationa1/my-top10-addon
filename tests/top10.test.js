@@ -8,7 +8,7 @@ function boot() {
   const originalLoad = Module._load;
   const routes = new Map();
   const calls = [];
-  const state = {fail:false, posterFails:true};
+  const state = {fail:false, posterFails:true, digitalReleaseForId:null, useDiscover:false};
   const app={
     set(){return this;},use(){return this;},listen(){return this;},
     get(route, handler){routes.set(route,handler);return this;}
@@ -31,7 +31,19 @@ function boot() {
       const m=url.match(/\/trending\/(tv|movie)\//);
       return {data:{results:makeItems(m[1],opt.params?.page||1)}};
     }
-    if(url.includes('/release_dates'))return {data:{results:[{release_dates:[{type:4,release_date:'2024-04-01T00:00:00'}]}]}};
+    if(url.includes('/release_dates')) {
+      const id=Number(url.match(/\/movie\/(\d+)\/release_dates/)?.[1]||0);
+      const info=state.digitalReleaseForId?.(id);
+      return {data:{results:[{release_dates:info === undefined ? [{type:4,release_date:'2024-04-01T00:00:00'}] : info}]}};
+    }
+    if(url.includes('/discover/movie')) {
+      if(!state.useDiscover) return {data:{results:[]}};
+      const page=Number(opt.params?.page||1);
+      return {data:{results:Array.from({length:16},(_,i)=>{
+        const n=page*100+i;
+        return {id:30000+n,tmdb_id:30000+n,imdb_id:`tt${400000+n}`,title:`Digital film ${n}`,poster_path:'/img.jpg',release_date:'2024-01-01',original_language:'en',genre_ids:[18]};
+      })}};
+    }
     if(url.includes('/external_ids'))return {data:{imdb_id:'tt11111111'}};
     throw new Error('unexpected mock URL '+url);
   }};
@@ -111,4 +123,42 @@ test('Posters+ failure still creates ranked JPEG with TMDB fallback',async()=>{
   assert.ok(calls.some(url=>url.includes('postersplus.slokker.cc')));
   assert.ok(calls.some(url=>url.includes('image.tmdb.org')));
   assert.match(res.headers['Cache-Control'],/s-maxage=900/);
+});
+
+
+test('strict digital gate excludes theatrical-only, future digital, and unknown digital dates', async()=>{
+  const {request,state}=boot();
+  // 20001 theatrical-only, 20002 future digital, 20003 missing digital,
+  // 20004 already digital and should be the rank #1 card.
+  state.digitalReleaseForId=(id)=>{
+    if(id===20001)return [{type:3,release_date:'2024-04-01T00:00:00'}];
+    if(id===20002)return [{type:4,release_date:'2030-04-01T00:00:00'}];
+    if(id===20003)return [];
+    return undefined;
+  };
+  const result=await request('/catalog/:type/:id.json',{type:'movie',id:'top10_trending_movies'});
+  assert.equal(result.statusCode,200);
+  assert.equal(result.body.metas.length,10);
+  assert.equal(result.body.metas[0].id,'tt200004');
+  assert.ok(result.body.metas.every(m=>!['tt200001','tt200002','tt200003'].includes(m.id)));
+  assert.match(result.body.metas[0].poster,/rank=1/);
+});
+
+test('discover digital-only backup fills missing slots without allowing theatrical titles',async()=>{
+  const {request,state,calls}=boot();
+  state.digitalReleaseForId=id=>id<30000 ? [{type:3,release_date:'2024-02-01'}] : [{type:4,release_date:'2024-02-01'}];
+  state.useDiscover=true;
+  const result=await request('/catalog/:type/:id.json',{type:'movie',id:'top10_trending_movies'});
+  assert.equal(result.statusCode,200);
+  assert.equal(result.body.metas.length,10);
+  assert.ok(result.body.metas.every(m=>m.id.startsWith('tt400')));
+  assert.ok(calls.some(u=>u.includes('/discover/movie')));
+});
+
+test('no verified digital releases returns retryable 503 rather than unreleased movies',async()=>{
+  const {request,state}=boot();
+  state.digitalReleaseForId=()=>[{type:3,release_date:'2024-02-01'}];
+  const result=await request('/catalog/:type/:id.json',{type:'movie',id:'top10_trending_movies'});
+  assert.equal(result.statusCode,503);
+  assert.equal(result.headers['Cache-Control'],'no-store');
 });
