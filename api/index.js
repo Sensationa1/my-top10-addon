@@ -1,5 +1,5 @@
 "use strict";
-// Top 10 for Nuvio | v5.4.0. Strict digital-release gate; premium side-rank cinematic layout.
+// Top 10 for Nuvio | v5.5.0. Strict digital-release gate; premium side-rank cinematic layout.
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -27,7 +27,7 @@ const POSTERSPLUS_BASE = (process.env.POSTERSPLUS_BASE_URL || 'https://posterspl
 const POSTER_WIDTH = Math.max(720, Math.min(2160, Number(process.env.POSTER_WIDTH || 1080) || 1080));
 const TARGET_W = Math.round(POSTER_WIDTH / 2) * 2;
 const TARGET_H = Math.round(TARGET_W * 1.5);
-const POSTER_CACHE_VERSION = 'v540-side-rank-align1b';
+const POSTER_CACHE_VERSION = 'v550-poster-preset-refresh';
 const DIGITAL_RELEASE_STRICT = process.env.DIGITAL_RELEASE_STRICT !== 'false';
 const digitalCache = new Map();
 const digitalInFlight = new Map();
@@ -561,13 +561,14 @@ function buildPostersPlusUrl({imdbId,tmdbId,stremioId,type}) {
   if(MDBLIST_KEY)params.set('mdblist_key',MDBLIST_KEY);
   // Use the exact Posters+ tuning specified for your personal Nuvio instance.
   const presets={tg:'off',bgr:'custom',bgo:'0.3',bgh:'0.55',tvso:'1',vpct:'1',vpcb:'1',
-    vcsa:'1.55',vcb:'0.60',vcli:'1.60',vcs:'muted',hg:'1',sm:'hidden',
+    vcsa:'1.55',vcb:'0.60',vcli:'1.60',vcs:'muted',hg:'1',hr:'1',sm:'hidden',
     _bgr:'off',_vcsa:'2.00',_vcb:'1.00',_vcli:'1.30',_vcs:'shade',
-    _hy:'1',_hr:'1',_art:'original',bp:'top_left',_cl:'off',fti:'1',trs:'direct',
+    _hy:'1',_art:'original',bp:'top_left',_cl:'off',fti:'1',trs:'direct',
+    rdm:'3',mam:'1',mmfsr:'0.056',msoo10:'1',rtc:'FFFFFF',
     mw:'lb:.25,pc:.1,im:.4,mal:.25',tw:'pc:.1,im:.5,mc:.15,mal:.25',
-    amw:'mal:.5,al:.2,ki:.3',atw:'mal:.5,al:.2,ki:.3',
-    rdm:'0',pp:'random',ll:'fi',lp:'native,custom,english,neutral,native_if_original,original,text',
-    fbs:'photoreal',lmwr:'0.80',lmhr:'0.40',lbr:'0.12',cg:'0',hur:'1',bdm:'7',bg1:'0.93,0.06,r:1:network:24:0.074'};
+    pp:'random',ll:'fi',lp:'original,native,custom,english,neutral,native_if_original,text',lls:'fi',
+    fbs:'photoreal',lmwr:'0.80',lmhr:'0.40',lbr:'0.12',cg:'0',hur:'1',bdm:'7',
+    bg1:'0.9,0.075,r:4:network',bls:'1.05'};
   Object.entries(presets).forEach(([k,v])=>params.set(k,v));
   return `${POSTERSPLUS_BASE}/poster?${params.toString()}`;
 }
