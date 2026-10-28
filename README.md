@@ -1,4 +1,4 @@
-# Nuvio Top 10 · Platinum v5.2
+# Nuvio Top 10 · Platinum v5.3
 
 Drop-in update for your **existing** personal Vercel add-on. The manifest ID and movie/series catalog IDs remain unchanged, so your Xperience home rows should not need re-adding.
 
@@ -41,3 +41,6 @@ Run `npm install`, then `npm test`. Seven automated mocked tests cover independe
 - Pulled ranks **2–9** slightly inward and reduced them a touch so they no longer clip against the left edge.
 - Switched displayed rating to **IMDb-first** lookup through MDBList API, with safe fallback if unavailable.
 - Updated Posters+ preset to your exact Slokker instance configuration.
+
+- Aligned rank **1** to the same side rail position as ranks 2–9.
+- Updated Posters+ preset `bg1` to `0.625,0.05,l:1:network,studio:24:0.074`.
