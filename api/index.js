@@ -1,30 +1,264 @@
-const express = require("express");
-const cors = require("cors");
-const axios = require("axios");
-const sharp = require("sharp");
-const path = require("path");
-const fs = require("fs");
-const http = require("http");
-const https = require("https");
-const { Resvg } = require("@resvg/resvg-js");
-require("dotenv").config();
-
-// Reuse TCP/TLS connections across requests for much faster API & image downloads
-const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 });
-const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 });
-const api = axios.create({ httpAgent, httpsAgent });
+"use strict";
+// Top 10 for Nuvio | v3.0.0. Catalogs are NEVER blocked by poster generation.
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const sharp = require('sharp');
+const path = require('path');
+const fs = require('fs');
+const http = require('http');
+const https = require('https');
+const { Resvg } = require('@resvg/resvg-js');
+require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors());
+const api = axios.create({
+  httpAgent: new http.Agent({keepAlive: true, maxSockets: 16}),
+  httpsAgent: new https.Agent({keepAlive: true, maxSockets: 16}),
+  maxRedirects: 3,
+});
+const TMDB_KEY = process.env.TMDB_API_KEY || '';
+const MDBLIST_KEY = process.env.MDBLIST_API_KEY || '';
+const TMDB_BASE = (process.env.TMDB_API_BASE || 'https://api.themoviedb.org/3').replace(/\/$/, '');
+const MDBLIST_BASE = (process.env.MDBLIST_BASE || 'https://mdblist.com').replace(/\/$/, '');
+const POSTERSPLUS_BASE = (process.env.POSTERSPLUS_BASE_URL || 'https://postersplus.slokker.cc').replace(/\/$/, '');
+const POSTER_WIDTH = Math.max(720, Math.min(1440, Number(process.env.POSTER_WIDTH || 1080) || 1080));
+const TARGET_W = Math.round(POSTER_WIDTH / 2) * 2;
+const TARGET_H = Math.round(TARGET_W * 1.5);
+const POSTER_CACHE_VERSION = 'v300';
+const CATALOG_TTL = 6 * 60 * 60 * 1000;
+const CATALOG_SUCCESS_HEADER = 'public, max-age=60, s-maxage=21600, stale-while-revalidate=86400, stale-if-error=86400';
+const LOG = (...args) => console.log('[top10]', ...args);
+const catalogCache = new Map();
+const catalogInFlight = new Map();
+const posterCache = new Map();
+const posterInFlight = new Map();
+const rankAssetCache = new Map();
+const genrePngCache = new Map();
+let CACHED_VIGNETTE_PNG = null;
 
-const SNOAK_MOVIES_URL = "https://mdblist.com/lists/snoak/trending-movies/json";
-const SNOAK_SHOWS_URL = "https://mdblist.com/lists/snoak/trakt-s-trending-shows/json";
-const SNOAK_SHOWS_ALT_URL = "https://mdblist.com/lists/snoak/most-popular-shows-on-rotten-tomatoes/json";
-
-const POSTER_CACHE_VERSION = "292";
-
-const TARGET_W = 720;
-const TARGET_H = 1080;
+function putLru(map, key, value, max) {
+  if (map.has(key)) map.delete(key);
+  map.set(key, value);
+  while (map.size > max) map.delete(map.keys().next().value);
+}
+const GENRE_MAP = {
+  28:'ACTION',12:'ADVENTURE',16:'ANIMATION',35:'COMEDY',80:'CRIME',99:'DOCUMENTARY',
+  18:'DRAMA',10751:'FAMILY',14:'FANTASY',36:'HISTORY',27:'HORROR',10402:'MUSIC',
+  9648:'MYSTERY',10749:'ROMANCE',878:'SCI-FI',10770:'TV MOVIE',53:'THRILLER',
+  10752:'WAR',37:'WESTERN',10759:'ACTION',10765:'SCI-FI',10768:'WAR'
+};
+const MANIFEST = {
+  id: 'com.sensationa1.top10.cloud',
+  version: '3.0.0',
+  name: 'Top 10 Trending (Apple TV Style)',
+  description: 'Premium cinematic Top 10 movies and series for Nuvio. Fast cached catalogs, frosted-glass ranking.',
+  resources: ['catalog'],
+  types: ['movie','series'],
+  idPrefixes: ['tt'],
+  catalogs: [
+    { id:'top10_trending_shows', type:'series', name:'Top 10 Trending Shows', posterShape:'poster', extraSupported:[] },
+    { id:'top10_trending_movies',type:'movie',name:'Top 10 Trending Movies',posterShape:'poster',extraSupported:[] }
+  ]
+};
+// The original filtering preferences are retained (with a safe relaxed fallback).
+const ANIME_TITLE_RE = /\b(anime|one piece|naruto|boruto|demon slayer|kimetsu|jujutsu kaisen|attack on titan|shingeki|solo leveling|frieren|bleach|dragon ball|chainsaw man|spy x family|my hero academia|hunter x hunter|tokyo ghoul|death note|evangelion|studio ghibli|ghibli|pokemon|pokémon|digimon|sailor moon|inuyasha|fullmetal|haikyuu|black clover|one punch|mob psycho|vinland saga|dandadan|kaiju no\.?\s*8|blue lock|oshi no ko)\b/i;
+function isAnime(item) {
+  const title = String(item.title || item.name || '');
+  const isJapanAnimation = item.original_language === 'ja' && (item.genre_ids || []).includes(16);
+  return ANIME_TITLE_RE.test(title) || isJapanAnimation || String(item.mediatype || '').toLowerCase() === 'anime';
+}
+function excluded(item, type) {
+  if (!item) return true;
+  if (isAnime(item) && !/cyberpunk.*edge\s*runners/i.test(item.title || item.name || '')) return true;
+  if (type === 'series' && (item.genre_ids || []).some(id => [10762,10763,10767].includes(Number(id)))) return true;
+  if (String(item.original_language || '').toLowerCase().startsWith('zh')) return true;
+  return false;
+}
+function released(item,type) {
+  const date = type === 'movie' ? item.release_date || item.released : item.first_air_date || item.release_date;
+  if (!date || !/^\d{4}-\d\d-\d\d/.test(String(date))) return true;
+  return String(date).slice(0,10) <= new Date().toISOString().slice(0,10);
+}
+function hostUrl(req) {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/$/, '');
+  const forwarded = String(req.get('x-forwarded-proto') || 'https').split(',')[0];
+  const proto = forwarded === 'http' || forwarded === 'https' ? forwarded : 'https';
+  return `${proto}://${req.get('host')}`;
+}
+function validImdb(id) { return /^tt\d{5,12}$/.test(String(id || '')); }
+function cleanTmdb(id) {return /^\d+$/.test(String(id || '')) ? String(id) : '';}
+async function tmdbGet(uri, params={}, timeout=4500) {
+  if (!TMDB_KEY) throw new Error('Missing TMDB_API_KEY in Vercel environment');
+  const r = await api.get(`${TMDB_BASE}${uri}`, {params:{api_key:TMDB_KEY,...params}, timeout});
+  return r.data;
+}
+// Per-request limit on lookup bursts; tiny enough to avoid API spikes.
+async function mapLimited(items, concurrency, fn) {
+  let cursor = 0;
+  const out = new Array(items.length);
+  await Promise.all(Array.from({length:Math.min(concurrency,items.length)},async()=>{
+    while (cursor < items.length) {
+      const i = cursor++;
+      try {out[i] = await fn(items[i], i);} catch (_) {out[i]=null;}
+    }
+  }));
+  return out;
+}
+function rawList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.results)) return data.results;
+  if (Array.isArray(data?.items)) return data.items;
+  return [];
+}
+function distinct(items) {
+  const ids = new Set();
+  return items.filter(it=>{
+    const k = String(it.tmdb_id || it.tmdbid || it.id || it.imdb_id || it.imdbid || '').trim();
+    if (!k || ids.has(k)) return false;
+    ids.add(k);return true;
+  });
+}
+async function mdblistFallback(type) {
+  const paths = type === 'movie'
+    ? ['/lists/snoak/trending-movies/json']
+    : ['/lists/snoak/trakt-s-trending-shows/json','/lists/snoak/most-popular-shows-on-rotten-tomatoes/json'];
+  for (const p of paths) {
+    try {
+      const r = await api.get(`${MDBLIST_BASE}${p}`,{timeout:5000});
+      const list = rawList(r.data);
+      if(list.length) return list;
+    } catch (e) {LOG('MDBList fallback unavailable',type,e.message);}
+  }
+  return [];
+}
+async function fetchCandidates(type) {
+  const media = type==='series' ? 'tv':'movie';
+  const paths = [`/trending/${media}/day`, `/trending/${media}/week`];
+  let all = [];
+  for(const route of paths) {
+    if (!TMDB_KEY) break;
+    const responses = await Promise.allSettled([1,2].map(page=>tmdbGet(route,{page},5500)));
+    for (const result of responses) {
+      if(result.status==='fulfilled') all.push(...rawList(result.value));
+      else LOG('TMDB unavailable',route,result.reason?.message);
+    }
+    if(all.length>=35) break;
+  }
+  all = distinct(all);
+  if(all.length < 10) all = distinct([...all,...await mdblistFallback(type)]);
+  return all.slice(0,65);
+}
+const imdbCache = new Map();
+async function resolveImdbId(item,type) {
+  const imdb = item.imdb_id || item.imdbid || item.external_ids?.imdb_id;
+  if (validImdb(imdb)) return imdb;
+  let tmdb = item.tmdb_id || item.tmdbid || item.id;
+  tmdb=cleanTmdb(tmdb);
+  if(!tmdb) return null;
+  const key = `${type}:${tmdb}`;
+  const hit=imdbCache.get(key);
+  if(hit && Date.now()-hit.ts<86400000) return hit.id;
+  try {
+    const data=await tmdbGet(`/${type==='series'?'tv':'movie'}/${tmdb}/external_ids`,{},3500);
+    const found = validImdb(data?.imdb_id) ? data.imdb_id : null;
+    if(found) putLru(imdbCache,key,{id:found,ts:Date.now()},500);
+    return found;
+  }catch(_){return null;}
+}
+async function digitalStatus(tmdbId) {
+  if(!cleanTmdb(tmdbId)) return null;
+  try {
+    const data = await tmdbGet(`/movie/${tmdbId}/release_dates`,{},3500);
+    const today=new Date().toISOString().slice(0,10);
+    let hasKnown=false;
+    for(const country of data.results || []) for(const r of country.release_dates || []) {
+      if(r.type!==4 && r.type!==5) continue;
+      hasKnown=true;
+      if (String(r.release_date || '').slice(0,10)<=today) return true;
+    }
+    return hasKnown ? false : null; // Unknown is not proof the movie is unavailable.
+  }catch(_){return null;}
+}
+function genreFromItem(item) {
+  const gid=Array.isArray(item.genre_ids) ? Number(item.genre_ids[0]) : null;
+  if (GENRE_MAP[gid]) return GENRE_MAP[gid];
+  const g = item.genres?.[0];
+  return String(typeof g==='string' ? g : g?.name || '').trim().toUpperCase().slice(0,30);
+}
+function tmdbPoster(item){
+  const path=String(item.poster_path || '');
+  return /^\/[\w\-.]+$/.test(path) ? `https://image.tmdb.org/t/p/w1280${path}` : '';
+}
+function tmdbBackdrop(item){
+  const path=String(item.backdrop_path || '');
+  return /^\/[\w\-.]+$/.test(path) ? `https://image.tmdb.org/t/p/w1280${path}` : '';
+}
+function rankPosterUrl(host,item,type,rank,imdb){
+  const p = new URLSearchParams({id:imdb, rank:String(rank),type,
+    tmdb:cleanTmdb(item.tmdb_id||item.tmdbid||item.id),
+    g:genreFromItem(item), r: Number(item.vote_average)>0?Number(item.vote_average).toFixed(1):'',
+    p:tmdbPoster(item), n:String(item.title||item.name||''), v:POSTER_CACHE_VERSION});
+  return `${host}/api/poster?${p.toString()}`;
+}
+async function buildCatalog(type,host) {
+  const raw = await fetchCandidates(type);
+  if(!raw.length) throw new Error(`No ${type} candidates from TMDB or MDBList`);
+  const allowed=raw.filter(item=>!excluded(item,type)&&released(item,type));
+  // Digital availability is a preference, not a reason to return an empty catalog.
+  let preferred = allowed;
+  if(type==='movie' && TMDB_KEY) {
+    const front=allowed.slice(0,22);
+    const status=await mapLimited(front,6,async item=>digitalStatus(item.tmdb_id||item.tmdbid||item.id));
+    const good=front.filter((item,i)=>status[i]!==false);
+    const withheld=front.filter((item,i)=>status[i]===false);
+    preferred=[...good,...allowed.slice(22),...withheld];
+  }
+  const resolved=[];
+  for(let i=0;i<preferred.length && resolved.length<10;i+=12) {
+    const group=preferred.slice(i,i+12);
+    const ids=await mapLimited(group,6,async item=>resolveImdbId(item,type));
+    for(let j=0;j<group.length && resolved.length<10;j++) {
+      if(!validImdb(ids[j])) continue;
+      if(resolved.some(x=>x.id===ids[j])) continue;
+      resolved.push({item:group[j],id:ids[j]});
+    }
+  }
+  if(!resolved.length) throw new Error(`No playable IMDb IDs for ${type}`);
+  return resolved.map(({item,id},i)=>{
+    const meta={id,type,name:String(item.title||item.name||'Untitled'),
+      poster:rankPosterUrl(host,item,type,i+1,id),posterShape:'poster',
+      description:String(item.overview||item.description||'')};
+    const bg=tmdbBackdrop(item);
+    if(bg)meta.background=bg;
+    const date=item.release_date||item.first_air_date||item.released;
+    if(date)meta.releaseInfo=String(date).slice(0,10);
+    return meta;
+  });
+}
+function catalogValid(type,id){return (type==='movie'&&id==='top10_trending_movies')||(type==='series'&&id==='top10_trending_shows');}
+async function getCatalog(type,host,force=false){
+  const key=`${type}:${host}`;
+  const cached=catalogCache.get(key);
+  if(!force && cached && Date.now()-cached.ts<CATALOG_TTL)return cached.metas;
+  if(catalogInFlight.has(key))return catalogInFlight.get(key);
+  const pending=(async()=>{
+    try{
+      const metas=await buildCatalog(type,host);
+      putLru(catalogCache,key,{metas,ts:Date.now()},8);
+      LOG('Catalog refreshed',type,metas.length);
+      return metas;
+    }catch(err){
+      LOG('Catalog error',type,err.message);
+      if(cached?.metas?.length) return cached.metas;
+      throw err;
+    }finally{catalogInFlight.delete(key);}
+  })();
+  catalogInFlight.set(key,pending);
+  return pending;
+}
 
 const FONT_BLACK = path.join(process.cwd(), "fonts", "InterDisplay-Black.ttf");
 const FONT_SEMI = path.join(process.cwd(), "fonts", "Inter-SemiBold.ttf");
@@ -50,345 +284,6 @@ function getFontFiles() {
   return CACHED_FONT_FILES;
 }
 
-// In-memory caches to avoid redundant API hits and re-renders
-const tmdbCache = new Map();
-const catalogCache = new Map();
-const posterMemoryCache = new Map(); // key -> Buffer (max 25 posters in RAM)
-const rankAssetCache = new Map();    // rank (1..10) -> { maskPng, rankLayer }
-const genrePngCache = new Map();     // "GENRE|7.5" -> png buffer
-let CACHED_VIGNETTE_PNG = null;
-
-function setPosterCache(key, buf) {
-  if (posterMemoryCache.size >= 80) {
-    const oldestKey = posterMemoryCache.keys().next().value;
-    posterMemoryCache.delete(oldestKey);
-  }
-  posterMemoryCache.set(key, buf);
-}
-
-/** Background catalog refresh — never blocks the response */
-const catalogRefreshing = new Set();
-
-/** Catalog day key: flips at 12:00 Europe/Helsinki so the list updates once per day at noon. */
-function getCatalogDayKey(now = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Helsinki",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(now);
-  const get = (t) => parts.find((p) => p.type === t)?.value;
-  let y = Number(get("year"));
-  let m = Number(get("month"));
-  let d = Number(get("day"));
-  const hour = Number(get("hour"));
-  // Before noon → still yesterday's catalog day
-  if (hour < 12) {
-    const utcGuess = Date.UTC(y, m - 1, d) - 24 * 60 * 60 * 1000;
-    const prev = new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Helsinki",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(new Date(utcGuess));
-    const gp = (t) => prev.find((p) => p.type === t)?.value;
-    y = Number(gp("year"));
-    m = Number(gp("month"));
-    d = Number(gp("day"));
-  }
-  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-}
-
-
-async function warmPosterUrls(urls) {
-  // Top 10 only — fire all in parallel so ranks are in memory before the row is shown
-  await Promise.all(
-    urls.map((u) =>
-      api.get(u, { responseType: "arraybuffer", timeout: 45000, httpAgent, httpsAgent }).catch(() => null)
-    )
-  );
-}
-
-async function refreshCatalog(type, hostUrl) {
-  if (catalogRefreshing.has(type)) return;
-  catalogRefreshing.add(type);
-  try {
-    const metas = await buildCatalogMetas(type, hostUrl);
-    if (!metas.length) return;
-    // Warm ranked posters FIRST, then publish list — avoids blank posters on refresh
-    await warmPosterUrls(metas.map((m) => m.poster).filter(Boolean));
-    catalogCache.set(type, { ts: Date.now(), metas, dayKey: getCatalogDayKey() });
-  } catch (e) {
-    console.error("refreshCatalog", type, e.message);
-  } finally {
-    catalogRefreshing.delete(type);
-  }
-}
-
-const MANIFEST = {
-  id: "com.sensationa1.top10.cloud",
-  version: "2.8.8",
-  name: "Top 10 Trending (Apple TV Style)",
-  description:
-    "Top 10 TMDB trending. Refreshes daily at 12:00 Europe/Helsinki. PostersPlus + frosted ranks.",
-  resources: ["catalog"],
-  types: ["series", "movie"],
-  catalogs: [
-    {
-      id: "top10_trending_shows",
-      type: "series",
-      name: "Top 10 Trending Shows",
-      extraSupported: [],
-      posterShape: "poster",
-    },
-    {
-      id: "top10_trending_movies",
-      type: "movie",
-      name: "Top 10 Trending Movies",
-      extraSupported: [],
-      posterShape: "poster",
-    },
-  ],
-  idPrefixes: ["tt"],
-};
-
-const GENRE_MAP = {
-  28: "ACTION", 12: "ADVENTURE", 16: "ANIMATION", 35: "COMEDY",
-  80: "CRIME", 99: "DOCUMENTARY", 18: "DRAMA", 10751: "FAMILY",
-  14: "FANTASY", 36: "HISTORY", 27: "HORROR", 10402: "MUSIC",
-  9648: "MYSTERY", 10749: "ROMANCE", 878: "SCI-FI", 10770: "TV MOVIE",
-  53: "THRILLER", 10752: "WAR", 37: "WESTERN",
-  10759: "ACTION", 10762: "KIDS", 10763: "NEWS", 10764: "REALITY",
-  10765: "SCI-FI", 10766: "SOAP", 10767: "TALK", 10768: "WAR",
-};
-
-const TMDB_ANIMATION_ID = 16;
-
-const ANIME_TITLE_RE =
-  /\b(anime|one piece|naruto|boruto|demon slayer|kimetsu|jujutsu kaisen|attack on titan|shingeki|clevatess|solo leveling|frieren|bleach|dragon ball|chainsaw man|spy x family|my hero academia|boku no hero|hunter x hunter|tokyo ghoul|death note|evangelion|studio ghibli|ghibli|pokemon|pokémon|digimon|sailor moon|inuyasha|fullmetal|haikyuu|black clover|one punch|mob psycho|vinland saga|dandadan|kaiju no\.?\s*8|blue lock|oshi no ko)\b/i;
-
-function isAnimeItem(item) {
-  if (!item || typeof item !== "object") return false;
-
-  const mediaType = String(item.mediatype || item.media_type || item.type || "").toLowerCase();
-  if (mediaType === "anime") return true;
-
-  const title = String(item.title || item.name || "");
-  const overview = String(item.description || item.overview || item.plot || "");
-  if (ANIME_TITLE_RE.test(title) || ANIME_TITLE_RE.test(overview)) return true;
-  if (/\banime\b/i.test(title) || /\banime\b/i.test(overview)) return true;
-
-  const genreNames = [];
-  if (Array.isArray(item.genres)) {
-    for (const g of item.genres) {
-      genreNames.push(String(typeof g === "string" ? g : (g && g.name) || "").toLowerCase());
-    }
-  } else if (typeof item.genres === "string") {
-    genreNames.push(item.genres.toLowerCase());
-  }
-  if (genreNames.some((n) => n.includes("anime"))) return true;
-
-  const lang = String(
-    item.original_language || item.language || item.origlang || ""
-  ).toLowerCase();
-  const isJapanese = lang === "ja" || lang === "jp" || lang.startsWith("ja-");
-  const hasAnimId =
-    Array.isArray(item.genre_ids) && item.genre_ids.some((g) => Number(g) === TMDB_ANIMATION_ID);
-  const hasAnimName = genreNames.some((n) => n.includes("animation") || n.includes("animaatio"));
-  if (isJapanese && (hasAnimId || hasAnimName)) return true;
-
-  return false;
-}
-
-const EXCLUDE_TV_GENRES = new Set([10763, 10762, 10767]);
-const FAMILY_GENRE = 10751;
-
-const BLOCKED_LANGS = new Set([
-  "zh", "cn", "zh-cn", "zh-tw", "zh-hk", "yue", "cmn", "zh-hans", "zh-hant",
-]);
-
-const KNOWN_LANGS = new Set([
-  "en", "fi", "sv", "no", "da", "de", "fr", "es", "it", "pt",
-  "ko", "ja", "nl", "pl", "tr", "hi", "ru", "uk",
-]);
-
-function normalizeLang(code) {
-  return String(code || "").toLowerCase().trim().split(/[-_]/)[0];
-}
-
-function isObscureInternational(item) {
-  const raw = String(item.original_language || "").toLowerCase().trim();
-  const lang = normalizeLang(raw);
-  if (!lang) return false;
-
-  if (BLOCKED_LANGS.has(raw) || BLOCKED_LANGS.has(lang) || lang === "zh") return true;
-  if (KNOWN_LANGS.has(lang)) return false;
-
-  const votes = Number(item.vote_count || 0);
-  const popularity = Number(item.popularity || 0);
-  if (votes >= 800 || popularity >= 80) return false;
-  return true;
-}
-
-function isCyberpunkEdgerunners(item) {
-  const t = String(item.title || item.name || item.original_name || item.original_title || "").toLowerCase();
-  // Only allowed anime exception
-  return /cyberpunk/.test(t) && /edge\s*runners|edgerunners/.test(t);
-}
-
-function shouldExcludeTrendingItem(item, type) {
-  if (!item) return true;
-  if (isObscureInternational(item)) return true;
-  // Block all anime except Cyberpunk: Edgerunners
-  if (isAnimeItem(item) && !isCyberpunkEdgerunners(item)) return true;
-
-  const genreIds = Array.isArray(item.genre_ids) ? item.genre_ids.map(Number) : [];
-  const isSeries = type === "series";
-  if (isSeries) {
-    if (genreIds.some((g) => EXCLUDE_TV_GENRES.has(g))) return true;
-  }
-
-  return false;
-}
-
-async function enrichItemFromTmdb(item, type) {
-  if (item.original_language && Array.isArray(item.genre_ids) && item.genre_ids.length) {
-    return item;
-  }
-  const apiKey = process.env.TMDB_API_KEY;
-  const imdbId = item.imdb_id || item.imdbid || (item.external_ids && item.external_ids.imdb_id);
-  if (!apiKey || !imdbId || !String(imdbId).startsWith("tt")) return item;
-
-  const cacheKey = `enrich:${type}:${imdbId}`;
-  if (tmdbCache.has(cacheKey)) {
-    return { ...item, ...tmdbCache.get(cacheKey) };
-  }
-
-  try {
-    const findRes = await api.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
-      params: { api_key: apiKey, external_source: "imdb_id" },
-      timeout: 3500,
-    });
-    const isSeries = type === "series";
-    const match =
-      (isSeries ? findRes.data.tv_results : findRes.data.movie_results) &&
-      (isSeries ? findRes.data.tv_results : findRes.data.movie_results)[0];
-    if (!match) return item;
-
-    const extra = {
-      original_language: item.original_language || match.original_language,
-      genre_ids: (item.genre_ids && item.genre_ids.length) ? item.genre_ids : (match.genre_ids || []),
-      vote_count: item.vote_count || match.vote_count,
-      popularity: item.popularity || match.popularity,
-      title: item.title || match.title || match.name,
-      name: item.name || match.name || match.title,
-      id: item.tmdb_id || item.tmdbid || match.id || item.id,
-      tmdb_id: item.tmdb_id || item.tmdbid || match.id,
-    };
-    tmdbCache.set(cacheKey, extra);
-    return { ...item, ...extra };
-  } catch (_) {
-    return item;
-  }
-}
-
-
-function parseYmd(s) {
-  if (!s) return null;
-  const m = String(s).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return null;
-  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
-}
-
-function isFutureDate(s) {
-  const d = parseYmd(s);
-  if (!d) return false;
-  const today = new Date();
-  const t0 = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  return d.getTime() > t0;
-}
-
-function isUnreleasedItem(item, type) {
-  if (type === "movie") {
-    const rd = item.release_date || item.released || null;
-    // Future theatrical/digital date → out. Missing date → keep (trending usually has dates)
-    if (rd && isFutureDate(rd)) return true;
-    return false;
-  }
-  const fd = item.first_air_date || item.release_date || null;
-  if (fd && isFutureDate(fd)) return true;
-  return false;
-}
-
-/** TMDB release type 4 = Digital. Cache per movie id. */
-const digitalReleaseCache = new Map();
-async function hasDigitalRelease(tmdbId) {
-  if (!tmdbId) return true;
-  const key = String(tmdbId);
-  if (digitalReleaseCache.has(key)) return digitalReleaseCache.get(key);
-  const apiKey = process.env.TMDB_API_KEY || "dc1ae8c943c805800112762a3afbc1b6";
-  try {
-    const r = await api.get(`https://api.themoviedb.org/3/movie/${tmdbId}/release_dates`, {
-      params: { api_key: apiKey },
-      timeout: 5000,
-      httpAgent,
-      httpsAgent,
-    });
-    const results = (r.data && r.data.results) || [];
-    const today = new Date();
-    const t0 = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-    let ok = false;
-    let sawDigitalOrPhysical = false;
-    for (const country of results) {
-      for (const rel of country.release_dates || []) {
-        // 4 = Digital, 5 = Physical
-        if (rel.type !== 4 && rel.type !== 5) continue;
-        sawDigitalOrPhysical = true;
-        const d = parseYmd(rel.release_date);
-        if (d && d.getTime() <= t0) {
-          ok = true;
-          break;
-        }
-      }
-      if (ok) break;
-    }
-    // No digital/physical rows in TMDB at all → treat as not digitally out yet
-    if (!sawDigitalOrPhysical) ok = false;
-    digitalReleaseCache.set(key, ok);
-    return ok;
-  } catch (_) {
-    // API blip: do not empty the whole movie row
-    digitalReleaseCache.set(key, true);
-    return true;
-  }
-}
-
-async function filterTrendingList(raw, type, limit = 10) {
-  const out = [];
-  const chunkSize = 15;
-  for (let i = 0; i < raw.length && out.length < limit; i += chunkSize) {
-    const chunk = raw.slice(i, i + chunkSize);
-    const processed = await Promise.all(
-      chunk.map(async (item) => {
-        const enriched = await enrichItemFromTmdb(item, type);
-        if (shouldExcludeTrendingItem(enriched, type)) return null;
-        if (isUnreleasedItem(enriched, type)) return null;
-        // Movies: only if digital/physical home release already out
-        if (type === "movie") {
-          const tid = enriched.tmdb_id || enriched.tmdbid || enriched.id;
-          if (tid && !(await hasDigitalRelease(tid))) return null;
-        }
-        return enriched;
-      })
-    );
-    for (const res of processed) {
-      if (res && out.length < limit) out.push(res);
-    }
-  }
-  return out;
-}
 
 function formatGenreLabel(genre) {
   if (!genre) return null;
@@ -410,8 +305,8 @@ function buildGenreRatingSvg(width, height, genre, rating) {
   if (!label) return null;
 
   // Expanded size & wider tracking for a bolder, more readable bottom badge
-  const fontSize = Math.round(height * 0.055);
-  const y = Math.round(height * 0.935);
+  const fontSize = Math.round(height * 0.039);
+  const y = Math.round(height * 0.943);
   const x = Math.round(width / 2);
   const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
@@ -431,7 +326,7 @@ function buildGenreRatingSvg(width, height, genre, rating) {
     font-size="${fontSize}"
     fill="#FFFFFF"
     fill-opacity="0.92"
-    letter-spacing="0.15em"
+    letter-spacing="0.13em"
     filter="url(#tshadow)"
   >${safe}</text>
 </svg>`;
@@ -506,7 +401,7 @@ function getRankAssets(num) {
     <!-- Professional glass rim: bright top edge, soft fade to transparent (no heavy outline) -->
     <linearGradient id="metallicRim" x1="0%" y1="0%" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
       <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55"/>
-      <stop offset="22%" stop-color="#F1F5F9" stop-opacity="0.32"/>
+      <stop offset="22%" stop-color="#F1F5F9" stop-opacity="0.39"/>
       <stop offset="55%" stop-color="#94A3B8" stop-opacity="0.10"/>
       <stop offset="100%" stop-color="#64748B" stop-opacity="0.00"/>
     </linearGradient>
@@ -590,7 +485,7 @@ function getRankAssets(num) {
 </svg>`;
 
   const assets = {
-    maskPng: renderSvgToPng(maskSvg, TARGET_W),
+    maskPng: null,
     rankLayer: renderSvgToPng(rankSvg, TARGET_W),
   };
   rankAssetCache.set(num, assets);
@@ -603,7 +498,7 @@ async function getVignettePng() {
     `<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="v" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stop-color="#000" stop-opacity="0.32"/>
+          <stop offset="0%" stop-color="#000" stop-opacity="0.39"/>
           <stop offset="42%" stop-color="#000" stop-opacity="0.10"/>
           <stop offset="100%" stop-color="#000" stop-opacity="0"/>
         </linearGradient>
@@ -615,489 +510,148 @@ async function getVignettePng() {
   return CACHED_VIGNETTE_PNG;
 }
 
-function buildPostersPlusUrl({ imdbId, tmdbId, stremioId, type, shape }) {
-  const params = new URLSearchParams();
-  if (tmdbId) params.set("tmdb_id", String(tmdbId));
-  if (imdbId) params.set("imdb_id", String(imdbId));
-  params.set("stremio_id", stremioId || imdbId || (tmdbId ? `tmdb:${tmdbId}` : ""));
-  params.set("type", type === "series" ? "series" : "movie");
-  params.set("shape", shape || "poster");
-  params.set("pc", "stremio_tv_nuvio");
-  params.set("sbi", "0.010");
-  params.set("tmdb_key", process.env.TMDB_API_KEY || "dc1ae8c943c805800112762a3afbc1b6");
-  params.set("mdblist_key", process.env.MDBLIST_API_KEY || "1cym9fkqsk4hvwtesjthxsrr9");
-  params.set("tg", "off");
-  params.set("bgr", "custom");
-  params.set("bgo", "0.3");
-  params.set("bgh", "0.55");
-  params.set("tvso", "1");
-  params.set("vpct", "1");
-  params.set("vpcb", "1");
-  params.set("vcsa", "1.55");
-  params.set("vcb", "0.60");
-  params.set("vcli", "1.60");
-  params.set("vcs", "muted");
-  params.set("hg", "1");
-  params.set("sm", "hidden");
-  params.set("_bgr", "off");
-  params.set("_vcsa", "2.00");
-  params.set("_vcb", "1.00");
-  params.set("_vcli", "1.30");
-  params.set("_vcs", "shade");
-  params.set("_hy", "1");
-  params.set("_hr", "1");
-  params.set("_art", "original");
-  params.set("bp", "top_left");
-  params.set("_cl", "off");
-  params.set("fti", "1");
-  params.set("trs", "direct");
-  params.set("mw", "lb:.25,pc:.1,im:.4,mal:.25");
-  params.set("tw", "pc:.1,im:.5,mc:.15,mal:.25");
-  params.set("rdm", "0");
-  params.set("pp", "random");
-  params.set("ll", "fi");
-  params.set("lp", "native,custom,english,neutral,native_if_original,original,text");
-  params.set("lls", "fi");
-  params.set("fbs", "photoreal");
-  params.set("lmwr", "0.80");
-  params.set("lmhr", "0.40");
-  params.set("lbr", "0.20");
-  params.set("cg", "0");
-  params.set("hur", "1");
-  params.set("bdm", "0");
-  return `https://postersplus.slokker.cc/poster?${params.toString()}`;
+
+
+function buildPostersPlusUrl({imdbId,tmdbId,stremioId,type}) {
+  const params=new URLSearchParams();
+  if(tmdbId)params.set('tmdb_id',String(tmdbId));
+  if(imdbId)params.set('imdb_id',String(imdbId));
+  params.set('stremio_id',stremioId||imdbId||'');
+  params.set('type',type);
+  params.set('shape','poster');
+  params.set('pc','stremio_tv_nuvio');
+  params.set('sbi','0.010');
+  if(TMDB_KEY)params.set('tmdb_key',TMDB_KEY);
+  if(MDBLIST_KEY)params.set('mdblist_key',MDBLIST_KEY);
+  // Preserve original artwork design (textless film art + title-logo where available).
+  const presets={tg:'off',bgr:'custom',bgo:'0.3',bgh:'0.55',tvso:'1',vpct:'1',vpcb:'1',
+    vcsa:'1.55',vcb:'0.60',vcli:'1.60',vcs:'muted',hg:'1',sm:'hidden',
+    _bgr:'off',_vcsa:'2.00',_vcb:'1.00',_vcli:'1.30',_vcs:'shade',
+    _hy:'1',_hr:'1',_art:'original',bp:'top_left',_cl:'off',fti:'1',trs:'direct',
+    mw:'lb:.25,pc:.1,im:.4,mal:.25',tw:'pc:.1,im:.5,mc:.15,mal:.25',
+    rdm:'0',pp:'random',ll:'fi',lp:'native,custom,english,neutral,native_if_original,original,text',
+    lls:'fi',fbs:'photoreal',lmwr:'0.80',lmhr:'0.40',lbr:'0.20',cg:'0',hur:'1',bdm:'0'};
+  Object.entries(presets).forEach(([k,v])=>params.set(k,v));
+  return `${POSTERSPLUS_BASE}/poster?${params.toString()}`;
 }
-
-async function getTmdbData(imdbId, type, existingTmdbId) {
-  const apiKey = process.env.TMDB_API_KEY;
-  const empty = { posterUrl: null, backdropUrl: null, logoUrl: null, genre: null, tmdbId: existingTmdbId || null, imdbRating: null };
-  if (!apiKey) return empty;
-
-  const cacheKey = `tmdb:${type}:${imdbId || ""}:${existingTmdbId || ""}`;
-  const cached = tmdbCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < 3600_000) {
-    return cached.data;
-  }
-
-  const isSeries = type === "series";
+function cleanArtwork(url) {
   try {
-    let match = null;
-    let tmdbId = existingTmdbId ? Number(existingTmdbId) || existingTmdbId : null;
-
-    if (!tmdbId && imdbId && String(imdbId).startsWith("tt")) {
-      const findRes = await api.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
-        params: { api_key: apiKey, external_source: "imdb_id" },
-        timeout: 3500,
-      });
-      const results = isSeries ? findRes.data.tv_results : findRes.data.movie_results;
-      match = results && results[0];
-      if (match) tmdbId = match.id;
-    }
-
-    if (!tmdbId) return empty;
-
-    const pathType = isSeries ? `tv/${tmdbId}` : `movie/${tmdbId}`;
-    const tt = imdbId && String(imdbId).startsWith("tt") ? imdbId : null;
-
-    const [detRes, omdbRes] = await Promise.allSettled([
-      api.get(`https://api.themoviedb.org/3/${pathType}`, {
-        params: {
-          api_key: apiKey,
-          append_to_response: "images",
-          include_image_language: "fi,en,null",
-        },
-        timeout: 4000,
-      }),
-      tt && process.env.OMDB_API_KEY
-        ? api.get("https://www.omdbapi.com/", {
-            params: { i: tt, apikey: process.env.OMDB_API_KEY },
-            timeout: 2800,
-          })
-        : Promise.resolve(null),
-    ]);
-
-    const det = detRes.status === "fulfilled" && detRes.value ? detRes.value.data : null;
-    const omdbData = omdbRes.status === "fulfilled" && omdbRes.value ? omdbRes.value.data : null;
-
-    const posterPath = (det && det.poster_path) || (match && match.poster_path);
-    const backdropPath = (det && det.backdrop_path) || (match && match.backdrop_path);
-    const posterUrl = posterPath ? `https://image.tmdb.org/t/p/w780${posterPath}` : null;
-    const backdropUrl = backdropPath ? `https://image.tmdb.org/t/p/w1280${backdropPath}` : null;
-
-    let logoUrl = null;
-    const logos = det && det.images && Array.isArray(det.images.logos) ? det.images.logos : [];
-    if (logos.length) {
-      const preferred =
-        logos.find((l) => l.iso_639_1 === "fi") ||
-        logos.find((l) => l.iso_639_1 === "en") ||
-        logos.find((l) => !l.iso_639_1) ||
-        logos[0];
-      if (preferred && preferred.file_path) {
-        logoUrl = `https://image.tmdb.org/t/p/w500${preferred.file_path}`;
-      }
-    }
-
-    let genre = null;
-    if (det && Array.isArray(det.genres) && det.genres[0]) {
-      const rawName = String(det.genres[0].name || "").trim();
-      if (/science fiction|sci-fi/i.test(rawName)) {
-        genre = "SCI-FI";
-      } else if (/action & adventure/i.test(rawName)) {
-        genre = "ACTION";
-      } else {
-        genre = rawName.toUpperCase();
-      }
-    } else if (match && Array.isArray(match.genre_ids) && match.genre_ids.length) {
-      genre = GENRE_MAP[match.genre_ids[0]] || null;
-    }
-
-    let imdbRating = null;
-    if (omdbData && omdbData.imdbRating && omdbData.imdbRating !== "N/A") {
-      imdbRating = omdbData.imdbRating;
-    } else if (det && det.vote_average != null && Number(det.vote_average) > 0) {
-      imdbRating = Number(det.vote_average).toFixed(1);
-    }
-
-    const result = { posterUrl, backdropUrl, logoUrl, genre, tmdbId, imdbRating };
-    tmdbCache.set(cacheKey, { ts: Date.now(), data: result });
-    return result;
-  } catch (err) {
-    console.error(`TMDB ${imdbId || existingTmdbId}:`, err.message);
-    return empty;
-  }
+    const u=new URL(url);
+    return u.protocol==='https:' && u.hostname==='image.tmdb.org' && u.pathname.startsWith('/t/p/') ? u.href : null;
+  }catch(_){return null;}
 }
-
-async function fetchTrendingList(type) {
-  let raw = [];
-  const apiKey = process.env.TMDB_API_KEY;
-  const media = type === "series" ? "tv" : "movie";
-
-  // Primary: TMDB trending today (movies / TV)
-  const tmdbKey = apiKey || "dc1ae8c943c805800112762a3afbc1b6";
-  try {
-    const [r1, r2] = await Promise.all([
-      api.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
-        params: { api_key: tmdbKey, page: 1 },
-        timeout: 8000,
-      }),
-      api.get(`https://api.themoviedb.org/3/trending/${media}/day`, {
-        params: { api_key: tmdbKey, page: 2 },
-        timeout: 8000,
-      }).catch(() => null),
-    ]);
-    raw = [...(r1.data.results || []), ...((r2 && r2.data && r2.data.results) || [])];
-  } catch (err) {
-    console.error(`TMDB trending ${media}/day:`, err.message);
+function xmlEscape(str) {return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');}
+async function fallbackArt(posterUrl,title) {
+  const url=cleanArtwork(posterUrl);
+  if(url){
+    try{
+      const r=await api.get(url,{responseType:'arraybuffer',timeout:4500,maxContentLength:12*1024*1024});
+      if(r.data?.byteLength>1000)return Buffer.from(r.data);
+    }catch(e){LOG('TMDB artwork fallback',e.message);}
   }
-
-  // Fallback: MDBList if TMDB empty
-  if (!raw.length) {
-    try {
-      if (type === "movie") {
-        const res = await api.get(SNOAK_MOVIES_URL, { timeout: 6000 });
-        if (Array.isArray(res.data)) raw = res.data;
-      } else {
-        try {
-          const res = await api.get(SNOAK_SHOWS_URL, { timeout: 6000 });
-          if (Array.isArray(res.data)) raw = res.data;
-        } catch (_) {
-          const res = await api.get(SNOAK_SHOWS_ALT_URL, { timeout: 6000 });
-          if (Array.isArray(res.data)) raw = res.data;
-        }
-      }
-    } catch (err) {
-      console.error("MDBList fallback:", err.message);
-    }
-  }
-
-  return raw;
+  const safe=xmlEscape(String(title||'TOP 10').slice(0,44));
+  const svg=`<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg"><defs>
+    <linearGradient id="g" x2="1" y2="1"><stop stop-color="#253449"/><stop offset="0.55" stop-color="#151C2A"/><stop offset="1" stop-color="#080D14"/></linearGradient>
+    </defs><rect width="100%" height="100%" fill="url(#g)"/>
+    <text x="50%" y="60%" text-anchor="middle" fill="#f0f4fa" font-size="${Math.round(TARGET_W*.045)}" font-family="sans-serif" font-weight="600">${safe}</text></svg>`;
+  return Buffer.from(svg);
 }
-
-async function resolveImdbId(tmdbId, type) {
-  const apiKey = process.env.TMDB_API_KEY || "dc1ae8c943c805800112762a3afbc1b6";
-  if (!tmdbId) return null;
-  try {
-    const pathType = type === "series" ? `tv/${tmdbId}` : `movie/${tmdbId}`;
-    const r = await api.get(`https://api.themoviedb.org/3/${pathType}/external_ids`, {
-      params: { api_key: apiKey },
-      timeout: 3500,
-    });
-    return r.data && r.data.imdb_id ? r.data.imdb_id : null;
-  } catch (_) {
-    return null;
-  }
+function tryVercelWaitUntil(promise){
+  try{const {waitUntil}=require('@vercel/functions');waitUntil(promise);}catch(_){promise.catch(()=>{});}
 }
-
-app.get("/", (req, res) => {
-  const hostUrl = getHostUrl(req);
-  res.send(`<!DOCTYPE html><html><head><title>Top 10 Trending</title></head>
-<body style="font-family:system-ui;text-align:center;padding:50px;background:#0f0f12;color:#fff">
-<h1>Top 10 Trending Addon</h1>
-<p>Apple TV-style ranks + genre badges</p>
-<a href="stremio://${req.headers.host}/manifest.json"
-   style="background:#e50914;color:#fff;padding:14px 28px;text-decoration:none;font-size:18px;font-weight:700;border-radius:6px;display:inline-block;margin-top:20px">
-Install in Stremio</a>
-<p style="margin-top:20px;font-size:13px;color:#888">Manifest: ${hostUrl}/manifest.json</p>
-</body></html>`);
+app.get('/manifest.json',(_req,res)=>{
+  res.set('Cache-Control','public, max-age=300, s-maxage=3600');res.json(MANIFEST);
 });
-
-app.get("/manifest.json", (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "*");
-  res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60");
-  res.json(MANIFEST);
-});
-
-/**
- * Fast catalog build: TMDB trending fields only + parallel IMDb resolve.
- * No per-item getTmdbData (that was the main catalog delay).
- */
-async function buildCatalogMetas(type, hostUrl) {
-  const raw = await fetchTrendingList(type);
-  // Prefer items that already look like TMDB results (have genre_ids / original_language)
-  const filtered = await filterTrendingList(raw, type, 40);
-  const slice = filtered.slice(0, 25);
-
-  const rows = await Promise.all(
-    slice.map(async (item, i) => {
-      let tmdbId = item.tmdb_id || item.tmdbid || item.id || null;
-      if (tmdbId && String(tmdbId).startsWith("tt")) tmdbId = null;
-      let imdbId =
-        item.imdb_id ||
-        item.imdbid ||
-        (item.external_ids && item.external_ids.imdb_id) ||
-        null;
-      if (!imdbId && tmdbId) {
-        imdbId = await resolveImdbId(tmdbId, type);
-      }
-      if (!imdbId || !String(imdbId).startsWith("tt")) return null;
-      const idToUse = imdbId;
-
-      // Genre + rating from trending payload (instant)
-      let genre = null;
-      const gids = Array.isArray(item.genre_ids) ? item.genre_ids : [];
-      if (gids.length && GENRE_MAP[gids[0]]) genre = GENRE_MAP[gids[0]];
-      else if (item.genres && item.genres[0]) {
-        genre = String(item.genres[0].name || item.genres[0]).toUpperCase();
-      }
-      let imdbRating = null;
-      if (item.vote_average != null && Number(item.vote_average) > 0) {
-        imdbRating = Number(item.vote_average).toFixed(1);
-      }
-
-      const posterPath = item.poster_path || null;
-      const posterUrl = posterPath
-        ? `https://image.tmdb.org/t/p/w780${posterPath}`
-        : null;
-      const backdropPath = item.backdrop_path || null;
-      const background = backdropPath
-        ? `https://image.tmdb.org/t/p/w1280${backdropPath}`
-        : null;
-
-      const title = item.title || item.name || "Unknown";
-      const rank = i + 1;
-      const posterParams = new URLSearchParams({
-        id: imdbId || idToUse,
-        rank: String(rank),
-        type,
-        tmdb: String(tmdbId || ""),
-        g: genre || "",
-        r: imdbRating || "",
-        p: posterUrl || "",
-        v: POSTER_CACHE_VERSION,
-      });
-
-      const meta = {
-        id: idToUse,
-        type,
-        name: title,
-        poster: `${hostUrl}/api/poster?${posterParams.toString()}`,
-        posterShape: "poster",
-        description: item.overview || item.description || "",
-      };
-      if (background) meta.background = background;
-      const rd = item.release_date || item.first_air_date || item.released || null;
-      if (rd) meta.releaseInfo = String(rd).slice(0, 10);
-      return { meta, rank };
-    })
-  );
-
-  return rows
-    .filter((r) => r && r.meta)
-    .sort((a, b) => a.rank - b.rank)
-    .slice(0, 10)
-    .map((r) => r.meta);
-}
-
-app.get("/catalog/:type/:id.json", async (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "*");
-  const { type } = req.params;
-  const hostUrl = getHostUrl(req);
-  if (type !== "movie" && type !== "series") return res.json({ metas: [] });
-
-  const cachedCat = catalogCache.get(type);
-  const dayKey = getCatalogDayKey();
-  const hasGoodCache =
-    cachedCat &&
-    Array.isArray(cachedCat.metas) &&
-    cachedCat.metas.length > 0 &&
-    cachedCat.dayKey === dayKey;
-
-  // Same catalog day (noon→noon Helsinki): serve cache, no rebuild
-  if (hasGoodCache) {
-    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ metas: cachedCat.metas });
-  }
-
-  // New day (or empty): rebuild. Keep old list visible until warm finishes if we have one.
-  if (cachedCat && cachedCat.metas && cachedCat.metas.length) {
-    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60");
-    res.json({ metas: cachedCat.metas });
-    refreshCatalog(type, hostUrl); // swaps after posters warm, new dayKey
-    return;
-  }
-
-  try {
-    const metas = await buildCatalogMetas(type, hostUrl);
-    if (metas.length) {
-      const urls = metas.map((m) => m.poster).filter(Boolean);
-      // Full warm before publish — prevents empty poster slots on first open
-      await warmPosterUrls(urls);
-      catalogCache.set(type, { ts: Date.now(), metas, dayKey });
-    }
-    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400");
-    res.json({ metas });
-  } catch (err) {
-    console.error(`Catalog (${type}):`, err.message);
-    if (cachedCat && cachedCat.metas && cachedCat.metas.length) {
-      res.setHeader("Cache-Control", "public, max-age=60");
-      return res.json({ metas: cachedCat.metas });
-    }
-    res.json({ metas: [] });
+app.get('/catalog/:type/:id.json',async(req,res)=>{
+  const {type,id}=req.params;
+  if(!catalogValid(type,id))return res.status(404).json({error:'Unknown catalog'});
+  try{
+    const metas=await getCatalog(type,hostUrl(req));
+    res.set('Cache-Control',CATALOG_SUCCESS_HEADER);
+    return res.json({metas});
+  }catch(err){
+    res.set('Cache-Control','no-store');
+    res.set('Retry-After','30');
+    return res.status(503).json({error:'Catalog temporarily unavailable. Retry soon.'});
   }
 });
-
-
-app.get("/api/warm", async (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  const hostUrl = getHostUrl(req);
-  // Return immediately; work in background
-  res.json({ ok: true, warming: true });
-  setImmediate(() => {
-    refreshCatalog("series", hostUrl);
-    refreshCatalog("movie", hostUrl);
-  });
-});
-
-app.get("/api/poster", async (req, res) => {
-  const { id, rank, type, tmdb, g, r, p } = req.query;
-  if (!id) return res.status(400).send("Missing ID");
-
-  const num = Math.min(10, Math.max(1, parseInt(rank, 10) || 1));
-  const mediaType = type === "series" ? "series" : "movie";
-  const memKey = `${id}:${num}:${mediaType}:${POSTER_CACHE_VERSION}`;
-
-  if (posterMemoryCache.has(memKey)) {
-    res.setHeader("Content-Type", "image/jpeg");
-    res.setHeader("Cache-Control", "public, max-age=2592000, s-maxage=2592000, stale-while-revalidate=604800, immutable");
-    return res.send(posterMemoryCache.get(memKey));
+app.get('/api/status',(_req,res)=>res.set('Cache-Control','no-store').json({
+  ok:true,version:MANIFEST.version,tmdbConfigured:Boolean(TMDB_KEY),posterWidth:TARGET_W,
+  posterCacheItems:posterCache.size,catalogs:[...catalogCache.values()].map(v=>({items:v.metas.length,ageSeconds:Math.round((Date.now()-v.ts)/1000)})),
+}));
+app.get('/api/poster',async(req,res)=>{
+  const {id,rank,type,tmdb,g,r,p,n}=req.query;
+  if(!validImdb(id))return res.status(400).send('Invalid IMDb ID');
+  const num=Math.min(10,Math.max(1,Number.parseInt(rank,10)||1));
+  const mediaType=type==='series'?'series':'movie';
+  const signature=`${id}:${num}:${mediaType}:${tmdb}:${g}:${r}:${p}:${POSTER_CACHE_VERSION}:${TARGET_W}`;
+  const cached=posterCache.get(signature);
+  if(cached) {
+    res.set('Content-Type','image/jpeg');res.set('Cache-Control',cached.cacheHeader);
+    return res.send(cached.bytes);
   }
-
-  try {
-    const cleanImdb = id.startsWith("tt") ? id : null;
-    let tmdbId = tmdb || null;
-    let genre = g || null;
-    let imdbRating = r || null;
-    let fallbackPosterUrl = p || null;
-
-    // ONLY PostersPlus — never TMDB/other art as the base poster
-    let posterBuffer = null;
-    const ppUrl = buildPostersPlusUrl({
-      imdbId: cleanImdb,
-      tmdbId,
-      stremioId: id,
-      type: mediaType,
-      shape: "poster",
-    });
-    try {
-      const ppRes = await api.get(ppUrl, {
-        responseType: "arraybuffer",
-        timeout: 12000,
-        headers: { Accept: "image/*" },
-        maxRedirects: 5,
-        httpAgent,
-        httpsAgent,
-      });
-      if (ppRes.data && ppRes.data.byteLength > 1000) {
-        posterBuffer = Buffer.from(ppRes.data);
-      }
-    } catch (e) {
-      console.error("PostersPlus:", e.message);
-    }
-
-    if (!posterBuffer) {
-      posterBuffer = await sharp({
-        create: { width: 360, height: 540, channels: 3, background: { r: 18, g: 18, b: 24 } },
-      }).jpeg().toBuffer();
-    }
-
-    // FAST path: no full-poster blur (that was the slowdown vs digit PNGs).
-    // Rank glass is pure SVG (pre-cached). One resize + one composite.
-    const { rankLayer } = getRankAssets(num);
-    const vigPng = await getVignettePng();
-
-    const composites = [
-      { input: vigPng, top: 0, left: 0 },
-      { input: rankLayer, top: 0, left: 0 },
-    ];
-
-    const genreSvg = buildGenreRatingSvg(TARGET_W, TARGET_H, genre, imdbRating);
-    if (genreSvg) {
+  let pending=posterInFlight.get(signature);
+  if(!pending){
+    pending=(async()=>{
+      let source='postersplus';
+      let base=null;
       try {
-        const gKey = `${genre || ""}|${imdbRating || ""}`;
-        let genrePng = genrePngCache.get(gKey);
-        if (!genrePng) {
-          genrePng = renderSvgToPng(genreSvg, TARGET_W);
-          if (genrePngCache.size > 80) {
-            genrePngCache.delete(genrePngCache.keys().next().value);
-          }
-          genrePngCache.set(gKey, genrePng);
-        }
-        composites.push({ input: genrePng, top: 0, left: 0 });
-      } catch (e) {
-        console.error("Genre overlay:", e.message);
+        const pp=await api.get(buildPostersPlusUrl({imdbId:id,tmdbId:cleanTmdb(tmdb),stremioId:id,type:mediaType}),{
+          responseType:'arraybuffer',timeout:Number(process.env.POSTERSPLUS_TIMEOUT_MS||9000),
+          maxContentLength:14*1024*1024,headers:{Accept:'image/*'}
+        });
+        if(pp.data?.byteLength>1500 && /image\//i.test(String(pp.headers?.['content-type']||'')))base=Buffer.from(pp.data);
+      }catch(e){LOG('PostersPlus timeout / error',e.message);}
+      if(!base){source='tmdb-fallback';base=await fallbackArt(p,n);}
+      const assets=getRankAssets(num);
+      const composites=[{input:await getVignettePng(),top:0,left:0},{input:assets.rankLayer,top:0,left:0}];
+      const label=buildGenreRatingSvg(TARGET_W,TARGET_H,g||'',r||'');
+      if(label){
+        const key=`${g||''}|${r||''}|${TARGET_W}`;
+        let png=genrePngCache.get(key);
+        if(!png){png=renderSvgToPng(label,TARGET_W);putLru(genrePngCache,key,png,25);}
+        composites.push({input:png,top:0,left:0});
       }
-    }
-
-    const out = await sharp(posterBuffer)
-      .resize(TARGET_W, TARGET_H, { fit: "cover", position: "centre" })
-      .composite(composites)
-      .jpeg({ quality: 82, chromaSubsampling: "4:2:0", mozjpeg: true })
-      .toBuffer();
-
-    setPosterCache(memKey, out);
-
-    res.setHeader("Content-Type", "image/jpeg");
-    res.setHeader("Cache-Control", "public, max-age=2592000, s-maxage=2592000, stale-while-revalidate=604800, immutable");
-    return res.send(out);
-  } catch (err) {
-    console.error("Poster error:", err.message, err.stack);
-    return res.status(500).send("Error rendering poster");
+      const bytes=await sharp(base,{limitInputPixels:24e6})
+        .resize(TARGET_W,TARGET_H,{fit:'cover',position:'centre'})
+        .composite(composites)
+        .jpeg({quality:88,chromaSubsampling:'4:4:4',mozjpeg:false})
+        .toBuffer();
+      const cacheHeader=source==='postersplus'
+        ? 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000'
+        : 'public, max-age=60, s-maxage=900, stale-while-revalidate=1800';
+      const output={bytes,cacheHeader};
+      putLru(posterCache,signature,output,24);
+      return output;
+    })().finally(()=>posterInFlight.delete(signature));
+    posterInFlight.set(signature,pending);
   }
+  try {
+    const result=await pending;
+    res.set('Content-Type','image/jpeg');res.set('Cache-Control',result.cacheHeader);
+    res.send(result.bytes);
+  }catch(err){LOG('Poster render failed',err.message);res.set('Cache-Control','no-store').status(503).send('Poster temporary unavailable');}
 });
-
-// Warm rank SVG + catalogs so first user hit is instant
-try {
-  for (let n = 1; n <= 10; n++) getRankAssets(n);
-  getVignettePng().catch(() => {});
-} catch (_) {}
-setTimeout(() => {
-  const base = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://127.0.0.1:3000";
-  refreshCatalog("series", base);
-  refreshCatalog("movie", base);
-}, 500);
-
-module.exports = app;
+// Optional Vercel Cron or your own scheduled ping. A valid CRON_SECRET is required.
+app.get('/api/refresh',async(req,res)=>{
+  const secret=process.env.CRON_SECRET;
+  if(!secret || req.get('authorization')!==`Bearer ${secret}`)return res.status(401).send('Unauthorized');
+  const host=hostUrl(req);
+  // Use same public catalog URLs to warm Vercel's CDN (not in-process memory alone).
+  const task=Promise.allSettled(['movie','series'].map(type=>api.get(
+    `${host}/catalog/${type}/${type==='movie'?'top10_trending_movies':'top10_trending_shows'}.json`,{timeout:25000,headers:{Pragma:'no-cache','Cache-Control':'no-cache'}}
+  )));
+  tryVercelWaitUntil(task);
+  res.set('Cache-Control','no-store').json({ok:true,requested:['movie','series']});
+});
+app.get('/',(req,res)=>{
+ const h=hostUrl(req);
+ res.set('Content-Type','text/html; charset=utf-8').set('Cache-Control','public, max-age=600');
+ res.send(`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1">
+ <title>Top 10 — Nuvio</title><style>
+ :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 72% 10%,#202a39 0%,#0d121c 40%,#080a0f 80%);color:#f2f5f8;font:16px -apple-system,BlinkMacSystemFont,Inter,Arial,sans-serif;display:grid;place-items:center;padding:24px}
+ main{width:min(620px,100%);padding:56px 42px;border-radius:28px;border:1px solid #ffffff16;background:#ffffff08;box-shadow:0 22px 80px #0008}small{color:#9ca9bc;letter-spacing:.3em;font-weight:600}h1{font-size:clamp(2.8rem,6vw,4.2rem);letter-spacing:-.06em;margin:14px 0}p{color:#b8c3d1;line-height:1.6}a{color:#dbe7f8;text-decoration:none}nav{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}nav a{border-radius:14px;background:#ffffff14;border:1px solid #ffffff22;padding:12px 18px}nav a:hover{background:#ffffff24}footer{font-size:12px;color:#8290a4;margin-top:36px}
+ </style><main><small>NUVIO • CINEMATIC CATALOGS</small><h1>Top 10<span style="color:#a5afbd">.</span></h1><p>Trending films and series, curated daily. Premium artwork, crystalline ranks, built for a seamless home screen.</p><nav><a href="${h}/manifest.json">Manifest</a><a href="${h}/api/status">System status</a><a href="stremio://${req.get('host')}/manifest.json">Install in Stremio</a></nav><footer>Version ${MANIFEST.version} · Apple TV-inspired independent add-on · Nuvio-compatible</footer></main></html>`);
+});
+module.exports=app;
+if(require.main===module){app.listen(Number(process.env.PORT||3000),()=>LOG('Listening on',process.env.PORT||3000));}

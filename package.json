@@ -1,13 +1,20 @@
 {
   "name": "my-top10-addon",
-  "version": "2.2.0",
-  "description": "Stremio Top 10 with PostersPlus + Apple TV rank overlays",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Nuvio premium Top 10: resilient Stremio catalogs and Apple TV-style ranked posters",
   "main": "api/index.js",
   "scripts": {
-    "start": "node api/index.js"
+    "start": "node api/index.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check api/index.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
+    "@vercel/functions": "^3.9.0",
     "axios": "^1.7.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
