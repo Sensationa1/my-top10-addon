@@ -1,5 +1,5 @@
 "use strict";
-// Top 10 for Nuvio | v5.3.0. Strict digital-release gate; premium side-rank cinematic layout.
+// Top 10 for Nuvio | v5.4.0. Strict digital-release gate; premium side-rank cinematic layout.
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -27,7 +27,7 @@ const POSTERSPLUS_BASE = (process.env.POSTERSPLUS_BASE_URL || 'https://posterspl
 const POSTER_WIDTH = Math.max(720, Math.min(2160, Number(process.env.POSTER_WIDTH || 1080) || 1080));
 const TARGET_W = Math.round(POSTER_WIDTH / 2) * 2;
 const TARGET_H = Math.round(TARGET_W * 1.5);
-const POSTER_CACHE_VERSION = 'v530-side-rank-align1';
+const POSTER_CACHE_VERSION = 'v540-side-rank-align1b';
 const DIGITAL_RELEASE_STRICT = process.env.DIGITAL_RELEASE_STRICT !== 'false';
 const digitalCache = new Map();
 const digitalInFlight = new Map();
@@ -475,7 +475,7 @@ function getRankAssets(num) {
   const value = Number(num);
   const isTen = value === 10;
   const isOne = value === 1;
-  const railCenterX = Math.round(TARGET_W * (isTen ? 0.132 : 0.158));
+  const railCenterX = Math.round(TARGET_W * (isTen ? 0.132 : isOne ? 0.145 : 0.158));
   const rankY = Math.round(TARGET_H * 0.60);
   const rankFont = Math.round(TARGET_H * (isTen ? 0.285 : isOne ? 0.335 : 0.302));
   const tracking = isTen ? '-0.055em' : '-0.06em';
@@ -567,7 +567,7 @@ function buildPostersPlusUrl({imdbId,tmdbId,stremioId,type}) {
     mw:'lb:.25,pc:.1,im:.4,mal:.25',tw:'pc:.1,im:.5,mc:.15,mal:.25',
     amw:'mal:.5,al:.2,ki:.3',atw:'mal:.5,al:.2,ki:.3',
     rdm:'0',pp:'random',ll:'fi',lp:'native,custom,english,neutral,native_if_original,original,text',
-    fbs:'photoreal',lmwr:'0.80',lmhr:'0.40',lbr:'0.12',cg:'0',hur:'1',bdm:'7',bg1:'0.625,0.05,l:1:network,studio:24:0.074'};
+    fbs:'photoreal',lmwr:'0.80',lmhr:'0.40',lbr:'0.12',cg:'0',hur:'1',bdm:'7',bg1:'0.93,0.06,r:1:network:24:0.074'};
   Object.entries(presets).forEach(([k,v])=>params.set(k,v));
   return `${POSTERSPLUS_BASE}/poster?${params.toString()}`;
 }
