@@ -1,5 +1,5 @@
 "use strict";
-// Top 10 for Nuvio | v4.0.0. Strict digital-release gate; premium silver cinematic rankings.
+// Top 10 for Nuvio | v5.0.0. Strict digital-release gate; premium side-rank cinematic layout.
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -27,7 +27,7 @@ const POSTERSPLUS_BASE = (process.env.POSTERSPLUS_BASE_URL || 'https://posterspl
 const POSTER_WIDTH = Math.max(720, Math.min(2160, Number(process.env.POSTER_WIDTH || 1080) || 1080));
 const TARGET_W = Math.round(POSTER_WIDTH / 2) * 2;
 const TARGET_H = Math.round(TARGET_W * 1.5);
-const POSTER_CACHE_VERSION = 'v400-silver';
+const POSTER_CACHE_VERSION = 'v500-side-rank';
 const DIGITAL_RELEASE_STRICT = process.env.DIGITAL_RELEASE_STRICT !== 'false';
 const digitalCache = new Map();
 const digitalInFlight = new Map();
@@ -40,7 +40,8 @@ const posterCache = new Map();
 const posterInFlight = new Map();
 const rankAssetCache = new Map();
 const genrePngCache = new Map();
-let CACHED_VIGNETTE_PNG = null;
+let CACHED_BACKGROUND_OVERLAY_PNG = null;
+let CACHED_CARD_FRAME_PNG = null;
 
 function putLru(map, key, value, max) {
   if (map.has(key)) map.delete(key);
@@ -55,9 +56,9 @@ const GENRE_MAP = {
 };
 const MANIFEST = {
   id: 'com.sensationa1.top10.cloud',
-  version: '4.0.0',
+  version: '5.0.0',
   name: 'Top 10 Trending (Apple TV Style)',
-  description: 'Premium cinematic Top 10 for Nuvio. Strict digital-release movies and refined platinum-silver rankings.',
+  description: 'Premium cinematic Top 10 for Nuvio. Strict digital-release movies with elite side-rank poster design.',
   resources: ['catalog'],
   types: ['movie','series'],
   idPrefixes: ['tt'],
@@ -364,34 +365,36 @@ function formatGenreLabel(genre) {
 
 function buildGenreRatingSvg(width, height, genre, rating) {
   const g = formatGenreLabel(genre);
-  const label = [g, rating].filter(Boolean).join("  ·  ");
+  const ratingLabel = rating ? String(rating).trim() : '';
+  const label = [g, ratingLabel].filter(Boolean).join('  •  ');
   if (!label) return null;
 
-  // Expanded size & wider tracking for a bolder, more readable bottom badge
-  const fontSize = Math.round(height * 0.039);
-  const y = Math.round(height * 0.943);
-  const x = Math.round(width / 2);
-  const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const safe = label.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const fontSize = Math.round(height * 0.030);
+  const padX = Math.round(height * 0.028);
+  const pillH = Math.round(height * 0.062);
+  const approxTextWidth = Math.round(fontSize * Math.max(4.8, safe.length * 0.60));
+  const pillW = Math.min(Math.round(width * 0.60), approxTextWidth + padX * 2);
+  const x = Math.round(width * 0.58 - pillW / 2);
+  const y = Math.round(height * 0.874);
+  const radius = Math.round(pillH / 2);
+  const textY = y + Math.round(pillH * 0.68);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <filter id="tshadow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000000" flood-opacity="0.60"/>
+    <linearGradient id="pillFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#AEB9C8" stop-opacity="0.10"/>
+    </linearGradient>
+    <filter id="pillShadow" x="-40%" y="-120%" width="180%" height="280%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.28"/>
     </filter>
   </defs>
-  <text
-    x="${x}"
-    y="${y}"
-    text-anchor="middle"
-    font-family="SF Pro Display"
-    font-weight="300"
-    font-size="${fontSize}"
-    fill="#FFFFFF"
-    fill-opacity="0.92"
-    letter-spacing="0.13em"
-    filter="url(#tshadow)"
-  >${safe}</text>
+  <g filter="url(#pillShadow)">
+    <rect x="${x}" y="${y}" width="${pillW}" height="${pillH}" rx="${radius}" fill="url(#pillFill)" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="1.4"/>
+  </g>
+  <text x="${Math.round(width * 0.58)}" y="${textY}" text-anchor="middle" font-family="SF Pro Display" font-weight="600" font-size="${fontSize}" fill="#F7FAFD" fill-opacity="0.97" letter-spacing="0.015em">${safe}</text>
 </svg>`;
 }
 
@@ -415,82 +418,83 @@ function renderSvgToPng(svgString, width) {
 }
 
 /**
- * Pre-renders and caches the static SVG layers for each rank (1..10) and left vignette
- * so we never re-rasterize fonts for the numbers on every poster load.
+ * Pre-renders and caches the static side-mounted ranking layer (1..10),
+ * giving every poster a consistent Netflix-style number position.
  */
 function getRankAssets(num) {
   if (rankAssetCache.has(num)) return rankAssetCache.get(num);
-  // Inter Display Black = modern compact geometry, strong silhouette. Numbers
-  // are intentionally on TOP-LEFT like the previous edition, but larger,
-  // clearer, and with a restrained platinum satin finish (not smoky glass).
-  const isTen = num >= 10;
-  const rankFont = Math.round(TARGET_H * (isTen ? 0.345 : 0.415));
-  const rankX = Math.round(TARGET_W * (isTen ? 0.025 : 0.035));
-  const rankBaseline = Math.round(TARGET_H * 0.39);
-  const tracking = isTen ? '-0.10em' : '-0.055em';
-  const faceFont = 'Inter Display';
-  const sx=Math.max(1.2,rankFont*0.004);
-  const stroke=Math.max(2.4,rankFont*0.010);
-  const textAttrs=`x="${rankX}" y="${rankBaseline}" font-family="${faceFont}" font-weight="900" font-size="${rankFont}" letter-spacing="${tracking}" stroke-linejoin="round" paint-order="stroke fill"`;
+  const isTen = Number(num) === 10;
+  const railCenterX = Math.round(TARGET_W * 0.132);
+  const rankY = Math.round(TARGET_H * 0.60);
+  const rankFont = Math.round(TARGET_H * (isTen ? 0.285 : 0.335));
+  const tracking = isTen ? '-0.055em' : '-0.07em';
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${TARGET_W}" height="${TARGET_H}" viewBox="0 0 ${TARGET_W} ${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
- <defs>
-  <!-- Apple-like silver: a smooth satin metal face rather than noisy glass. -->
-  <linearGradient id="silver" x1="0%" y1="0%" x2="18%" y2="100%">
-    <stop offset="0%" stop-color="#FFFFFF"/>
-    <stop offset="22%" stop-color="#F4F7FA"/>
-    <stop offset="48%" stop-color="#CCD5DF"/>
-    <stop offset="68%" stop-color="#F9FAFC"/>
-    <stop offset="100%" stop-color="#8D9AAA"/>
-  </linearGradient>
-  <linearGradient id="sheen" x1="0%" y1="0%" x2="95%" y2="92%">
-    <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.68"/>
-    <stop offset="34%" stop-color="#FFFFFF" stop-opacity="0.11"/>
-    <stop offset="52%" stop-color="#FFFFFF" stop-opacity="0.00"/>
-    <stop offset="100%" stop-color="#0C1726" stop-opacity="0.18"/>
-  </linearGradient>
-  <linearGradient id="edge" x1="0%" y1="0%" x2="0%" y2="100%">
-    <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.90"/>
-    <stop offset="47%" stop-color="#F0F5FC" stop-opacity="0.25"/>
-    <stop offset="100%" stop-color="#101A27" stop-opacity="0.42"/>
-  </linearGradient>
-  <filter id="lift" x="-55%" y="-55%" width="210%" height="210%">
-    <feDropShadow dx="2" dy="${Math.round(rankFont*.015)}" stdDeviation="${Math.round(rankFont*.019)}" flood-color="#000000" flood-opacity="0.72"/>
-    <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.45"/>
-  </filter>
- </defs>
- <!-- Discreet separation from busy artwork, without bright glow. -->
- <text ${textAttrs} fill="#080D15" stroke="#080D15" stroke-width="${stroke*2.4}" filter="url(#lift)">${num}</text>
- <!-- Solid pearl/metal fill for immediate legibility at TV distances. -->
- <text ${textAttrs} fill="url(#silver)" stroke="#263341" stroke-opacity="0.63" stroke-width="${stroke}">${num}</text>
- <!-- Diffuse diagonal glass-like light, ultra subtle. -->
- <text ${textAttrs} fill="url(#sheen)">${num}</text>
- <!-- Fine light-catching silver outer contour. -->
- <text ${textAttrs} fill="none" stroke="url(#edge)" stroke-width="${sx}">${num}</text>
+  <defs>
+    <linearGradient id="rankFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="20%" stop-color="#F7F9FC"/>
+      <stop offset="58%" stop-color="#D4DDE6"/>
+      <stop offset="100%" stop-color="#99A6B4"/>
+    </linearGradient>
+    <filter id="rankShadow" x="-100%" y="-100%" width="300%" height="300%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.30"/>
+    </filter>
+  </defs>
+  <text x="${railCenterX}" y="${rankY}" text-anchor="middle" dominant-baseline="middle" font-family="Inter Display" font-weight="900" font-size="${rankFont}" letter-spacing="${tracking}" fill="url(#rankFill)" filter="url(#rankShadow)">${num}</text>
 </svg>`;
   const assets = {rankLayer: renderSvgToPng(svg, TARGET_W)};
-  rankAssetCache.set(num,assets);
+  rankAssetCache.set(num, assets);
   return assets;
 }
 
-async function getVignettePng() {
-  if (CACHED_VIGNETTE_PNG) return CACHED_VIGNETTE_PNG;
-  const vigSvg = Buffer.from(
-    `<svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+async function getBackgroundOverlayPng() {
+  if (CACHED_BACKGROUND_OVERLAY_PNG) return CACHED_BACKGROUND_OVERLAY_PNG;
+  const overlaySvg = Buffer.from(`
+    <svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="v" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stop-color="#000" stop-opacity="0.39"/>
-          <stop offset="42%" stop-color="#000" stop-opacity="0.10"/>
-          <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+        <linearGradient id="leftFade" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#05070B" stop-opacity="0.62"/>
+          <stop offset="24%" stop-color="#05070B" stop-opacity="0.42"/>
+          <stop offset="52%" stop-color="#05070B" stop-opacity="0.12"/>
+          <stop offset="100%" stop-color="#05070B" stop-opacity="0.00"/>
+        </linearGradient>
+        <linearGradient id="globalDim" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#09111A" stop-opacity="0.08"/>
+          <stop offset="100%" stop-color="#02050A" stop-opacity="0.18"/>
         </linearGradient>
       </defs>
-      <rect width="${Math.round(TARGET_W * 0.50)}" height="${TARGET_H}" fill="url(#v)"/>
-    </svg>`
-  );
-  CACHED_VIGNETTE_PNG = await sharp(vigSvg).png().toBuffer();
-  return CACHED_VIGNETTE_PNG;
+      <rect width="${TARGET_W}" height="${TARGET_H}" fill="url(#globalDim)"/>
+      <rect width="${Math.round(TARGET_W * 0.42)}" height="${TARGET_H}" fill="url(#leftFade)"/>
+    </svg>`);
+  CACHED_BACKGROUND_OVERLAY_PNG = await sharp(overlaySvg).png().toBuffer();
+  return CACHED_BACKGROUND_OVERLAY_PNG;
 }
 
+async function getCardFramePng() {
+  if (CACHED_CARD_FRAME_PNG) return CACHED_CARD_FRAME_PNG;
+  const cardLeft = Math.round(TARGET_W * 0.17);
+  const cardTop = Math.round(TARGET_H * 0.045);
+  const cardW = Math.round(TARGET_W * 0.79);
+  const cardH = Math.round(TARGET_H * 0.91);
+  const radius = Math.round(TARGET_W * 0.028);
+  const frameSvg = Buffer.from(`
+    <svg width="${TARGET_W}" height="${TARGET_H}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="cardShadow" x="-40%" y="-40%" width="180%" height="220%">
+          <feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#000000" flood-opacity="0.46"/>
+        </filter>
+        <linearGradient id="cardStroke" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.28"/>
+          <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.10"/>
+        </linearGradient>
+      </defs>
+      <rect x="${cardLeft}" y="${cardTop}" width="${cardW}" height="${cardH}" rx="${radius}" fill="#000000" fill-opacity="0.01" filter="url(#cardShadow)"/>
+      <rect x="${cardLeft}" y="${cardTop}" width="${cardW}" height="${cardH}" rx="${radius}" fill="none" stroke="url(#cardStroke)" stroke-width="1.3"/>
+    </svg>`);
+  CACHED_CARD_FRAME_PNG = await sharp(frameSvg).png().toBuffer();
+  return CACHED_CARD_FRAME_PNG;
+}
 
 
 function buildPostersPlusUrl({imdbId,tmdbId,stremioId,type}) {
@@ -583,20 +587,43 @@ app.get('/api/poster',async(req,res)=>{
         });
         if(pp.data?.byteLength>1500 && /image\//i.test(String(pp.headers?.['content-type']||'')))base=Buffer.from(pp.data);
       }catch(e){LOG('PostersPlus timeout / error',e.message);}
-      if(!base){source='tmdb-fallback';base=await fallbackArt(p,n);}
-      const assets=getRankAssets(num);
-      const composites=[{input:await getVignettePng(),top:0,left:0},{input:assets.rankLayer,top:0,left:0}];
-      const label=buildGenreRatingSvg(TARGET_W,TARGET_H,g||'',r||'');
-      if(label){
-        const key=`${g||''}|${r||''}|${TARGET_W}`;
-        let png=genrePngCache.get(key);
-        if(!png){png=renderSvgToPng(label,TARGET_W);putLru(genrePngCache,key,png,25);}
-        composites.push({input:png,top:0,left:0});
+      if(!base){source='tmdb-fallback';base=await fallbackArt(p,n);}      const assets = getRankAssets(num);
+      const cardLeft = Math.round(TARGET_W * 0.17);
+      const cardTop = Math.round(TARGET_H * 0.045);
+      const cardW = Math.round(TARGET_W * 0.79);
+      const cardH = Math.round(TARGET_H * 0.91);
+      const cardRadius = Math.round(TARGET_W * 0.028);
+
+      const roundedMask = Buffer.from(`<svg width="${cardW}" height="${cardH}" xmlns="http://www.w3.org/2000/svg"><rect width="${cardW}" height="${cardH}" rx="${cardRadius}" ry="${cardRadius}" fill="#ffffff"/></svg>`);
+      let bgPipeline = sharp(base,{limitInputPixels:24e6})
+        .resize(TARGET_W, TARGET_H, {fit:'cover', position:'centre'});
+      if (typeof bgPipeline.blur === 'function') bgPipeline = bgPipeline.blur(24);
+      if (typeof bgPipeline.modulate === 'function') bgPipeline = bgPipeline.modulate({brightness:0.63, saturation:0.88});
+      const background = await bgPipeline
+        .jpeg({quality:86, chromaSubsampling:'4:4:4', mozjpeg:false})
+        .toBuffer();
+      let cardPipeline = sharp(base,{limitInputPixels:24e6})
+        .resize(cardW, cardH, {fit:'cover', position:'centre'});
+      if (typeof cardPipeline.composite === 'function') cardPipeline = cardPipeline.composite([{input:roundedMask, blend:'dest-in'}]);
+      const cardImage = await cardPipeline
+        .png()
+        .toBuffer();
+      const composites = [
+        {input: await getBackgroundOverlayPng(), top:0, left:0},
+        {input: assets.rankLayer, top:0, left:0},
+        {input: await getCardFramePng(), top:0, left:0},
+        {input: cardImage, top:cardTop, left:cardLeft}
+      ];
+      const label = buildGenreRatingSvg(TARGET_W, TARGET_H, g||'', r||'');
+      if (label) {
+        const key = `${g||''}|${r||''}|${TARGET_W}`;
+        let png = genrePngCache.get(key);
+        if (!png) { png = renderSvgToPng(label, TARGET_W); putLru(genrePngCache, key, png, 25); }
+        composites.push({input: png, top:0, left:0});
       }
-      const bytes=await sharp(base,{limitInputPixels:24e6})
-        .resize(TARGET_W,TARGET_H,{fit:'cover',position:'centre'})
+      const bytes = await sharp(background,{limitInputPixels:24e6})
         .composite(composites)
-        .jpeg({quality:88,chromaSubsampling:'4:4:4',mozjpeg:false})
+        .jpeg({quality:90, chromaSubsampling:'4:4:4', mozjpeg:false})
         .toBuffer();
       const cacheHeader=source==='postersplus'
         ? 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000'
@@ -632,7 +659,7 @@ app.get('/',(req,res)=>{
  <title>Top 10 — Nuvio</title><style>
  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 72% 10%,#202a39 0%,#0d121c 40%,#080a0f 80%);color:#f2f5f8;font:16px -apple-system,BlinkMacSystemFont,Inter,Arial,sans-serif;display:grid;place-items:center;padding:24px}
  main{width:min(620px,100%);padding:56px 42px;border-radius:28px;border:1px solid #ffffff16;background:#ffffff08;box-shadow:0 22px 80px #0008}small{color:#9ca9bc;letter-spacing:.3em;font-weight:600}h1{font-size:clamp(2.8rem,6vw,4.2rem);letter-spacing:-.06em;margin:14px 0}p{color:#b8c3d1;line-height:1.6}a{color:#dbe7f8;text-decoration:none}nav{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}nav a{border-radius:14px;background:#ffffff14;border:1px solid #ffffff22;padding:12px 18px}nav a:hover{background:#ffffff24}footer{font-size:12px;color:#8290a4;margin-top:36px}
- </style><main><small>NUVIO • CINEMATIC CATALOGS</small><h1>Top 10<span style="color:#a5afbd">.</span></h1><p>Trending films and series, curated daily. Premium artwork, satin-silver ranks, built for a seamless home screen.</p><nav><a href="${h}/manifest.json">Manifest</a><a href="${h}/api/status">System status</a><a href="stremio://${req.get('host')}/manifest.json">Install in Stremio</a></nav><footer>Version ${MANIFEST.version} · Apple TV-inspired independent add-on · Nuvio-compatible</footer></main></html>`);
+ </style><main><small>NUVIO • CINEMATIC CATALOGS</small><h1>Top 10<span style="color:#a5afbd">.</span></h1><p>Trending films and series, curated daily. Premium artwork, side-mounted elite ranks, built for a seamless home screen.</p><nav><a href="${h}/manifest.json">Manifest</a><a href="${h}/api/status">System status</a><a href="stremio://${req.get('host')}/manifest.json">Install in Stremio</a></nav><footer>Version ${MANIFEST.version} · Netflix × Apple TV-inspired independent add-on · Nuvio-compatible</footer></main></html>`);
 });
 module.exports=app;
 if(require.main===module){app.listen(Number(process.env.PORT||3000),()=>LOG('Listening on',process.env.PORT||3000));}

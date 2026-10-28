@@ -1,4 +1,4 @@
-# Nuvio Top 10 · Platinum v4.0
+# Nuvio Top 10 · Platinum v5.0
 
 Drop-in update for your **existing** personal Vercel add-on. The manifest ID and movie/series catalog IDs remain unchanged, so your Xperience home rows should not need re-adding.
 
@@ -7,7 +7,7 @@ Drop-in update for your **existing** personal Vercel add-on. The manifest ID and
 - **Strict digital-only movies, ON by default.** A movie must have a TMDB **type 4 (Digital)** release date on or before today (UTC), in at least one country. A theatrical release (type 2/3), physical release (type 5), missing date, API error, or future-only digital release no longer counts as proof. Series still use their original first-air-date filter.
 - If TMDB trending doesn't produce 10 eligible movies, the add-on consults TMDB's digital-only Discover results in **US, FI and GB** and still verifies each movie's release_dates. It never fills the row with films known to be theatrical-only or with unconfirmed dates merely to show ten cards. Some refreshes may have fewer than ten movies.
 - **New ranking numerals:** large Inter Display Black type, metallic platinum/silver face, controlled edge highlights and deep but soft separation shadow. Placement remains **top left**, with no heavy glassy haze or colored glow. Vector-rendered at your configured image resolution; ranks 1–10 handled individually.
-- Poster cache version bumped so Nuvio fetches the new numbered art, rather than reusing last version's cached images.
+- Poster cache version bumped so Nuvio fetches the new side-rank art, rather than reusing last version's cached images.
 - TMDB fallback posters now use `original` artwork (rather than an often-unavailable arbitrary image size).
 - Keeps v3's responsive catalog-first behavior, Posters+ artwork source, fallback path, independent caches and your catalog IDs.
 
@@ -34,4 +34,4 @@ Run `npm install`, then `npm test`. Seven automated mocked tests cover independe
 
 **Performance:** Catalog JSON is not blocked on poster rendering. The first uncached catalog request still requires TMDB digital-release and IMDb lookups; on Vercel instances without previous memory, it may take longer. CDN caching is used for subsequent requests, and there is no persistent database. These are mocked functional tests, not a live API or Nuvio production benchmark.
 
-**Visual preview:** `Nuvio_Top10_v4_rank_preview.png` uses placeholder artwork and shows the design direction; actual poster art continues coming from your Posters+ instance.
+**Visual preview (older preview image is no longer exact; it only illustrates the premium direction):** `Nuvio_Top10_v4_rank_preview.png` uses placeholder artwork and shows the design direction; actual poster art continues coming from your Posters+ instance.
