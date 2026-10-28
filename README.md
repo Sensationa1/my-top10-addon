@@ -1,4 +1,4 @@
-# Nuvio Top 10 · Platinum v5.0
+# Nuvio Top 10 · Platinum v5.1
 
 Drop-in update for your **existing** personal Vercel add-on. The manifest ID and movie/series catalog IDs remain unchanged, so your Xperience home rows should not need re-adding.
 

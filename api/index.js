@@ -1,5 +1,5 @@
 "use strict";
-// Top 10 for Nuvio | v5.0.0. Strict digital-release gate; premium side-rank cinematic layout.
+// Top 10 for Nuvio | v5.1.0. Strict digital-release gate; premium side-rank cinematic layout.
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -27,7 +27,7 @@ const POSTERSPLUS_BASE = (process.env.POSTERSPLUS_BASE_URL || 'https://posterspl
 const POSTER_WIDTH = Math.max(720, Math.min(2160, Number(process.env.POSTER_WIDTH || 1080) || 1080));
 const TARGET_W = Math.round(POSTER_WIDTH / 2) * 2;
 const TARGET_H = Math.round(TARGET_W * 1.5);
-const POSTER_CACHE_VERSION = 'v500-side-rank';
+const POSTER_CACHE_VERSION = 'v510-side-rank-clean-meta';
 const DIGITAL_RELEASE_STRICT = process.env.DIGITAL_RELEASE_STRICT !== 'false';
 const digitalCache = new Map();
 const digitalInFlight = new Map();
@@ -56,9 +56,9 @@ const GENRE_MAP = {
 };
 const MANIFEST = {
   id: 'com.sensationa1.top10.cloud',
-  version: '5.0.0',
+  version: '5.1.0',
   name: 'Top 10 Trending (Apple TV Style)',
-  description: 'Premium cinematic Top 10 for Nuvio. Strict digital-release movies with elite side-rank poster design.',
+  description: 'Premium cinematic Top 10 for Nuvio. Strict digital-release movies with elite side-rank poster design and refined Apple TV-style metadata.',
   resources: ['catalog'],
   types: ['movie','series'],
   idPrefixes: ['tt'],
@@ -365,36 +365,38 @@ function formatGenreLabel(genre) {
 
 function buildGenreRatingSvg(width, height, genre, rating) {
   const g = formatGenreLabel(genre);
-  const ratingLabel = rating ? String(rating).trim() : '';
-  const label = [g, ratingLabel].filter(Boolean).join('  •  ');
-  if (!label) return null;
+  const ratingValue = rating ? String(rating).trim() : '';
+  const parts = [];
+  if (g) parts.push(g);
+  if (ratingValue) parts.push(ratingValue);
+  if (!parts.length) return null;
 
-  const safe = label.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  const fontSize = Math.round(height * 0.030);
-  const padX = Math.round(height * 0.028);
-  const pillH = Math.round(height * 0.062);
-  const approxTextWidth = Math.round(fontSize * Math.max(4.8, safe.length * 0.60));
-  const pillW = Math.min(Math.round(width * 0.60), approxTextWidth + padX * 2);
-  const x = Math.round(width * 0.58 - pillW / 2);
-  const y = Math.round(height * 0.874);
-  const radius = Math.round(pillH / 2);
-  const textY = y + Math.round(pillH * 0.68);
+  const safeGenre = g ? g.replace(/&/g, '&amp;').replace(/</g, '&lt;') : '';
+  const safeRating = ratingValue ? ratingValue.replace(/&/g, '&amp;').replace(/</g, '&lt;') : '';
+  const fontSize = Math.round(height * 0.029);
+  const x = Math.round(width * 0.58);
+  const y = Math.round(height * 0.915);
+  const gap = Math.round(fontSize * 0.85);
+  const genreLen = safeGenre ? Math.max(4, safeGenre.length) : 0;
+  const genreApprox = genreLen * fontSize * 0.46;
+  const ratingApprox = safeRating ? Math.max(3, safeRating.length) * fontSize * 0.46 : 0;
+  const totalApprox = genreApprox + (safeGenre && safeRating ? gap : 0) + ratingApprox;
+  let cursor = x - totalApprox / 2;
+  const genreX = cursor + genreApprox / 2;
+  cursor += genreApprox + (safeGenre && safeRating ? gap : 0);
+  const ratingX = cursor + ratingApprox / 2;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="pillFill" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.22"/>
-      <stop offset="100%" stop-color="#AEB9C8" stop-opacity="0.10"/>
-    </linearGradient>
-    <filter id="pillShadow" x="-40%" y="-120%" width="180%" height="280%">
-      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.28"/>
+    <filter id="metaShadow" x="-60%" y="-100%" width="220%" height="280%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3.2" flood-color="#000000" flood-opacity="0.38"/>
     </filter>
   </defs>
-  <g filter="url(#pillShadow)">
-    <rect x="${x}" y="${y}" width="${pillW}" height="${pillH}" rx="${radius}" fill="url(#pillFill)" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="1.4"/>
+  <g filter="url(#metaShadow)">
+    ${safeGenre ? `<text x="${genreX}" y="${y}" text-anchor="middle" font-family="SF Pro Display" font-weight="400" font-size="${fontSize}" fill="#F4F7FB" fill-opacity="0.96" letter-spacing="0.01em">${safeGenre}</text>` : ''}
+    ${safeRating ? `<text x="${ratingX}" y="${y}" text-anchor="middle" font-family="SF Pro Display" font-weight="400" font-size="${fontSize}" fill="#DCE4EE" fill-opacity="0.92" letter-spacing="0.01em">${safeRating}</text>` : ''}
   </g>
-  <text x="${Math.round(width * 0.58)}" y="${textY}" text-anchor="middle" font-family="SF Pro Display" font-weight="600" font-size="${fontSize}" fill="#F7FAFD" fill-opacity="0.97" letter-spacing="0.015em">${safe}</text>
 </svg>`;
 }
 
