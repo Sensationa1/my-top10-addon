@@ -1,5 +1,5 @@
 "use strict";
-// Top 10 for Nuvio | v5.9.0. TMDB Trending Today + US/Europe relevance + confirmed digital-only movies.
+// Top 10 for Nuvio | v5.10.0. TMDB daily trending, digital-only movies, anime excluded except Edgerunners.
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -27,11 +27,9 @@ const POSTERSPLUS_BASE = (process.env.POSTERSPLUS_BASE_URL || 'https://posterspl
 const POSTER_WIDTH = Math.max(720, Math.min(2160, Number(process.env.POSTER_WIDTH || 1080) || 1080));
 const TARGET_W = Math.round(POSTER_WIDTH / 2) * 2;
 const TARGET_H = Math.round(TARGET_W * 1.5);
-const POSTER_CACHE_VERSION = 'v590-daily-regional-digital'; // Force catalog artwork refresh without changing design
-const CATALOG_TTL = 60 * 60 * 1000; // Refresh custom daily selection about hourly
+const POSTER_CACHE_VERSION = 'v5100-tmdb-today-digital-noanime'; // Refresh after catalog changes
+const CATALOG_TTL = 60 * 60 * 1000; // Refresh filtered daily chart about hourly
 const CATALOG_SUCCESS_HEADER = 'public, max-age=60, s-maxage=1800, stale-while-revalidate=3600, stale-if-error=86400';
-const digitalCache = new Map();
-const digitalInFlight = new Map();
 const LOG = (...args) => console.log('[top10]', ...args);
 const catalogCache = new Map();
 const catalogInFlight = new Map();
@@ -42,6 +40,10 @@ const genrePngCache = new Map();
 const imdbRatingCache = new Map();
 const tmdbDetailsCache = new Map();
 const tmdbDetailsInFlight = new Map();
+const digitalCache = new Map();
+const digitalInFlight = new Map();
+const animeKeywordCache = new Map();
+const animeKeywordInFlight = new Map();
 const TMDB_ENRICHMENT_ENABLED = process.env.TMDB_META_ENRICHMENT !== 'false';
 const TMDB_ENRICHMENT_TTL = 12 * 60 * 60 * 1000;
 let CACHED_BACKGROUND_OVERLAY_PNG = null;
@@ -60,9 +62,9 @@ const GENRE_MAP = {
 };
 const MANIFEST = {
   id: 'com.sensationa1.top10.cloud',
-  version: '5.9.0',
+  version: '5.10.0',
   name: 'Top 10 Trending (Apple TV Style)',
-  description: 'TMDB daily trending with US/European market relevance, confirmed digital-only movies, full TMDB metadata, logos and premium ranked posters.',
+  description: 'TMDB Trending Today ranked by eligible titles: digital-release-only movies, anime excluded except Cyberpunk Edgerunners; TMDB art, logos and metadata.',
   resources: ['catalog'],
   types: ['movie','series'],
   idPrefixes: ['tt'],
@@ -110,103 +112,124 @@ function distinct(items) {
     ids.add(k);return true;
   });
 }
-// TMDB daily Trending is GLOBAL and has no region parameter. We screen the
-// daily chart against real Discover results from nine US/European markets,
-// requiring regional digital release (movies) or watch availability (series).
-// This is a curated chart, NOT an official localized TMDB Trending ranking.
-const REGIONAL_MARKETS = Object.freeze(['US','GB','DE','FR','IT','ES','FI','SE','NL']);
-const REGIONAL_DISCOVER_PAGES = 2;
-const TRENDING_PAGES = 3;
-function regionDiscoverParams(type, region, page, today) {
-  const params={page,sort_by:'popularity.desc',language:'en-US',include_adult:false};
-  if (type === 'movie') return {
-    ...params,region,with_release_type:4,'release_date.lte':today
-  };
-  // TMDB watch_region needs a monetization selector to actually filter.
-  return {
-    ...params,watch_region:region,
-    with_watch_monetization_types:'flatrate|free|ads'
-  };
+// Starting rank comes ONLY from TMDB global Trending Today: no regional Discover
+// queries or regional popularity scoring. We screen ranked titles and fill
+// positions 1-10 from lower-ranked entries in the SAME daily chart as needed.
+const TRENDING_MAX_PAGES = 5;
+const CYBERPUNK_EDGERUNNERS_TMDB_ID = '105248';
+const ANIMATION_GENRE = 16;
+const ANIME_KEYWORD = 210024;
+function isEdgerunners(item,type) {
+  return type==='series' && cleanTmdb(item?.tmdb_id||item?.tmdbid||item?.id)===CYBERPUNK_EDGERUNNERS_TMDB_ID;
 }
-async function regionalMarketMembership(type) {
-  const media=type==='series'?'tv':'movie';
-  const today=new Date().toISOString().slice(0,10);
-  const tasks=REGIONAL_MARKETS.flatMap(region=>
-    Array.from({length:REGIONAL_DISCOVER_PAGES},(_,i)=>({region,page:i+1})));
-  const lists=await mapLimited(tasks,8,async ({region,page})=>{
-    try {
-      const data=await tmdbGet(`/discover/${media}`,
-        regionDiscoverParams(type,region,page,today),5500);
-      return {region,items:rawList(data)};
-    } catch(err) {
-      LOG('Regional Discover unavailable',type,region,page,err.message);
-      return null;
-    }
-  });
-  const healthy=lists.filter(Boolean);
-  if(!healthy.length)throw new Error('US/Europe eligibility data unavailable');
-  // A partial upstream outage must not turn the chart back into global results.
-  const membership=new Map();
-  for(const {region,items} of healthy){
-    for(const item of items){
-      const id=cleanTmdb(item?.tmdb_id||item?.tmdbid||item?.id);
-      if(!id)continue;
-      if(!membership.has(id))membership.set(id,new Set());
-      membership.get(id).add(region);
-    }
+function isAnimated(item) {
+  return (Array.isArray(item?.genre_ids) && item.genre_ids.some(id=>Number(id)===ANIMATION_GENRE)) ||
+    (Array.isArray(item?.genres) && item.genres.some(g=>Number(g?.id)===ANIMATION_GENRE ||
+      String(typeof g==='string'?g:g?.name||'').toLowerCase()==='animation'));
+}
+function animeKeywords(data) {
+  const words = Array.isArray(data?.keywords) ? data.keywords : Array.isArray(data?.results) ? data.results : [];
+  return words.some(v=>Number(v?.id)===ANIME_KEYWORD ||
+    /^(anime|japanese anime|japanese animation|donghua|chinese animation)$/i.test(String(v?.name||'').trim()));
+}
+async function isExcludedAnime(item,type) {
+  if(isEdgerunners(item,type)) return false; // Explicit exception; keep if trending.
+  if(!isAnimated(item)) return false; // Do NOT remove ordinary non-anime titles.
+  const lang=String(item?.original_language||'').toLowerCase();
+  const countries=[...(Array.isArray(item?.origin_country)?item.origin_country:[]),
+    ...(Array.isArray(item?.production_countries)?item.production_countries.map(v=>v?.iso_3166_1):[])];
+  if(lang==='ja' || countries.includes('JP')) return true;
+  const inlineKeywords=item?.keywords;
+  if(inlineKeywords && (Array.isArray(inlineKeywords)||Array.isArray(inlineKeywords?.keywords)||Array.isArray(inlineKeywords?.results))) {
+    return animeKeywords(Array.isArray(inlineKeywords)?{keywords:inlineKeywords}:inlineKeywords);
   }
-  return membership;
-}
-async function fetchTrendingToday(type) {
-  const media=type==='series'?'tv':'movie';
-  const pages=await mapLimited(Array.from({length:TRENDING_PAGES},(_,i)=>i+1),3,async page=>{
+  const id=cleanTmdb(item?.tmdb_id||item?.tmdbid||item?.id);
+  if(!id) return true; // Cannot verify animation is not anime.
+  const key=`${type}:${id}`;
+  const now=Date.now();
+  const hit=animeKeywordCache.get(key);
+  if(hit && hit.expiry>now)return hit.isAnime;
+  if(animeKeywordInFlight.has(key)) return animeKeywordInFlight.get(key);
+  const pending=(async()=>{
     try {
-      const data=await tmdbGet(`/trending/${media}/day`,{language:'en-US',page},5500);
-      return rawList(data);
+      const data=await tmdbGet(`/${type==='series'?'tv':'movie'}/${id}/keywords`,{},3500);
+      const excluded=animeKeywords(data);
+      putLru(animeKeywordCache,key,{isAnime:excluded,expiry:now+12*3600000},400);
+      return excluded;
     } catch(err) {
-      LOG('Daily TMDB trending page unavailable',type,page,err.message);
-      if(page===1)throw err;
-      return [];
-    }
-  });
-  // mapLimited catches worker failures. A missing first page is not a valid chart.
-  if(!Array.isArray(pages[0])||!pages[0].length)throw new Error('TMDB Trending Today first page unavailable');
-  return distinct(pages.flatMap(page=>Array.isArray(page)?page:[]));
+      LOG('Anime keywords unavailable; skipping unverified animated title',type,id,err.message);
+      putLru(animeKeywordCache,key,{isAnime:true,expiry:now+5*60000},400);
+      return true; // Conservative: don't accidentally surface anime on failed metadata.
+    } finally {animeKeywordInFlight.delete(key);}
+  })();
+  animeKeywordInFlight.set(key,pending);
+  return pending;
 }
-/** Strict TMDB digital-release gate, restored from v5.6.
- * Release type 4 is Digital. Dates in the future, missing dates, and
- * API failures are NOT confirmation. We also require a US/EU Discover match.
+/** Type 4 in TMDB /movie/{id}/release_dates means Digital. A confirmed
+ * digital date on or before today is required. Unknown or future-only => skip.
+ * No US/Europe restriction: the user requested the global daily chart.
  */
 async function digitalStatus(tmdbId) {
-  tmdbId=cleanTmdb(tmdbId);
-  if(!tmdbId)return null;
+  const id=cleanTmdb(tmdbId);
+  if(!id)return false;
   const now=Date.now();
-  const hit=digitalCache.get(tmdbId);
-  if(hit && hit.expiry>now)return hit.value;
-  if(digitalInFlight.has(tmdbId))return digitalInFlight.get(tmdbId);
+  const hit=digitalCache.get(id);
+  if(hit && hit.expiry>now)return hit.available;
+  if(digitalInFlight.has(id))return digitalInFlight.get(id);
   const pending=(async()=>{
     try{
-      const data=await tmdbGet(`/movie/${tmdbId}/release_dates`,{},4000);
+      const data=await tmdbGet(`/movie/${id}/release_dates`,{},4000);
       const today=new Date().toISOString().slice(0,10);
-      // Only releases in the intended markets count: a distant-region-only
-      // digital date must not qualify a title for the regional Top 10.
-      const available=(data?.results||[]).some(country=>
-        REGIONAL_MARKETS.includes(country?.iso_3166_1) &&
-        (country?.release_dates||[]).some(entry=>{
+      const available=Array.isArray(data?.results) && data.results.some(country=>
+        Array.isArray(country?.release_dates) && country.release_dates.some(entry=>{
           const day=String(entry?.release_date||'').slice(0,10);
           return Number(entry?.type)===4 && /^\d{4}-\d{2}-\d{2}$/.test(day) && day<=today;
-        })
-      );
-      putLru(digitalCache,tmdbId,{value:available,expiry:now+(available?86400000:10800000)},600);
+        }));
+      putLru(digitalCache,id,{available,expiry:now+(available?86400000:10800000)},600);
       return available;
     }catch(err){
-      LOG('Digital-release check unavailable',tmdbId,err.message);
-      putLru(digitalCache,tmdbId,{value:null,expiry:now+300000},600);
-      return null;
-    }finally{digitalInFlight.delete(tmdbId);}
+      LOG('Digital release date unavailable; skipping movie',id,err.message);
+      putLru(digitalCache,id,{available:false,expiry:now+5*60000},600);
+      return false;
+    }finally{digitalInFlight.delete(id);}
   })();
-  digitalInFlight.set(tmdbId,pending);
+  digitalInFlight.set(id,pending);
   return pending;
+}
+async function fetchEligibleTrending(type) {
+  const media=type==='series'?'tv':'movie';
+  const eligible=[];
+  const seen=new Set();
+  for(let page=1;page<=TRENDING_MAX_PAGES && eligible.length<10;page++) {
+    let data;
+    try {
+      data=await tmdbGet(`/trending/${media}/day`,{language:'en-US',page},5500);
+    }catch(err){
+      if(page===1) throw err;
+      LOG('TMDB daily trending next page unavailable',type,page,err.message);
+      break;
+    }
+    const raw=rawList(data);
+    if(page===1 && !raw.length) throw new Error(`TMDB Trending Today returned no ${type} titles`);
+    if(!raw.length)break;
+    const items=raw.filter(item=>{
+      const id=cleanTmdb(item?.tmdb_id||item?.tmdbid||item?.id);
+      if(!id||seen.has(id))return false;
+      seen.add(id);return true;
+    });
+    const pageResults=await mapLimited(items,8,async item=>{
+      if(await isExcludedAnime(item,type))return null;
+      if(type==='movie' && !(await digitalStatus(item.id||item.tmdb_id||item.tmdbid)))return null;
+      const id=await resolveImdbId(item,type);
+      if(!validImdb(id))return null; // Needed for existing Stremio/TorBox resolvers.
+      return {item,id};
+    });
+    eligible.push(...pageResults.filter(Boolean));
+    if(data?.total_pages && page>=Number(data.total_pages))break;
+  }
+  if(!eligible.length) throw new Error(`No eligible TMDB Trending Today ${type} titles`);
+  if(eligible.length<10)LOG('Fewer than ten titles passed digital/anime filters',type,eligible.length);
+  return eligible.slice(0,10);
 }
 const imdbCache = new Map();
 async function resolveImdbId(item,type) {
@@ -390,46 +413,13 @@ async function imdbRatingFor(tmdbId, type, fallback) {
   }
 }
 async function buildCatalog(type,host) {
-  const [trending, markets]=await Promise.all([
-    fetchTrendingToday(type),regionalMarketMembership(type)
-  ]);
-  // Prefer titles verified in at least two target markets. Only if fewer than
-  // ten qualify do we accept single-market titles, never worldwide-only ones.
-  // Daily trending positions are preserved within each group; kept titles are
-  // renumbered from 1..10 so the premium rank graphics remain consecutive.
-  const broad=[], local=[];
-  for(const item of trending){
-    const id=cleanTmdb(item?.tmdb_id||item?.tmdbid||item?.id);
-    const count=markets.get(id)?.size||0;
-    if(count>=2)broad.push(item);
-    else if(count===1)local.push(item);
-  }
-  const candidates=[...broad,...local];
-  const seen=new Set();
-  const eligible=[];
-  // Avoid querying 30-60 IMDb IDs, MDBList ratings, and release-date records
-  // when the first twelve daily candidates already fill the chart.
-  for(let start=0;start<candidates.length && eligible.length<10;start+=12){
-    const batch=candidates.slice(start,start+12);
-    const checked=await mapLimited(batch,8,async item=>{
-      if(type==='movie' && await digitalStatus(item.tmdb_id||item.tmdbid||item.id)!==true)return null;
-      const id=await resolveImdbId(item,type);
-      if(!validImdb(id))return null;
-      const imdbRating=await imdbRatingFor(item.tmdb_id||item.tmdbid||item.id,type,item.vote_average);
-      return {item,id,imdbRating};
-    });
-    for(const candidate of checked){
-      if(!candidate||seen.has(candidate.id))continue;
-      seen.add(candidate.id);
-      eligible.push(candidate);
-      if(eligible.length===10)break;
-    }
-  }
-  if(!eligible.length)throw new Error('No region-qualified TMDB daily titles meet digital/IMDb requirements');
-  if(eligible.length<10)LOG('Only',eligible.length,'region-qualified',type,'titles available');
-  const metas=await mapLimited(eligible,8,async ({item,id,imdbRating},rankIndex)=>{
+  const eligible=await fetchEligibleTrending(type);
+  // Filtered daily-chart order is retained; ranks become contiguous 1-10.
+  // Fetch ratings and full TMDB metadata only for selected titles.
+  const metas=await mapLimited(eligible,8,async ({item,id},index)=>{
+    const imdbRating=await imdbRatingFor(item.tmdb_id||item.tmdbid||item.id,type,item.vote_average);
     const base={id,type,name:String(item.title||item.name||'Untitled'),
-      poster:rankPosterUrl(host,item,type,rankIndex+1,id,imdbRating),posterShape:'poster'};
+      poster:rankPosterUrl(host,item,type,index+1,id,imdbRating),posterShape:'poster'};
     const details=await tmdbDetailsFor(item,type);
     return enrichMetaFromTmdb(base,item,details,type,imdbRating);
   });
@@ -701,7 +691,7 @@ app.get('/catalog/:type/:id.json',async(req,res)=>{
   }
 });
 app.get('/api/status',(_req,res)=>res.set('Cache-Control','no-store').json({
-  ok:true,version:MANIFEST.version,tmdbConfigured:Boolean(TMDB_KEY),rankingSource:'TMDB Trending Today filtered by US/Europe Discover',regions:REGIONAL_MARKETS,digitalReleaseStrict:true,posterWidth:TARGET_W,
+  ok:true,version:MANIFEST.version,tmdbConfigured:Boolean(TMDB_KEY),rankingSource:'TMDB Trending Today — filtered',digitalReleaseStrict:true,animeExcluded:true,animeException:'Cyberpunk: Edgerunners',regionalFilter:false,posterWidth:TARGET_W,
   posterCacheItems:posterCache.size,tmdbEnrichment:TMDB_ENRICHMENT_ENABLED,tmdbMetadataCached:tmdbDetailsCache.size,catalogs:[...catalogCache.values()].map(v=>({items:v.metas.length,ageSeconds:Math.round((Date.now()-v.ts)/1000)})),
 }));
 app.get('/api/poster',async(req,res)=>{
