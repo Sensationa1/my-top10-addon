@@ -1,46 +1,42 @@
-# Nuvio Top 10 · Platinum v5.8 — TMDB Trending Today
+# Nuvio Top 10 · Platinum v5.9 — Trending Today + US/Europe + Digital Only
 
-Drop-in update for the **existing** Top 10 Vercel add-on. The manifest ID (`com.sensationa1.top10.cloud`) and catalog IDs (`top10_trending_movies`, `top10_trending_shows`) are unchanged, so existing Nuvio / Xperience rows can stay in place.
+**Drop-in replacement for your existing Top 10 Vercel project.** The stable manifest ID `com.sensationa1.top10.cloud` and catalog IDs `top10_trending_movies` and `top10_trending_shows` are unchanged, so your Nuvio / Xperience home rows do not need to be rebuilt.
 
-## What changed in v5.8
+## How the new Top 10 is selected
 
-- **Movies:** official TMDB **Trending Today** `GET /trending/movie/day` page 1, results 1–10, in TMDB's original order.
-- **Series:** official TMDB **Trending Today** `GET /trending/tv/day` page 1, results 1–10, in TMDB's original order.
-- **No more US/Europe regional popularity aggregation or `Discover` ranking.** This uses TMDB's global daily chart, not any regional chart.
-- **No movie digital-release gate, genre, language, TV-category, anime, or release-date filters.** Such filters would change the official Top 10 ranks. Consequently, theatrical-only or future-release movies can appear, and non-Western content can appear if TMDB ranks it highly.
-- **IMDb ID compatibility:** to preserve the user's existing Nuvio playback and stream resolvers, titles with no usable IMDb ID cannot be emitted. They are skipped **without pulling in rank 11 or renumbering later entries**. On rare days a row might have fewer than ten entries.
-- **Daily refresh:** in-process catalog TTL reduced to one hour; CDN `s-maxage` reduced to 30 minutes. This is not an instantaneous live ranking feed.
+1. Pull **TMDB Trending Today** for movies and series from `/trending/movie/day` and `/trending/tv/day` (up to the first three pages).
+2. Check each title against TMDB regional **Discover** listings for **US, UK, Germany, France, Italy, Spain, Finland, Sweden, and the Netherlands**:
+   - Movies: region-filtered Discover with **digital release type 4** and a release date no later than today.
+   - Series: `watch_region` plus `with_watch_monetization_types=flatrate|free|ads` to confirm streaming availability in those markets.
+3. Prefer titles found in at least **two** listed markets, preserving their relative TMDB daily-trending order. If necessary to reach ten, allow titles listed in **one** of the selected markets, *never* a worldwide-only title.
+4. **Movies only:** independently require a confirmed TMDB release-dates **Digital (type 4)** entry **in at least one of those US/European markets** with a date on or before today. Unknown, future, theatrical-only, or out-of-market-only releases are excluded. For series this digital movie gate does not apply.
+5. Require a working IMDb ID to preserve compatibility with your Nuvio stream resolvers; select up to 10 and number them 1–10 sequentially.
 
-## Preserved from v5.7
+**Important:** TMDB does *not* publish a localized `Trending Today` API chart. These are **custom filtered daily charts**, not the exact global top ten or true regional viewership rankings. Regional TMDB Discover listings represent release/streaming availability and popularity, not actual viewing figures. If fewer than ten eligible titles are present in the chart pool, the add-on returns fewer than ten, rather than filling with unqualified titles.
 
-- Silver / platinum side-mounted ranks (same layout, size, shadow and positioning) with a cache-version refresh.
-- The exact Posters+ Slokker preset including `hr=1`, `rdm=3`, `mam=1`, `mmfsr=0.056`, `msoo10=1`, `rtc=FFFFFF`, `lls=fi`, `bg1=0.9,0.075,r:4:network` and `bls=1.05`.
-- IMDb-first rating lookup through MDBList when configured, with existing fallback behavior.
-- TMDB movie/series metadata: summaries, original-resolution backdrops, English-first clearlogo images, official genres, cast, directors/creators, dates, runtime, trailers where available.
-- TMDB artwork fallback when Posters+ is unavailable.
-- Catalog-first behavior, independent caching, and all existing home row identifiers.
+## Preserved visual design and metadata
 
-## Deploy over the current project
+- Platinum silver side-mounted rank numerals, same card placement, no visual restyling.
+- The previous Posters+ Slokker instance, including `hr=1`, `rdm=3`, `mam=1`, `mmfsr=0.056`, `msoo10=1`, `rtc=FFFFFF`, `lls=fi`, `bg1=0.9,0.075,r:4:network`, and `bls=1.05`.
+- IMDb-first rating lookup through MDBList when configured, with the existing fallback.
+- TMDB title metadata: descriptions, genres, release dates, runtime, cast, directors/creators, trailer links where available.
+- TMDB original-resolution backdrops and English-first transparent title logos where available.
+- TMDB artwork fallback if Posters+ times out.
+- Independent cached catalogs and stable Xperience home-row URLs.
 
-1. Back up your current Top 10 Vercel / GitHub repo.
-2. Replace `api/index.js`, `package.json`, `vercel.json`, `.env.example`, `tests/` and `README.md` with files from this ZIP.
-3. **Retain your original `fonts/` directory.** Font files are deliberately not redistributed in this ZIP.
-4. Keep `TMDB_API_KEY` in your Vercel environment. `MDBLIST_API_KEY` is optional for IMDb ratings. Keep your existing production URL in `PUBLIC_BASE_URL` if already configured.
-5. Redeploy the **existing** Vercel project (do not create a new project).
-6. Verify `/api/status`, `/catalog/movie/top10_trending_movies.json`, and `/catalog/series/top10_trending_shows.json` at your domain. Refresh Nuvio after deployment.
+## Deployment
 
-The environment variable `DIGITAL_RELEASE_STRICT` from older versions no longer affects v5.8, because an exact TMDB Top 10 cannot be filtered for digital-release availability without changing rank positions.
+1. Back up your current Top 10 GitHub/Vercel project.
+2. Replace its `api/index.js`, `package.json`, `vercel.json`, `tests/` and `README.md` with the contents of this ZIP.
+3. **Retain your own `fonts/` directory**. Font files are deliberately not included in the ZIP.
+4. Keep the existing `TMDB_API_KEY` in Vercel. `MDBLIST_API_KEY` is optional for IMDb ratings. Leave your `PUBLIC_BASE_URL` as your current production URL if configured.
+5. Redeploy the **existing** Vercel project, not a separate add-on.
+6. Check `/api/status`, `/catalog/movie/top10_trending_movies.json` and `/catalog/series/top10_trending_shows.json` on your production domain, then refresh Nuvio.
 
-## Technical settings
+Settings: `POSTER_WIDTH=1080` by default (1080 x 1620); `TMDB_META_ENRICHMENT=true` by default; `TMDB_META_TIMEOUT_MS=4000` optional; `POSTERSPLUS_TIMEOUT_MS=9000` optional. Hourly in-memory refresh and a ~30-minute CDN TTL reduce unnecessary calls. `DIGITAL_RELEASE_STRICT` is no longer a switch; **digital-only movie filtering is always enabled in v5.9**.
 
-- `POSTER_WIDTH=1080` (default 1080 × 1620). Increase only if you accept slower rendering.
-- `TMDB_META_ENRICHMENT=true` (default). Disable to reduce initial metadata calls; this also removes full logos and rich detail enrichment.
-- `TMDB_META_TIMEOUT_MS=4000` (optional).
-- `POSTERSPLUS_TIMEOUT_MS=9000` (optional).
-- `CRON_SECRET` (only when using the `vercel.json` daily refresh cron).
+## Testing / limitations
 
-## Verification and limitations
-
-Run `npm test`. Twelve local mocked tests verify TMDB trending endpoints, official ordering, no custom filtering, missing IMDb-ID handling, caching/concurrency, metadata, logos, artwork fallbacks and errors. This is **not** a live TMDB query or deployed Nuvio test.
+Run `npm test`. All 13 local mocked tests cover region selection, the digital-only gate, daily ranking, IMDb compatibility, caching, posters, TMDB metadata/logos/backdrops and error handling. **No live TMDB or deployed Nuvio test has been performed**. Regional Discover and strict digital-release requirements can mean fewer titles or a slower first refresh than the unfiltered global chart. The app never disables filters silently when an upstream source fails.
 
 TMDB attribution: This product uses the TMDB API but is not endorsed or certified by TMDB.
