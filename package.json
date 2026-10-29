@@ -1,8 +1,8 @@
 {
   "name": "my-top10-addon",
-  "version": "5.7.0",
+  "version": "5.8.0",
   "private": true,
-  "description": "Nuvio personal Top 10: strict digital-only films and premium side-rank design",
+  "description": "Nuvio personal Top 10: official daily TMDB Top 10 and premium side-rank design",
   "main": "api/index.js",
   "scripts": {
     "start": "node api/index.js",

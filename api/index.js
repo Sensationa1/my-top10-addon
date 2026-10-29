@@ -1,5 +1,5 @@
 "use strict";
-// Top 10 for Nuvio | v5.7.0. Strict digital-release gate; premium side-rank cinematic layout.
+// Top 10 for Nuvio | v5.8.0. Official TMDB Trending Today charts; premium side-rank cinematic layout.
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -27,12 +27,9 @@ const POSTERSPLUS_BASE = (process.env.POSTERSPLUS_BASE_URL || 'https://posterspl
 const POSTER_WIDTH = Math.max(720, Math.min(2160, Number(process.env.POSTER_WIDTH || 1080) || 1080));
 const TARGET_W = Math.round(POSTER_WIDTH / 2) * 2;
 const TARGET_H = Math.round(TARGET_W * 1.5);
-const POSTER_CACHE_VERSION = 'v560-us-europe-markets'; // Ranked poster composition is unchanged in v5.7
-const DIGITAL_RELEASE_STRICT = process.env.DIGITAL_RELEASE_STRICT !== 'false';
-const digitalCache = new Map();
-const digitalInFlight = new Map();
-const CATALOG_TTL = 6 * 60 * 60 * 1000;
-const CATALOG_SUCCESS_HEADER = 'public, max-age=60, s-maxage=21600, stale-while-revalidate=86400, stale-if-error=86400';
+const POSTER_CACHE_VERSION = 'v580-tmdb-trending-today'; // Same poster design; refresh URLs after chart source change
+const CATALOG_TTL = 60 * 60 * 1000; // Refresh official daily chart about hourly
+const CATALOG_SUCCESS_HEADER = 'public, max-age=60, s-maxage=1800, stale-while-revalidate=3600, stale-if-error=86400';
 const LOG = (...args) => console.log('[top10]', ...args);
 const catalogCache = new Map();
 const catalogInFlight = new Map();
@@ -61,9 +58,9 @@ const GENRE_MAP = {
 };
 const MANIFEST = {
   id: 'com.sensationa1.top10.cloud',
-  version: '5.7.0',
+  version: '5.8.0',
   name: 'Top 10 Trending (Apple TV Style)',
-  description: 'US and European Top 10 movies and series with TMDB title details, backdrops, title logos, and premium ranked posters.',
+  description: 'Official TMDB Trending Today Top 10 movies and series with TMDB title details, backdrops, title logos, and premium ranked posters.',
   resources: ['catalog'],
   types: ['movie','series'],
   idPrefixes: ['tt'],
@@ -72,25 +69,6 @@ const MANIFEST = {
     { id:'top10_trending_movies',type:'movie',name:'Top 10 Trending Movies',posterShape:'poster',extraSupported:[] }
   ]
 };
-// The original filtering preferences are retained (with a safe relaxed fallback).
-const ANIME_TITLE_RE = /\b(anime|one piece|naruto|boruto|demon slayer|kimetsu|jujutsu kaisen|attack on titan|shingeki|solo leveling|frieren|bleach|dragon ball|chainsaw man|spy x family|my hero academia|hunter x hunter|tokyo ghoul|death note|evangelion|studio ghibli|ghibli|pokemon|pokémon|digimon|sailor moon|inuyasha|fullmetal|haikyuu|black clover|one punch|mob psycho|vinland saga|dandadan|kaiju no\.?\s*8|blue lock|oshi no ko)\b/i;
-function isAnime(item) {
-  const title = String(item.title || item.name || '');
-  const isJapanAnimation = item.original_language === 'ja' && (item.genre_ids || []).includes(16);
-  return ANIME_TITLE_RE.test(title) || isJapanAnimation || String(item.mediatype || '').toLowerCase() === 'anime';
-}
-function excluded(item, type) {
-  if (!item) return true;
-  if (isAnime(item) && !/cyberpunk.*edge\s*runners/i.test(item.title || item.name || '')) return true;
-  if (type === 'series' && (item.genre_ids || []).some(id => [10762,10763,10767].includes(Number(id)))) return true;
-  if (String(item.original_language || '').toLowerCase().startsWith('zh')) return true;
-  return false;
-}
-function released(item,type) {
-  const date = type === 'movie' ? item.release_date || item.released : item.first_air_date || item.release_date;
-  if (!date || !/^\d{4}-\d\d-\d\d/.test(String(date))) return true;
-  return String(date).slice(0,10) <= new Date().toISOString().slice(0,10);
-}
 function hostUrl(req) {
   if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/$/, '');
   const forwarded = String(req.get('x-forwarded-proto') || 'https').split(',')[0];
@@ -130,91 +108,15 @@ function distinct(items) {
     ids.add(k);return true;
   });
 }
-// TMDB does NOT expose country-specific /trending charts. We build our own
-// regional chart from discover/movie release regions and discover/tv viewing
-// regions, and aggregate ranks across the US and major European markets.
-// This measures regional availability + TMDB popularity, NOT real viewer counts.
-// Market weights deliberately favor US & the largest European audiences while
-// including the user's home market (Finland).
-const MARKET_WEIGHTS = Object.freeze({
-  US:3.0, GB:2.0, DE:1.5, FR:1.5, IT:1.5,
-  ES:1.25, FI:0.9, SE:0.9, NL:0.9
-});
-const REGIONAL_MARKETS = Object.keys(MARKET_WEIGHTS);
-const REGIONAL_PAGE_SIZE = 20;
-const REGIONAL_SCORE_DEPTH = 45;
-function regionDiscoverParams(type, region, page, today) {
-  const base = {page, sort_by:'popularity.desc', language:'en-US', include_adult:false};
-  if (type === 'movie') return {
-    ...base, region, with_release_type:4, 'release_date.lte':today,
-    'vote_count.gte':20
-  };
-  // watch_region alone does NOT filter availability; pair it with the
-  // monetization-types filter so we actually select locally available shows.
-  return {
-    ...base, watch_region:region,
-    with_watch_monetization_types:'flatrate|free|ads',
-    'vote_count.gte':15
-  };
-}
-function rankRegionalResults(marketLists) {
-  const merged = new Map();
-  for (const entry of marketLists) {
-    if (!entry) continue;
-    const {region,page,items} = entry;
-    const weight = MARKET_WEIGHTS[region] || 0;
-    for (let i=0;i<items.length;i++) {
-      const item=items[i];
-      const id=cleanTmdb(item?.tmdb_id || item?.tmdbid || item?.id);
-      if (!id) continue;
-      const marketRank = (page-1)*REGIONAL_PAGE_SIZE+i+1;
-      let summary=merged.get(id);
-      if(!summary) {
-        summary={item, markets:new Map(), score:0};
-        merged.set(id,summary);
-      }
-      const previous=summary.markets.get(region);
-      if (previous !== undefined && previous <= marketRank) continue;
-      // Reward high placement within each market, not raw global popularity.
-      // A title restricted to one region will rank below genuine cross-market hits.
-      const contribution=weight * Math.max(0.04,(REGIONAL_SCORE_DEPTH+1-marketRank)/REGIONAL_SCORE_DEPTH);
-      if (previous!==undefined) summary.score -= weight * Math.max(0.04,(REGIONAL_SCORE_DEPTH+1-previous)/REGIONAL_SCORE_DEPTH);
-      summary.markets.set(region,marketRank);
-      summary.score += contribution;
-    }
-  }
-  const scored=[...merged.values()].map(s=>({
-    ...s, count:s.markets.size, euCount:[...s.markets.keys()].filter(m=>m!=='US').length
-  }));
-  // Multi-market releases/availability first; use single-market titles only to
-  // keep a functioning Top 10 when unusually few regional results are returned.
-  const order=(a,b)=>b.score-a.score || b.count-a.count ||
-    Number(b.item.popularity||0)-Number(a.item.popularity||0);
-  const common=scored.filter(s=>s.count>=2).sort(order);
-  const local=scored.filter(s=>s.count<2).sort(order);
-  return [...common,...local].map(s=>s.item);
-}
-async function regionalCandidates(type, pages=[1,2]) {
-  if(!TMDB_KEY) throw new Error('TMDB_API_KEY required for US/Europe charts');
-  const today=new Date().toISOString().slice(0,10);
-  const media=type==='series'?'tv':'movie';
-  const requests=REGIONAL_MARKETS.flatMap(region=>pages.map(page=>({region,page})));
-  const lists=await mapLimited(requests,6,async ({region,page})=>{
-    try {
-      const data=await tmdbGet(`/discover/${media}`,
-        regionDiscoverParams(type,region,page,today),5500);
-      return {region,page,items:rawList(data)};
-    } catch(e) {
-      LOG('Regional discover failed',type,region,page,e.message);
-      return null;
-    }
-  });
-  const healthy=lists.filter(Boolean);
-  if(!healthy.length) throw new Error(`All regional ${type} TMDB discover requests failed`);
-  return rankRegionalResults(healthy);
-}
+// Official, unmodified TMDB Trending Today order. Exactly the first ten chart
+// entries are eligible: no regional Discover, genre, language, or release gates.
+// Unlike a custom ranking, items remain at their native TMDB chart positions.
 async function fetchCandidates(type) {
-  return (await regionalCandidates(type)).slice(0,120);
+  const media = type === 'series' ? 'tv' : 'movie';
+  const data = await tmdbGet(`/trending/${media}/day`, {language:'en-US',page:1}, 5500);
+  const items = rawList(data).slice(0,10);
+  if (!items.length) throw new Error(`TMDB Trending Today returned no ${type} titles`);
+  return items;
 }
 const imdbCache = new Map();
 async function resolveImdbId(item,type) {
@@ -233,53 +135,6 @@ async function resolveImdbId(item,type) {
     return found;
   }catch(_){return null;}
 }
-/**
- * TMDB release type 4 is Digital; type 3 is theatrical, 5 physical.
- * For movies we only accept a confirmed digital date on/before today.
- * An unknown date, an API error, or a scheduled future date is NOT confirmation.
- * Values are cached separately so many catalog refreshes do not hammer TMDB.
- */
-async function digitalStatus(tmdbId) {
-  tmdbId = cleanTmdb(tmdbId);
-  if (!tmdbId) return null;
-  const now = Date.now();
-  const hit = digitalCache.get(tmdbId);
-  if (hit && hit.expiry > now) return hit.value;
-  if (digitalInFlight.has(tmdbId)) return digitalInFlight.get(tmdbId);
-  const pending = (async () => {
-    try {
-      const data = await tmdbGet(`/movie/${tmdbId}/release_dates`, {}, 4000);
-      const today = new Date().toISOString().slice(0,10);
-      const dates = (data?.results || []).flatMap(c => c?.release_dates || [])
-        .filter(r => Number(r.type) === 4)
-        .map(r => String(r.release_date || '').slice(0,10))
-        .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d));
-      const available = dates.some(d => d <= today);
-      // A film can have a theatrical date in the past and a digital date in the future.
-      // Both missing and future-only digital dates are excluded in strict mode.
-      putLru(digitalCache, tmdbId,
-        {value: available, expiry: now + (available ? 24*3600000 : 3*3600000)}, 600);
-      return available;
-    } catch(e) {
-      LOG('Digital release check unavailable',tmdbId,e.message);
-      // Retry uncertain API responses; never treat a failure as a confirmed release.
-      putLru(digitalCache, tmdbId, {value:null,expiry:now+5*60000},600);
-      return null;
-    } finally {
-      digitalInFlight.delete(tmdbId);
-    }
-  })();
-  digitalInFlight.set(tmdbId,pending);
-  return pending;
-}
-
-/** If the main regional chart cannot fill 10 eligible digital movies,
- * expand the SAME US/Europe selection to later regional Discover pages.
- * Never silently fall back to the worldwide trending chart. */
-async function extraDigitalCandidates() {
-  return (await regionalCandidates('movie',[3,4])).slice(0,130);
-}
-
 function genreFromItem(item) {
   const gid=Array.isArray(item.genre_ids) ? Number(item.genre_ids[0]) : null;
   if (GENRE_MAP[gid]) return GENRE_MAP[gid];
@@ -445,53 +300,29 @@ async function imdbRatingFor(tmdbId, type, fallback) {
   }
 }
 async function buildCatalog(type,host) {
-  const raw = await fetchCandidates(type);
-  let queue = distinct(raw).filter(item => !excluded(item,type) && released(item,type));
-  const resolved=[];
-  const usedImdb=new Set();
-  const checkedTmdb=new Set();
-  async function fill(candidates) {
-    for (let i=0; i<candidates.length && resolved.length<10; i+=12) {
-      const group=candidates.slice(i,i+12).filter(item => {
-        const tmdb=cleanTmdb(item.tmdb_id||item.tmdbid||item.id);
-        if (!tmdb || checkedTmdb.has(tmdb)) return false;
-        checkedTmdb.add(tmdb);
-        return true;
-      });
-      if(!group.length)continue;
-      const results=await mapLimited(group,8,async item=>{
-        if (type==='movie' && DIGITAL_RELEASE_STRICT) {
-          const digital=await digitalStatus(item.tmdb_id||item.tmdbid||item.id);
-          if (digital!==true) return null;
-        }
-        const id=await resolveImdbId(item,type);
-        if (!validImdb(id)) return null;
-        const imdbRating = await imdbRatingFor(item.tmdb_id||item.tmdbid||item.id, type, item.vote_average);
-        return {item,id,imdbRating};
-      });
-      for(const result of results) {
-        if(!result || usedImdb.has(result.id) || resolved.length>=10)continue;
-        usedImdb.add(result.id);
-        resolved.push(result);
-      }
+  const top10 = await fetchCandidates(type);
+  // Get IMDb IDs only for the official Top 10. Never substitute #11+ titles
+  // or renumber remaining cards when an entry lacks a usable IMDb ID.
+  // IMDb IDs remain necessary for the user's existing Nuvio stream resolvers.
+  const resolved = await mapLimited(top10,8,async (item,index)=>{
+    const id = await resolveImdbId(item,type);
+    if (!validImdb(id)) {
+      LOG('Official TMDB trending chart item lacks IMDb ID',type,index+1,item.id);
+      return null;
     }
-  }
-  await fill(queue);
-  if(type==='movie' && resolved.length<10) {
-    const extra=await extraDigitalCandidates();
-    queue=extra.filter(item=>!excluded(item,'movie')&&released(item,'movie'));
-    await fill(queue);
-  }
-  if(!resolved.length) throw new Error(`No confirmed ${type==='movie'?'digital movies':'shows'} with IMDb IDs`);
-  if(resolved.length<10) LOG('Only',resolved.length,'eligible',type,'titles found');
-  // The already confirmed Top 10 list is enriched in parallel after ranking.
-  // Metadata outages must never remove titles or alter their rank or posters.
-  return mapLimited(resolved,8,async ({item,id,imdbRating},i)=>{
+    const imdbRating = await imdbRatingFor(item.tmdb_id||item.tmdbid||item.id,type,item.vote_average);
+    return {item,id,imdbRating,rank:index+1};
+  });
+  const eligible = resolved.filter(Boolean);
+  if(!eligible.length) throw new Error(`No TMDB Trending Today ${type} titles have resolvable IMDb IDs`);
+  // Metadata enrichment preserves original TMDB ordering and rank position.
+  const metas = await mapLimited(eligible,8,async ({item,id,imdbRating,rank})=>{
     const base={id,type,name:String(item.title||item.name||'Untitled'),
-      poster:rankPosterUrl(host,item,type,i+1,id,imdbRating),posterShape:'poster'};
+      poster:rankPosterUrl(host,item,type,rank,id,imdbRating),posterShape:'poster'};
     const details=await tmdbDetailsFor(item,type);
     return enrichMetaFromTmdb(base,item,details,type,imdbRating);
   });
+  return metas.filter(Boolean);
 }
 
 function catalogValid(type,id){return (type==='movie'&&id==='top10_trending_movies')||(type==='series'&&id==='top10_trending_shows');}
@@ -759,7 +590,7 @@ app.get('/catalog/:type/:id.json',async(req,res)=>{
   }
 });
 app.get('/api/status',(_req,res)=>res.set('Cache-Control','no-store').json({
-  ok:true,version:MANIFEST.version,tmdbConfigured:Boolean(TMDB_KEY),digitalReleaseStrict:DIGITAL_RELEASE_STRICT,posterWidth:TARGET_W,
+  ok:true,version:MANIFEST.version,tmdbConfigured:Boolean(TMDB_KEY),rankingSource:'TMDB Trending Today',digitalReleaseStrict:false,posterWidth:TARGET_W,
   posterCacheItems:posterCache.size,tmdbEnrichment:TMDB_ENRICHMENT_ENABLED,tmdbMetadataCached:tmdbDetailsCache.size,catalogs:[...catalogCache.values()].map(v=>({items:v.metas.length,ageSeconds:Math.round((Date.now()-v.ts)/1000)})),
 }));
 app.get('/api/poster',async(req,res)=>{
