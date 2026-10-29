@@ -8,7 +8,8 @@ function boot() {
   const originalLoad = Module._load;
   const routes = new Map();
   const calls = [];
-  const state = {fail:false, posterFails:true, digitalReleaseForId:null, useDiscover:false};
+  const requests = [];
+  const state = {fail:false, posterFails:true, digitalReleaseForId:null, useDiscover:false, showSingleMarketHit:false, detailsFail:false};
   const app={
     set(){return this;},use(){return this;},listen(){return this;},
     get(route, handler){routes.set(route,handler);return this;}
@@ -23,28 +24,57 @@ function boot() {
       original_language:'en',genre_ids:[18],vote_average:8.1,release_date:'2024-04-01',first_air_date:'2024-04-01'};
   });
   const fakeApi={get:async(url,opt={})=>{
-    calls.push(url);
+    calls.push(url); requests.push({url, params:opt.params||{}});
     if(state.fail)throw new Error('mock upstream unavailable');
     if(url.includes('postersplus.slokker.cc') && state.posterFails)throw new Error('mock poster timeout');
     if(url.includes('image.tmdb.org'))return {data:Buffer.from('FAKEIMAGE'+'z'.repeat(4000)),headers:{'content-type':'image/jpeg'}};
-    if(url.includes('/trending/')){
-      const m=url.match(/\/trending\/(tv|movie)\//);
-      return {data:{results:makeItems(m[1],opt.params?.page||1)}};
-    }
     if(url.includes('/release_dates')) {
       const id=Number(url.match(/\/movie\/(\d+)\/release_dates/)?.[1]||0);
       const info=state.digitalReleaseForId?.(id);
       return {data:{results:[{release_dates:info === undefined ? [{type:4,release_date:'2024-04-01T00:00:00'}] : info}]}};
     }
-    if(url.includes('/discover/movie')) {
-      if(!state.useDiscover) return {data:{results:[]}};
-      const page=Number(opt.params?.page||1);
-      return {data:{results:Array.from({length:16},(_,i)=>{
-        const n=page*100+i;
-        return {id:30000+n,tmdb_id:30000+n,imdb_id:`tt${400000+n}`,title:`Digital film ${n}`,poster_path:'/img.jpg',release_date:'2024-01-01',original_language:'en',genre_ids:[18]};
-      })}};
+    if(url.includes('/discover/movie') || url.includes('/discover/tv')) {
+      const type = url.includes('/discover/movie') ? 'movie' : 'tv';
+      const page = Number(opt.params?.page||1);
+      // All regional markets have the same widely available titles.
+      // Optionally insert a #1 US-only title to prove that it does not
+      // beat shows that appear in many countries.
+      const items = (page>=3 && state.useDiscover)
+        ? Array.from({length:15},(_,i)=>{
+          const n=30000+(page-3)*15+i+1;
+          return {id:n,tmdb_id:n,imdb_id:`tt${400000+n}`,title:`Digital film ${n}`,
+            poster_path:'/img.jpg',release_date:'2024-01-01',original_language:'en',genre_ids:[18]};
+        })
+        : makeItems(type,page);
+      if (state.showSingleMarketHit && page===1 && (opt.params?.region==='US' || opt.params?.watch_region==='US')) {
+        items.unshift({id:99000,tmdb_id:99000,imdb_id:'tt990000',
+          title:'Only US film',name:'Only US show',poster_path:'/img.jpg',
+          release_date:'2024-01-01',first_air_date:'2024-01-01',genre_ids:[18],original_language:'en'});
+      }
+      return {data:{results:items}};
     }
     if(url.includes('/external_ids'))return {data:{imdb_id:'tt11111111'}};
+    const details=url.match(/\/(movie|tv)\/(\d+)$/);
+    if(details){
+      if(state.detailsFail)throw new Error('simulated TMDB detail timeout');
+      const tv=details[1]==='tv';
+      const id=Number(details[2]);
+      return {data:{
+        id, title:`TMDB Film ${id}`,name:`TMDB Series ${id}`,overview:`Official TMDB overview ${id}`,
+        backdrop_path:`/tmdb-background-${id}.jpg`,original_language:'en',
+        release_date:'2023-01-09', first_air_date:'2023-01-09',last_air_date:'2025-03-17',in_production:false,
+        episode_run_time:[46],runtime:123, genres:[{id:18,name:'Drama'},{id:9648,name:'Mystery'}],
+        images:{logos:[
+          {file_path:'/french-logo.png',iso_639_1:'fr',vote_average:10},
+          {file_path:'/english-logo.png',iso_639_1:'en',vote_average:4},
+          {file_path:'/neutral-logo.png',iso_639_1:null,vote_average:8}
+        ]},
+        credits:{cast:[{name:'Performer A'},{name:'Performer B'}],crew:[{job:'Director',name:'Director A'}]},
+        created_by:[{name:'Creator A'}],
+        videos:{results:[{site:'YouTube',type:'Trailer',official:true,key:'ABCDef12345'}]},
+        origin_country:['US'],production_countries:[{iso_3166_1:'US'}]
+      }};
+    }
     throw new Error('unexpected mock URL '+url);
   }};
   const fakeSharp=()=>({resize(){return this},composite(){return this},jpeg(){return this},png(){return this},toBuffer:async()=>Buffer.from('FAKEJPEG'+'x'.repeat(1000))});
@@ -73,7 +103,7 @@ function boot() {
     await h(req,res);
     return res;
   }
-  return {request,state,calls};
+  return {request,state,calls,requests};
 }
 
 test('movie and series catalogs load independently without posters and retain IDs',async()=>{
@@ -98,8 +128,8 @@ test('repeated concurrent calls share the same catalog build',async()=>{
   const options={type:'series',id:'top10_trending_shows'};
   const many=await Promise.all(Array.from({length:5},()=>request('/catalog/:type/:id.json',options)));
   assert.ok(many.every(r=>r.statusCode===200 && r.body.metas.length===10));
-  const count=calls.filter(u=>u.includes('/trending/tv/day')).length;
-  assert.equal(count,2,'only one 2-page TMDB fetch for concurrent requests');
+  const count=calls.filter(u=>u.includes('/discover/tv')).length;
+  assert.equal(count,18,'only one 9-market x 2-page TMDB fetch for concurrent requests');
 });
 
 test('uncached upstream failure is 503 and never caches an empty catalog as success',async()=>{
@@ -151,8 +181,9 @@ test('discover digital-only backup fills missing slots without allowing theatric
   const result=await request('/catalog/:type/:id.json',{type:'movie',id:'top10_trending_movies'});
   assert.equal(result.statusCode,200);
   assert.equal(result.body.metas.length,10);
-  assert.ok(result.body.metas.every(m=>m.id.startsWith('tt400')));
+  assert.ok(result.body.metas.every(m=>m.id.startsWith('tt430')));
   assert.ok(calls.some(u=>u.includes('/discover/movie')));
+  assert.ok(!calls.some(u=>u.includes('/trending/')));
 });
 
 test('no verified digital releases returns retryable 503 rather than unreleased movies',async()=>{
@@ -161,4 +192,79 @@ test('no verified digital releases returns retryable 503 rather than unreleased 
   const result=await request('/catalog/:type/:id.json',{type:'movie',id:'top10_trending_movies'});
   assert.equal(result.statusCode,503);
   assert.equal(result.headers['Cache-Control'],'no-store');
+});
+
+
+test('all nine US/European markets are fetched with genuinely regional TMDB filters',async()=>{
+  const {request,requests}=boot();
+  const movies=await request('/catalog/:type/:id.json',{type:'movie',id:'top10_trending_movies'});
+  const shows=await request('/catalog/:type/:id.json',{type:'series',id:'top10_trending_shows'});
+  assert.equal(movies.statusCode,200);
+  assert.equal(shows.statusCode,200);
+  assert.ok(!requests.some(r=>r.url.includes('/trending/')));
+  const movieCalls=requests.filter(r=>r.url.includes('/discover/movie'));
+  const tvCalls=requests.filter(r=>r.url.includes('/discover/tv'));
+  assert.deepEqual([...new Set(movieCalls.map(r=>r.params.region))].sort(),['DE','ES','FI','FR','GB','IT','NL','SE','US']);
+  assert.deepEqual([...new Set(tvCalls.map(r=>r.params.watch_region))].sort(),['DE','ES','FI','FR','GB','IT','NL','SE','US']);
+  assert.ok(movieCalls.every(r=>r.params.with_release_type===4 && !!r.params['release_date.lte']));
+  assert.ok(tvCalls.every(r=>r.params.with_watch_monetization_types==='flatrate|free|ads'));
+});
+
+test('a US-only popular hit ranks behind a title found across US and Europe',async()=>{
+  const {request,state}=boot();
+  state.showSingleMarketHit=true;
+  const result=await request('/catalog/:type/:id.json',{type:'series',id:'top10_trending_shows'});
+  assert.equal(result.statusCode,200);
+  assert.equal(result.body.metas.length,10);
+  assert.equal(result.body.metas[0].id,'tt100001');
+  assert.ok(result.body.metas.every(it=>it.id!=='tt990000'));
+});
+
+
+test('TMDB detail enrichment attaches English clearlogos, original backdrops and rich movie metadata',async()=>{
+  const {request,requests}=boot();
+  const result=await request('/catalog/:type/:id.json',{type:'movie',id:'top10_trending_movies'});
+  assert.equal(result.statusCode,200);
+  const meta=result.body.metas[0];
+  assert.equal(meta.name,'Film 1','catalog title remains from regional chart');
+  assert.equal(meta.description,'Official TMDB overview 20001');
+  assert.equal(meta.background,'https://image.tmdb.org/t/p/original/tmdb-background-20001.jpg');
+  assert.equal(meta.logo,'https://image.tmdb.org/t/p/original/english-logo.png');
+  assert.deepEqual(meta.genres,['Drama','Mystery']);
+  assert.deepEqual(meta.cast,['Performer A','Performer B']);
+  assert.deepEqual(meta.director,['Director A']);
+  assert.equal(meta.runtime,'123 min');
+  assert.equal(meta.releaseInfo,'2023');
+  assert.equal(meta.released,'2023-01-09T00:00:00.000Z');
+  assert.deepEqual(meta.trailers,[{source:'ABCDef12345',type:'Trailer'}]);
+  assert.match(meta.poster,/v=v560-us-europe-markets/,'poster artwork is preserved');
+  const detailCalls=requests.filter(r=>/^https:\/\/api\.themoviedb\.org\/3\/movie\/\d+$/.test(r.url));
+  assert.equal(detailCalls.length,10,'one detail call per selected movie');
+  assert.ok(detailCalls.every(r=>r.params.append_to_response==='images,credits,videos'));
+  assert.ok(detailCalls.every(r=>r.params.include_image_language.includes('en,null')));
+});
+
+test('TMDB series detail metadata uses proper TV year range, creators and episode runtime',async()=>{
+  const {request}=boot();
+  const result=await request('/catalog/:type/:id.json',{type:'series',id:'top10_trending_shows'});
+  assert.equal(result.statusCode,200);
+  const meta=result.body.metas[0];
+  assert.equal(meta.logo,'https://image.tmdb.org/t/p/original/english-logo.png');
+  assert.equal(meta.runtime,'46 min');
+  assert.equal(meta.releaseInfo,'2023-2025');
+  assert.deepEqual(meta.director,['Creator A']);
+  assert.equal(meta.type,'series');
+  assert.match(meta.poster,/rank=1/);
+});
+
+test('TMDB metadata failures keep a complete Top 10 and original Discover backdrop',async()=>{
+  const {request,state}=boot();
+  state.detailsFail=true;
+  const result=await request('/catalog/:type/:id.json',{type:'movie',id:'top10_trending_movies'});
+  assert.equal(result.statusCode,200);
+  assert.equal(result.body.metas.length,10);
+  assert.equal(result.body.metas[0].background,'https://image.tmdb.org/t/p/original/wide_1.jpg');
+  assert.equal(result.body.metas[0].releaseInfo,'2024');
+  assert.deepEqual(result.body.metas[0].genres,['Drama']);
+  assert.ok(result.body.metas.every(m=>typeof m.poster==='string' && m.id.startsWith('tt')));
 });
