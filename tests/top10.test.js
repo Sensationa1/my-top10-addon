@@ -27,7 +27,8 @@ function boot() {
   const fakeApi={get:async(url,opt={})=>{
     calls.push(url); requests.push({url,params:opt.params||{}});
     if(state.fail)throw new Error('mock upstream unavailable');
-    if(url.includes('postersplus.slokker.cc') && state.posterFails)throw new Error('mock poster timeout');
+    if(url.includes('easyratingsdb.com') && state.posterFails)throw new Error('mock EasyRatings timeout');
+    if(url.includes('easyratingsdb.com'))return {data:Buffer.from('FAKEIMAGE'+'r'.repeat(4000)),headers:{'content-type':'image/jpeg'}};
     if(url.includes('image.tmdb.org'))return {data:Buffer.from('FAKEIMAGE'+'z'.repeat(4000)),headers:{'content-type':'image/jpeg'}};
     if(url.includes('/trending/')) {
       const type=url.includes('/trending/tv/day')?'tv':'movie';
@@ -75,6 +76,11 @@ function boot() {
       const id=Number(details[2]);
       return {data:{
         id,title:`TMDB Film ${id}`,name:`TMDB Series ${id}`,overview:`Official TMDB overview ${id}`,
+        external_ids:{imdb_id:id===state.missingImdbId ? null : 'tt'+id},
+        release_dates:state.invalidDigitalIds.has(id) ? undefined : {results:[{iso_3166_1:'CA',release_dates:[
+          state.theatricalOnlyIds.has(id) ? {type:3,release_date:'2024-03-01T00:00:00Z'} :
+            {type:4,release_date:state.futureDigitalIds.has(id)?'2032-03-01T00:00:00Z':'2024-03-01T00:00:00Z'}
+        ]}]},
         backdrop_path:`/tmdb-background-${id}.jpg`,original_language:'en',
         release_date:'2023-01-09',first_air_date:'2023-01-09',last_air_date:'2025-03-17',in_production:false,
         episode_run_time:[46],runtime:123,genres:[{id:18,name:'Drama'},{id:9648,name:'Mystery'}],
@@ -131,7 +137,7 @@ test('both unchanged catalog IDs use global TMDB Trending Today and no regional 
   assert.ok(requests.some(x=>x.url.endsWith('/trending/movie/day')));
   assert.ok(requests.some(x=>x.url.endsWith('/trending/tv/day')));
   assert.ok(requests.every(x=>!x.url.includes('/discover/')));
-  assert.ok(requests.some(x=>x.url.includes('/release_dates')));
+  assert.ok(requests.some(x=>x.url.includes('/release_dates') || (x.params.append_to_response||'').includes('release_dates')));
   assert.ok(calls.every(url=>!url.includes('postersplus')),'catalog does not wait for poster rendering');
 });
 
@@ -234,12 +240,12 @@ test('empty TMDB Trending Today response fails safely',async()=>{
   assert.equal(res.statusCode,503);
 });
 
-test('poster source retains last confirmed Posters+ preset and TMDB fallback',async()=>{
+test('EasyRatingsDB poster is used first and falls back to TMDB if unavailable',async()=>{
   const {request,calls}=boot();
   const res=await request('/api/poster',{}, {id:'tt200001',rank:'1',type:'movie',tmdb:'20001',g:'DRAMA',r:'8.1',n:'Film 1',p:'https://image.tmdb.org/t/p/w1280/movie_1.jpg'});
   assert.equal(res.statusCode,200);assert.equal(res.headers['Content-Type'],'image/jpeg');
-  assert.ok(calls.some(url=>url.includes('postersplus.slokker.cc')));
-  assert.ok(calls.some(url=>url.includes('bg1=0.9%2C0.075%2Cr%3A4%3Anetwork')));
+  assert.ok(calls.some(url=>url.includes('easyratingsdb.com/67b66dcb8878a238077b648eaf2f35c4/poster/tt200001.jpg?type=movie&shape=poster')));
+  assert.ok(!calls.some(url=>url.includes('postersplus.slokker.cc')));
   assert.ok(calls.some(url=>url.includes('image.tmdb.org')));
 });
 
@@ -257,10 +263,10 @@ test('TMDB details enrich movies with logos, original backdrops and metadata',as
   assert.equal(meta.runtime,'123 min');
   assert.equal(meta.releaseInfo,'2023');
   assert.deepEqual(meta.trailers,[{source:'ABCDef12345',type:'Trailer'}]);
-  assert.match(meta.poster,/v=v5100-tmdb-today-digital-noanime/);
+  assert.match(meta.poster,/v=v5110-easyratings-tuned/);
   const detailCalls=requests.filter(r=>/^https:\/\/api\.themoviedb\.org\/3\/movie\/\d+$/.test(r.url));
   assert.equal(detailCalls.length,10);
-  assert.ok(detailCalls.every(r=>r.params.append_to_response==='images,credits,videos'));
+  assert.ok(detailCalls.every(r=>r.params.append_to_response==='images,credits,videos,external_ids,release_dates'));
 });
 
 test('TMDB series details preserve logos and TV metadata',async()=>{
@@ -284,7 +290,8 @@ test('TMDB detail failures still retain poster URLs and chart backdrops',async()
 test('status exposes the selected filters and unchanged catalog IDs',async()=>{
   const {request}=boot();const status=await request('/api/status');
   assert.equal(status.statusCode,200);
-  assert.equal(status.body.version,'5.10.0');
+  assert.equal(status.body.version,'5.11.0');
+  assert.equal(status.body.posterSource,'EasyRatingsDB');
   assert.equal(status.body.rankingSource,'TMDB Trending Today — filtered');
   assert.equal(status.body.digitalReleaseStrict,true);
   assert.equal(status.body.animeExcluded,true);
@@ -292,4 +299,35 @@ test('status exposes the selected filters and unchanged catalog IDs',async()=>{
   const manifest=await request('/manifest.json');
   assert.equal(manifest.body.catalogs[0].id,'top10_trending_shows');
   assert.equal(manifest.body.catalogs[1].id,'top10_trending_movies');
+});
+
+
+test('EasyRatingsDB 200 response produces ranked JPEG without TMDB image fallback',async()=>{
+  const {request,calls,state}=boot();state.posterFails=false;
+  const res=await request('/api/poster',{}, {id:'tt200001',rank:'4',type:'series',tmdb:'20001',g:'DRAMA',r:'8.1',n:'Film 1',p:'https://image.tmdb.org/t/p/w780/movie_1.jpg'});
+  assert.equal(res.statusCode,200);
+  assert.equal(res.headers['Content-Type'],'image/jpeg');
+  assert.ok(calls.some(u=>u.includes('/poster/tt200001.jpg?type=series&shape=poster')));
+  assert.ok(!calls.some(u=>u.includes('image.tmdb.org')));
+});
+
+test('catalog uses combined TMDB details for release dates and IMDb IDs (no separate per-title lookup)',async()=>{
+  const {request,calls}=boot();
+  const res=await request('/catalog/:type/:id.json',MOVIES);
+  assert.equal(res.statusCode,200);assert.equal(res.body.metas.length,10);
+  assert.equal(calls.filter(u=>u.includes('/movie/')&&u.endsWith('/release_dates')).length,0);
+  assert.equal(calls.filter(u=>u.includes('/movie/')&&u.endsWith('/external_ids')).length,0);
+  assert.equal(calls.filter(u=>/^https:\/\/api\.themoviedb\.org\/3\/movie\/\d+$/.test(u)).length,10);
+});
+
+
+test('repeat poster requests reuse the rendered JPEG and do not refetch EasyRatings',async()=>{
+  const {request,calls,state}=boot();state.posterFails=false;
+  const q={id:'tt200001',rank:'6',type:'movie',tmdb:'20001',g:'DRAMA',r:'8.1',n:'Film 1',p:'https://image.tmdb.org/t/p/w780/movie_1.jpg'};
+  const a=await request('/api/poster',{},q);
+  const b=await request('/api/poster',{},q);
+  assert.equal(a.statusCode,200);assert.equal(b.statusCode,200);
+  assert.deepEqual(a.body,b.body);
+  assert.equal(calls.filter(u=>u.includes('easyratingsdb.com')).length,1);
+  assert.match(b.headers['Cache-Control'],/s-maxage=604800/);
 });

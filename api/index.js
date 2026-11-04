@@ -1,5 +1,5 @@
 "use strict";
-// Top 10 for Nuvio | v5.10.0. TMDB daily trending, digital-only movies, anime excluded except Edgerunners.
+// Top 10 for Nuvio | v5.11.0. TMDB daily trending, digital-only movies, anime excluded except Edgerunners.
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -23,13 +23,36 @@ const TMDB_KEY = process.env.TMDB_API_KEY || '';
 const MDBLIST_KEY = process.env.MDBLIST_API_KEY || '';
 const TMDB_BASE = (process.env.TMDB_API_BASE || 'https://api.themoviedb.org/3').replace(/\/$/, '');
 const MDBLIST_BASE = (process.env.MDBLIST_BASE || 'https://mdblist.com').replace(/\/$/, '');
-const POSTERSPLUS_BASE = (process.env.POSTERSPLUS_BASE_URL || 'https://postersplus.slokker.cc').replace(/\/$/, '');
-const POSTER_WIDTH = Math.max(720, Math.min(2160, Number(process.env.POSTER_WIDTH || 1080) || 1080));
+// Uses the exact EasyRatingsDB URL template supplied by the user. Keep the ID, type and shape placeholders.
+const EASYRATINGS_TEMPLATE = process.env.EASYRATINGS_POSTER_TEMPLATE ||
+  'https://easyratingsdb.com/67b66dcb8878a238077b648eaf2f35c4/poster/{id}.jpg?type={type}&shape={shape}';
+const EASYRATINGS_SHAPE = ['poster','landscape','square'].includes(process.env.EASYRATINGS_SHAPE) ? process.env.EASYRATINGS_SHAPE : 'poster';
+const EASYRATINGS_TIMEOUT_MS = Math.max(900, Math.min(9000, Number(process.env.EASYRATINGS_TIMEOUT_MS || 3500)));
+const MAX_POSTER_RENDERS = Math.max(1,Math.min(4,Number(process.env.MAX_POSTER_RENDERS || 2)));
+let posterRendersActive=0;
+const posterRenderQueue=[];
+async function renderWithLimit(fn) {
+  if (posterRendersActive >= MAX_POSTER_RENDERS) await new Promise(resolve => posterRenderQueue.push(resolve));
+  posterRendersActive++;
+  try { return await fn(); }
+  finally { posterRendersActive--; const next=posterRenderQueue.shift(); if(next)next(); }
+}
+function buildEasyRatingsUrl(imdbId,type) {
+  if (!validImdb(imdbId)) throw new Error('Invalid IMDb ID for EasyRatings');
+  const value=EASYRATINGS_TEMPLATE
+    .replace(/\{id\}/g,encodeURIComponent(imdbId))
+    .replace(/\{type\}/g,type==='series'?'series':'movie')
+    .replace(/\{shape\}/g,EASYRATINGS_SHAPE);
+  const parsed=new URL(value);
+  if(parsed.protocol!=='https:' || parsed.hostname!=='easyratingsdb.com') throw new Error('Unsafe EasyRatings poster template');
+  return parsed.toString();
+}
+const POSTER_WIDTH = Math.max(720, Math.min(2160, Number(process.env.POSTER_WIDTH || 720) || 1080));
 const TARGET_W = Math.round(POSTER_WIDTH / 2) * 2;
 const TARGET_H = Math.round(TARGET_W * 1.5);
-const POSTER_CACHE_VERSION = 'v5100-tmdb-today-digital-noanime'; // Refresh after catalog changes
+const POSTER_CACHE_VERSION = 'v5110-easyratings-tuned'; // Refresh after catalog changes
 const CATALOG_TTL = 60 * 60 * 1000; // Refresh filtered daily chart about hourly
-const CATALOG_SUCCESS_HEADER = 'public, max-age=60, s-maxage=1800, stale-while-revalidate=3600, stale-if-error=86400';
+const CATALOG_SUCCESS_HEADER = 'public, max-age=120, s-maxage=1800, stale-while-revalidate=86400, stale-if-error=86400';
 const LOG = (...args) => console.log('[top10]', ...args);
 const catalogCache = new Map();
 const catalogInFlight = new Map();
@@ -62,9 +85,9 @@ const GENRE_MAP = {
 };
 const MANIFEST = {
   id: 'com.sensationa1.top10.cloud',
-  version: '5.10.0',
+  version: '5.11.0',
   name: 'Top 10 Trending (Apple TV Style)',
-  description: 'TMDB Trending Today ranked by eligible titles: digital-release-only movies, anime excluded except Cyberpunk Edgerunners; TMDB art, logos and metadata.',
+  description: 'TMDB Trending Today, digital movies, no anime (except Edgerunners), EasyRatingsDB artwork and fast ranked cards.',
   resources: ['catalog'],
   types: ['movie','series'],
   idPrefixes: ['tt'],
@@ -196,6 +219,33 @@ async function digitalStatus(tmdbId) {
   digitalInFlight.set(id,pending);
   return pending;
 }
+// TMDB append_to_response lets one title-details call return the digital-release
+// record, IMDb ID and rich metadata. Cache it for catalog enrichment; if TMDB
+// omits an appendix, fall back to the dedicated endpoint without guessing.
+function hasDigitalRelease(results) {
+  const today=new Date().toISOString().slice(0,10);
+  return Array.isArray(results) && results.some(country=>
+    Array.isArray(country?.release_dates) && country.release_dates.some(entry=>{
+      const day=String(entry?.release_date||'').slice(0,10);
+      return Number(entry?.type)===4 && /^\d{4}-\d{2}-\d{2}$/.test(day) && day<=today;
+    }));
+}
+async function inspectCandidate(item,type) {
+  // Full details are useful even when metadata enrichment is turned off only
+  // when network calls can be combined, so honor the opt-out setting.
+  const details=TMDB_ENRICHMENT_ENABLED ? await tmdbDetailsFor(item,type) : null;
+  if(type==='movie') {
+    const embeddedDates=details?.release_dates?.results;
+    const eligible=Array.isArray(embeddedDates) ? hasDigitalRelease(embeddedDates)
+      : await digitalStatus(item.id||item.tmdb_id||item.tmdbid);
+    if(!eligible)return null;
+  }
+  const fromItem=item.imdb_id||item.imdbid||item.external_ids?.imdb_id;
+  const fromDetails=details?.external_ids?.imdb_id || details?.imdb_id;
+  const imdb=validImdb(fromItem) ? fromItem : validImdb(fromDetails) ? fromDetails : await resolveImdbId(item,type);
+  if(!validImdb(imdb))return null;
+  return {item,id:imdb};
+}
 async function fetchEligibleTrending(type) {
   const media=type==='series'?'tv':'movie';
   const eligible=[];
@@ -217,14 +267,21 @@ async function fetchEligibleTrending(type) {
       if(!id||seen.has(id))return false;
       seen.add(id);return true;
     });
-    const pageResults=await mapLimited(items,8,async item=>{
-      if(await isExcludedAnime(item,type))return null;
-      if(type==='movie' && !(await digitalStatus(item.id||item.tmdb_id||item.tmdbid)))return null;
-      const id=await resolveImdbId(item,type);
-      if(!validImdb(id))return null; // Needed for existing Stremio/TorBox resolvers.
-      return {item,id};
-    });
-    eligible.push(...pageResults.filter(Boolean));
+    // The old implementation checked *all* 20 items on every page even when
+    // the first ten were valid, doubling digital-release and ID API calls.
+    // Small, ordered batches preserve chart order while stopping as soon as
+    // ten qualified candidates are available.
+    for(let pos=0;pos<items.length && eligible.length<10;){
+      const remaining=10-eligible.length;
+      const count=Math.min(items.length-pos,Math.max(4,remaining));
+      const batch=items.slice(pos,pos+count);
+      pos+=count;
+      const checked=await mapLimited(batch,Math.min(6,count),async item=>{
+        if(await isExcludedAnime(item,type))return null;
+        return inspectCandidate(item,type);
+      });
+      eligible.push(...checked.filter(Boolean));
+    }
     if(data?.total_pages && page>=Number(data.total_pages))break;
   }
   if(!eligible.length) throw new Error(`No eligible TMDB Trending Today ${type} titles`);
@@ -256,7 +313,7 @@ function genreFromItem(item) {
 }
 function tmdbPoster(item){
   const path=String(item.poster_path || '');
-  return /^\/[\w\-.]+$/.test(path) ? `https://image.tmdb.org/t/p/original${path}` : '';
+  return /^\/[\w\-.]+$/.test(path) ? `https://image.tmdb.org/t/p/w780${path}` : '';
 }
 function tmdbBackdrop(item){
   const path=String(item.backdrop_path || '');
@@ -296,9 +353,10 @@ async function tmdbDetailsFor(item,type) {
       const originalLang=/^[a-z]{2}$/i.test(String(item.original_language||''))
         ? String(item.original_language).toLowerCase() : 'en';
       const langs=[...new Set(['en','null',originalLang])].join(',');
+      const append=type==='series' ? 'images,credits,videos,external_ids' : 'images,credits,videos,external_ids,release_dates';
       const data=await tmdbGet(`/${type==='series'?'tv':'movie'}/${id}`,
-        {language:'en-US',append_to_response:'images,credits,videos',include_image_language:langs},
-        Number(process.env.TMDB_META_TIMEOUT_MS||4000));
+        {language:'en-US',append_to_response:append,include_image_language:langs},
+        Number(process.env.TMDB_META_TIMEOUT_MS||3000));
       putLru(tmdbDetailsCache,key,{data,expiry:now+TMDB_ENRICHMENT_TTL},240);
       return data;
     }catch(err){
@@ -417,10 +475,14 @@ async function buildCatalog(type,host) {
   // Filtered daily-chart order is retained; ranks become contiguous 1-10.
   // Fetch ratings and full TMDB metadata only for selected titles.
   const metas=await mapLimited(eligible,8,async ({item,id},index)=>{
-    const imdbRating=await imdbRatingFor(item.tmdb_id||item.tmdbid||item.id,type,item.vote_average);
+    // Ratings and TMDB enrichment do not depend on one another. Parallelize
+    // the two network requests instead of adding their latencies.
+    const [imdbRating,details]=await Promise.all([
+      imdbRatingFor(item.tmdb_id||item.tmdbid||item.id,type,item.vote_average),
+      tmdbDetailsFor(item,type)
+    ]);
     const base={id,type,name:String(item.title||item.name||'Untitled'),
       poster:rankPosterUrl(host,item,type,index+1,id,imdbRating),posterShape:'poster'};
-    const details=await tmdbDetailsFor(item,type);
     return enrichMetaFromTmdb(base,item,details,type,imdbRating);
   });
   return metas.filter(Boolean);
@@ -431,6 +493,14 @@ async function getCatalog(type,host,force=false){
   const key=`${type}:${host}`;
   const cached=catalogCache.get(key);
   if(!force && cached && Date.now()-cached.ts<CATALOG_TTL)return cached.metas;
+  if(!force && cached?.metas?.length){
+    // Serve last-good results instantly; regenerate in the background.
+    if(!catalogInFlight.has(key)){
+      const refresh=getCatalog(type,host,true).catch(err=>LOG('Background refresh failed',type,err.message));
+      tryVercelWaitUntil(refresh);
+    }
+    return cached.metas;
+  }
   if(catalogInFlight.has(key))return catalogInFlight.get(key);
   const pending=(async()=>{
     try{
@@ -625,30 +695,6 @@ async function getCardFramePng() {
 }
 
 
-function buildPostersPlusUrl({imdbId,tmdbId,stremioId,type}) {
-  const params=new URLSearchParams();
-  if(tmdbId)params.set('tmdb_id',String(tmdbId));
-  if(imdbId)params.set('imdb_id',String(imdbId));
-  params.set('stremio_id',stremioId||imdbId||'');
-  params.set('type',type);
-  params.set('shape','poster');
-  params.set('pc','stremio_tv_nuvio');
-  params.set('sbi','0.010');
-  if(TMDB_KEY)params.set('tmdb_key',TMDB_KEY);
-  if(MDBLIST_KEY)params.set('mdblist_key',MDBLIST_KEY);
-  // Use the exact Posters+ tuning specified for your personal Nuvio instance.
-  const presets={tg:'off',bgr:'custom',bgo:'0.3',bgh:'0.55',tvso:'1',vpct:'1',vpcb:'1',
-    vcsa:'1.55',vcb:'0.60',vcli:'1.60',vcs:'muted',hg:'1',hr:'1',sm:'hidden',
-    _bgr:'off',_vcsa:'2.00',_vcb:'1.00',_vcli:'1.30',_vcs:'shade',
-    _hy:'1',_art:'original',bp:'top_left',_cl:'off',fti:'1',trs:'direct',
-    rdm:'3',mam:'1',mmfsr:'0.056',msoo10:'1',rtc:'FFFFFF',
-    mw:'lb:.25,pc:.1,im:.4,mal:.25',tw:'pc:.1,im:.5,mc:.15,mal:.25',
-    pp:'random',ll:'fi',lp:'original,native,custom,english,neutral,native_if_original,text',lls:'fi',
-    fbs:'photoreal',lmwr:'0.80',lmhr:'0.40',lbr:'0.12',cg:'0',hur:'1',bdm:'7',
-    bg1:'0.9,0.075,r:4:network',bls:'1.05'};
-  Object.entries(presets).forEach(([k,v])=>params.set(k,v));
-  return `${POSTERSPLUS_BASE}/poster?${params.toString()}`;
-}
 function cleanArtwork(url) {
   try {
     const u=new URL(url);
@@ -660,7 +706,7 @@ async function fallbackArt(posterUrl,title) {
   const url=cleanArtwork(posterUrl);
   if(url){
     try{
-      const r=await api.get(url,{responseType:'arraybuffer',timeout:4500,maxContentLength:12*1024*1024});
+      const r=await api.get(url,{responseType:'arraybuffer',timeout:2400,maxContentLength:7*1024*1024});
       if(r.data?.byteLength>1000)return Buffer.from(r.data);
     }catch(e){LOG('TMDB artwork fallback',e.message);}
   }
@@ -692,7 +738,7 @@ app.get('/catalog/:type/:id.json',async(req,res)=>{
 });
 app.get('/api/status',(_req,res)=>res.set('Cache-Control','no-store').json({
   ok:true,version:MANIFEST.version,tmdbConfigured:Boolean(TMDB_KEY),rankingSource:'TMDB Trending Today — filtered',digitalReleaseStrict:true,animeExcluded:true,animeException:'Cyberpunk: Edgerunners',regionalFilter:false,posterWidth:TARGET_W,
-  posterCacheItems:posterCache.size,tmdbEnrichment:TMDB_ENRICHMENT_ENABLED,tmdbMetadataCached:tmdbDetailsCache.size,catalogs:[...catalogCache.values()].map(v=>({items:v.metas.length,ageSeconds:Math.round((Date.now()-v.ts)/1000)})),
+  posterCacheItems:posterCache.size,posterSource:'EasyRatingsDB',posterRendersActive,posterQueued:posterRenderQueue.length,posterWidth:TARGET_W,tmdbEnrichment:TMDB_ENRICHMENT_ENABLED,tmdbMetadataCached:tmdbDetailsCache.size,catalogs:[...catalogCache.values()].map(v=>({items:v.metas.length,ageSeconds:Math.round((Date.now()-v.ts)/1000)})),
 }));
 app.get('/api/poster',async(req,res)=>{
   const {id,rank,type,tmdb,g,r,p,n}=req.query;
@@ -708,16 +754,21 @@ app.get('/api/poster',async(req,res)=>{
   let pending=posterInFlight.get(signature);
   if(!pending){
     pending=(async()=>{
-      let source='postersplus';
+      // Keep the independent EasyRatings network requests concurrent. Limit
+      // only the CPU-intensive sharp composition on small Render instances.
+      let source='easyratingsdb';
       let base=null;
       try {
-        const pp=await api.get(buildPostersPlusUrl({imdbId:id,tmdbId:cleanTmdb(tmdb),stremioId:id,type:mediaType}),{
-          responseType:'arraybuffer',timeout:Number(process.env.POSTERSPLUS_TIMEOUT_MS||9000),
-          maxContentLength:14*1024*1024,headers:{Accept:'image/*'}
+        const pp=await api.get(buildEasyRatingsUrl(id,mediaType),{
+          responseType:'arraybuffer',timeout:EASYRATINGS_TIMEOUT_MS,
+          maxContentLength:8*1024*1024,headers:{Accept:'image/*'}
         });
+        // Empty/HTML error pages must not be sent into sharp as artwork.
         if(pp.data?.byteLength>1500 && /image\//i.test(String(pp.headers?.['content-type']||'')))base=Buffer.from(pp.data);
-      }catch(e){LOG('PostersPlus timeout / error',e.message);}
-      if(!base){source='tmdb-fallback';base=await fallbackArt(p,n);}      const assets = getRankAssets(num);
+      }catch(e){LOG('EasyRatingsDB unavailable; using TMDB fallback',e.message);}
+      if(!base){source='tmdb-fallback';base=await fallbackArt(p,n);}
+      return renderWithLimit(async()=>{
+      const assets = getRankAssets(num);
       const cardLeft = Math.round(TARGET_W * 0.17);
       const cardTop = Math.round(TARGET_H * 0.045);
       const cardW = Math.round(TARGET_W * 0.79);
@@ -725,19 +776,19 @@ app.get('/api/poster',async(req,res)=>{
       const cardRadius = Math.round(TARGET_W * 0.028);
 
       const roundedMask = Buffer.from(`<svg width="${cardW}" height="${cardH}" xmlns="http://www.w3.org/2000/svg"><rect width="${cardW}" height="${cardH}" rx="${cardRadius}" ry="${cardRadius}" fill="#ffffff"/></svg>`);
-      let bgPipeline = sharp(base,{limitInputPixels:24e6})
-        .resize(TARGET_W, TARGET_H, {fit:'cover', position:'centre'});
-      if (typeof bgPipeline.blur === 'function') bgPipeline = bgPipeline.blur(24);
-      if (typeof bgPipeline.modulate === 'function') bgPipeline = bgPipeline.modulate({brightness:0.63, saturation:0.88});
-      const background = await bgPipeline
-        .jpeg({quality:86, chromaSubsampling:'4:4:4', mozjpeg:false})
-        .toBuffer();
-      let cardPipeline = sharp(base,{limitInputPixels:24e6})
-        .resize(cardW, cardH, {fit:'cover', position:'centre'});
-      if (typeof cardPipeline.composite === 'function') cardPipeline = cardPipeline.composite([{input:roundedMask, blend:'dest-in'}]);
-      const cardImage = await cardPipeline
-        .png()
-        .toBuffer();
+      // v5.10 applied a full-resolution 24-pixel blur, two 4:4:4 JPEGs,
+      // several PNG intermediates, and a 1080×1620 final render to every
+      // request. Blur a tiny thumbnail and upscale it; render the card at its
+      // final on-screen size. This reduces CPU and bytes without moving the rank or main card.
+      let bgPipeline=sharp(base,{limitInputPixels:24e6}).resize(160,240,{fit:'cover'});
+      if(typeof bgPipeline.blur==='function')bgPipeline=bgPipeline.blur(8);
+      if(typeof bgPipeline.modulate==='function')bgPipeline=bgPipeline.modulate({brightness:0.58,saturation:0.84});
+      const thumbnail=await bgPipeline.jpeg({quality:65,chromaSubsampling:'4:2:0'}).toBuffer();
+      const background=await sharp(thumbnail).resize(TARGET_W,TARGET_H)
+        .jpeg({quality:68,chromaSubsampling:'4:2:0'}).toBuffer();
+      let cardPipeline=sharp(base,{limitInputPixels:24e6}).resize(cardW,cardH,{fit:'cover'});
+      if(typeof cardPipeline.composite==='function')cardPipeline=cardPipeline.composite([{input:roundedMask,blend:'dest-in'}]);
+      const cardImage=await cardPipeline.png().toBuffer();
       const composites = [
         {input: await getBackgroundOverlayPng(), top:0, left:0},
         {input: assets.rankLayer, top:0, left:0},
@@ -753,14 +804,15 @@ app.get('/api/poster',async(req,res)=>{
       }
       const bytes = await sharp(background,{limitInputPixels:24e6})
         .composite(composites)
-        .jpeg({quality:90, chromaSubsampling:'4:4:4', mozjpeg:false})
+        .jpeg({quality:81, chromaSubsampling:'4:2:0', mozjpeg:false})
         .toBuffer();
-      const cacheHeader=source==='postersplus'
-        ? 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000'
+      const cacheHeader=source==='easyratingsdb'
+        ? 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000, stale-if-error=2592000'
         : 'public, max-age=60, s-maxage=900, stale-while-revalidate=1800';
       const output={bytes,cacheHeader};
-      putLru(posterCache,signature,output,24);
+      putLru(posterCache,signature,output,80);
       return output;
+      });
     })().finally(()=>posterInFlight.delete(signature));
     posterInFlight.set(signature,pending);
   }
@@ -768,7 +820,12 @@ app.get('/api/poster',async(req,res)=>{
     const result=await pending;
     res.set('Content-Type','image/jpeg');res.set('Cache-Control',result.cacheHeader);
     res.send(result.bytes);
-  }catch(err){LOG('Poster render failed',err.message);res.set('Cache-Control','no-store').status(503).send('Poster temporary unavailable');}
+  }catch(err){
+    LOG('Poster render failed; redirecting to TMDB artwork',err.message);
+    const url=cleanArtwork(p);
+    if(url){res.set('Cache-Control','public, max-age=120, s-maxage=300');return res.redirect(302,url);}
+    return res.set('Cache-Control','no-store').status(503).send('Poster unavailable');
+  }
 });
 // Optional Vercel Cron or your own scheduled ping. A valid CRON_SECRET is required.
 app.get('/api/refresh',async(req,res)=>{

@@ -1,8 +1,8 @@
 {
   "name": "my-top10-addon",
-  "version": "5.10.0",
+  "version": "5.11.0",
   "private": true,
-  "description": "Nuvio personal Top 10: filtered TMDB daily trending and premium side-rank design",
+  "description": "Fast TMDB Top 10 with EasyRatingsDB artwork, bounded render concurrency and stale cache",
   "main": "api/index.js",
   "scripts": {
     "start": "node api/index.js",
