@@ -1,59 +1,54 @@
-# Nuvio Top 10 · v5.11 — EasyRatingsDB Fast Edition
+# Nuvio Top 10 — v5.12 (Posters+ / Mainstream Streaming)
 
-A drop-in upgrade to the existing `my-top10-addon` project (Render or Vercel). The **manifest ID**, both **catalog IDs** and all Top 10 ranking/selection rules remain unchanged. No existing Xperience Top 10 rows need to be removed or recreated.
+This is a drop-in update of the recovered v5.11 app. The two Stremio/Nuvio catalog IDs and the Netflix/Apple-TV-style ranked card renderer are unchanged:
 
-## What caused the regression
+- `series/top10_trending_shows`
+- `movie/top10_trending_movies`
 
-The prior v5.10 path waited for Posters+ (up to nine seconds) on **each** poster, then blurred and composited a 1080×1620 image. Ten concurrent images could overload a small Render service. Catalog refreshes also fetched release dates, IMDb IDs, and full details in separate calls, and screened too many candidates on the first page.
+## Changes
 
-## Changes in v5.11
+- **Posters+:** Replaces EasyRatingsDB with the exact option set from the supplied `postersplus.slokker.cc/poster` instance. Uses server-side TMDB/MDBList API keys and inserts `tmdb_id`, `imdb_id`, `stremio_id`, `type`, and `shape`. The unchanged v5.11 numbered card composition is rendered on top of Posters+ output.
+- **Ranking:** Main inputs are JustWatch's **daily (56%)** and **weekly (25%)** streaming charts, accessed through MDBList, plus an MDBList **mainstream popularity list (19%)**. These are weights on normalized rank *signals*, **not** claims about viewing hours. The region is `US` by default; optionally select `FI`, `GB`, etc.
+- **No TMDB Trending Today:** Only TMDB *Popular* is used as a last-resort candidate fallback if the audience feeds are insufficient or down.
+- **Quality:** Require TMDB rating >= 6.0 and at least 350 votes for movies / 250 for series when a title appears on more than one chart. Single-signal titles require twice as many votes. All numbers are adjustable by environment variables.
+- **TV filtering:** Reject TMDB `Miniseries` and completed one-season runs of 10 episodes or fewer (preserving the prior explicit Cyberpunk: Edgerunners exception), plus reality/soap/news/talk genres. No upcoming premieres.
+- **Movie filtering:** Require confirmed release type 4 (digital) on or before today, as in v5.11.
+- **Anime filtering:** Same general anime exclusion as v5.11, with Cyberpunk: Edgerunners exception.
+- **Caching:** Catalog caches, CDN headers, poster in-flight deduplication, render concurrency limit and TMDB poster fallback retained.
 
-1. **New poster source**: uses your exact EasyRatingsDB URL template:
-   `https://easyratingsdb.com/67b66dcb8878a238077b648eaf2f35c4/poster/{id}.jpg?type={type}&shape={shape}`.
-   - `{id}` is the IMDb `tt` ID, `{type}` is `movie` or `series`, and `{shape}` defaults to `poster` (because existing ranked output is a 2:3 portrait card). Set `EASYRATINGS_SHAPE=landscape` if you intentionally want wide artwork cropped into the card.
-   - **Posters+ is no longer called.** A failed/invalid EasyRatings response falls back to TMDB, so the row is not left blank merely because EasyRatings times out.
-   - This project still renders your existing large **1–10 side-number layer**, frame, rounded image and genre/rating footer over the EasyRatings source. Using the external URL directly would be faster still but would lose your custom numbered layout; this upgrade avoids that trade-off.
-2. **Lower CPU load**: default artwork rendering is 720×1080 (configurable); blur is computed on a tiny thumbnail, not a full 1080×1620 image; 4:2:0 JPEG at quality 81 instead of 4:4:4 quality 90; two CPU renders at a time (`MAX_POSTER_RENDERS=2`) while network downloads remain concurrent.
-3. **Fewer upstream calls**: uses TMDB's `append_to_response` to fetch details, release dates and external IDs together for each candidate. Only processes as many candidates from the chart as needed. Parallel MDBList rating lookups with metadata enrichment.
-4. **Less blocking on refresh**: when an already-cached catalog has expired, return its last-good result immediately and refresh asynchronously. Fresh catalog responses and poster JPEGs carry longer cache/stale headers, and a poster LRU avoids rerendering on repeated local requests.
-5. **Failure isolation**: if an image cannot be rendered, redirect to its TMDB fallback when available instead of always returning a broken image. Original poster/metadata/catalog IDs are preserved, so Xperience integration remains stable.
+## Deployment
 
-## Deploy to your existing Render project
+1. Unzip into your existing add-on repo, replacing `api/index.js`, `package.json`, `vercel.json`, `tests/` and README. **Keep any existing `fonts/` directory** from your working deployment; the original recovered ZIP did not contain those font assets.
+2. Keep `TMDB_API_KEY` and `MDBLIST_API_KEY` configured as private environment variables. The same keys are used server-side for Posters+. Do not commit or expose them in public Git.
+3. `npm install` then deploy to your existing Vercel/Render instance. If the same deployment and manifest URL are retained, the catalog IDs will remain stable.
+4. Check `/api/status`; it should report `version: 5.12.0`, `posterSource: Posters+`, and a JustWatch ranking source.
+5. Check `/catalog/movie/top10_trending_movies.json` and `/catalog/series/top10_trending_shows.json`. Verify the returned IDs and images on your actual device. Fresh chart retrieval and poster responsiveness depend on upstream services and your host; **not live-verified** in this environment.
 
-1. **Back up** the existing repository/deployment.
-2. Replace `api/index.js`, `package.json` and any updated files from this ZIP in the **existing** GitHub repository (`Sensationa1/my-top10-addon`, if you still use that repo). Include `tests/`, `.env.example`, and this `README.md`. `vercel.json` only applies if using Vercel.
-3. **KEEP your existing `fonts/` directory.** This ZIP does not distribute any font files. Rendering rank numerals relies on the existing fonts.
-4. Preserve the current **`TMDB_API_KEY`** and optional **`MDBLIST_API_KEY`** secret environment variables. Do not overwrite your actual keys with `.env.example` placeholders.
-5. For Render: Node 20+, build command `npm install`, start command `npm start` and appropriate `PORT`. Apply environment values below. Deploy the same service URL so Xperience automatically uses the update.
-6. Open your existing deployment URL plus `/api/status`: it should show `version: 5.11.0` and `posterSource: EasyRatingsDB`. Open `/catalog/movie/top10_trending_movies.json` and `/catalog/series/top10_trending_shows.json`, then load the row in Nuvio.
+## Optional environment variables
 
-### Suggested environment variables
-
-```
+```dotenv
+JUSTWATCH_COUNTRY=US
+MIN_TMDB_MOVIE_VOTES=350
+MIN_TMDB_SERIES_VOTES=250
+MIN_TMDB_RATING=6.0
+POSTERSPLUS_SHAPE=poster
+POSTERSPLUS_TIMEOUT_MS=4200
 POSTER_WIDTH=720
 MAX_POSTER_RENDERS=2
-EASYRATINGS_SHAPE=poster
-EASYRATINGS_TIMEOUT_MS=3500
-TMDB_META_ENRICHMENT=true
-TMDB_META_TIMEOUT_MS=3000
 ```
 
-`EASYRATINGS_POSTER_TEMPLATE` defaults to the URL above. You can override it in Render without changing code. If `shape=poster` fails for your particular EasyRatings preset, use the same template with a supported `shape` value and redeploy.
+To provide a full Posters+ URL instead, set `POSTERSPLUS_POSTER_TEMPLATE` to the supplied URL with placeholders `{tmdb_id?}`, `{imdb_id?}`, `{id}`, `{type}`, and `{shape}`. The default config already matches its visual options and fills the keys from `TMDB_API_KEY` / `MDBLIST_API_KEY`, so setting this is unnecessary unless those keys or options differ.
 
-### Important limitations
+**Never commit your actual API keys.** If the shared URL has been posted publicly, rotate both keys.
 
-- An initial **cold catalog load** still depends on TMDB and (if configured) MDBList. The lower call count helps, but free-tier Render services may spin down and have cold starts, which application code cannot eliminate.
-- EasyRatingsDB image availability and its exact `shape`/`type` behavior could not be end-to-end verified here because outbound network requests to the image host were unavailable from the execution environment. The provider URL is applied exactly as supplied and there is a TMDB fallback.
-- The local tests mock upstream APIs and the image renderer. All tests pass, but this does **not** constitute a measured live speed improvement or a successful production deployment. Check the actual service and posters after redeploying.
-- If you change poster width or the template after deployment, bump `POSTER_CACHE_VERSION` in `api/index.js` (or wait for cache expiry) so clients don't retain an old image.
+## Technical caveats
 
-## Preserved compatibility
+- Rankings are a **curated mainstream streaming Top 10**, not an official top-ten ranking from any one provider.
+- No specific live titles or chart placements have been independently verified. To audit a particular day's candidates, query the deployment after provisioning working API keys.
+- MDBList may enforce quotas or provider-chart access restrictions. When charts fail, the app falls back to TMDB Popular with strict quality gates rather than showing unvetted titles from TMDB Trending.
+- Serverless cold starts or upstream poster delays can still affect initial load. Posters+ has a 4.2-second timeout and falls back to TMDB artwork.
+- Strict filtering may yield fewer than 10 items on a particularly sparse day; the system favors quality over padding the list with weak candidates.
 
-- Manifest ID: `com.sensationa1.top10.cloud`
-- Catalogs: `top10_trending_movies` and `top10_trending_shows`
-- Movies from TMDB Trending Today **only if confirmed digitally released**; anime excluded except *Cyberpunk: Edgerunners* if trending; no country filter; relative ordering preserved; ranks always 1–10 after filtering.
-- IMDb IDs, IMDb-first rating preference, TMDB description/backdrops/transparent logos/cast/trailers when available, ranked poster design, metadata response schema.
+## Tests
 
-## Testing
-
-Run `npm test` or `node --test tests/top10.test.js`. 19 test cases cover catalog IDs, digital release constraints, anime restrictions, rank ordering, parallel catalog requests, TMDB fallback, EasyRatings URLs, metadata, combined TMDB lookups and repeat-image caching.
+`npm test` runs offline mocked tests for ranking, filters, poster options, credential containment, upstream fallback, and status. It does **not** test live JustWatch/MDBList/Posters+ availability or real poster layout pixels.

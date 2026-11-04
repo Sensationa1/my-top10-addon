@@ -1,8 +1,8 @@
 {
   "name": "my-top10-addon",
-  "version": "5.11.0",
+  "version": "5.12.0",
   "private": true,
-  "description": "Fast TMDB Top 10 with EasyRatingsDB artwork, bounded render concurrency and stale cache",
+  "description": "JustWatch and MDBList mainstream Top 10, miniseries filtering, Posters+ custom artwork",
   "main": "api/index.js",
   "scripts": {
     "start": "node api/index.js",
