@@ -1,0 +1,17 @@
+[build]
+  command = "npm run build:netlify"
+  publish = "public"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  external_node_modules = ["sharp", "@resvg/resvg-js"]
+
+[functions."api"]
+  included_files = ["fonts/**"]
+
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true

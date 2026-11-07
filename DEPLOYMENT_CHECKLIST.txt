@@ -1,0 +1,12 @@
+TOP 10 NETLIFY DEPLOYMENT CHECKLIST
+[ ] Create NEW GitHub repository, do not overwrite original my-top10-addon
+[ ] Connect NEW repository through Netlify Git integration (not drag-and-drop)
+[ ] Check build output for upstream v5.12 synchronization
+[ ] Set TMDB_API_KEY and MDBLIST_API_KEY privately
+[ ] Set PUBLIC_BASE_URL=https://top10-silo-nyz.netlify.app
+[ ] Confirm Netlify Function named api exists
+[ ] Test https://top10-silo-nyz.netlify.app/manifest.json
+[ ] Test https://top10-silo-nyz.netlify.app/api/status
+[ ] Check movie and series catalog JSON
+[ ] Check at least one artwork URL
+[ ] Refresh Nuvio add-on and test live load

@@ -1,54 +1,20 @@
-# Nuvio Top 10 — v5.12 (Posters+ / Mainstream Streaming)
+# Nuvio Top 10 — Netlify deployment package
 
-This is a drop-in update of the recovered v5.11 app. The two Stremio/Nuvio catalog IDs and the Netflix/Apple-TV-style ranked card renderer are unchanged:
+**Important: this ZIP contains an offline recovery copy of `api/index.js` (v5.11) as a fallback.** It cannot be described as a full offline snapshot of GitHub v5.12, because direct GitHub downloads were unavailable in the packaging environment. **On each Netlify build**, `scripts/sync-upstream.mjs` clones the original public GitHub repository and replaces `api/index.js` with the original **v5.12.0** source. It FAILS CLOSED when the upstream download or version check fails rather than deploying the older bundled code.
 
-- `series/top10_trending_shows`
-- `movie/top10_trending_movies`
-
-## Changes
-
-- **Posters+:** Replaces EasyRatingsDB with the exact option set from the supplied `postersplus.slokker.cc/poster` instance. Uses server-side TMDB/MDBList API keys and inserts `tmdb_id`, `imdb_id`, `stremio_id`, `type`, and `shape`. The unchanged v5.11 numbered card composition is rendered on top of Posters+ output.
-- **Ranking:** Main inputs are JustWatch's **daily (56%)** and **weekly (25%)** streaming charts, accessed through MDBList, plus an MDBList **mainstream popularity list (19%)**. These are weights on normalized rank *signals*, **not** claims about viewing hours. The region is `US` by default; optionally select `FI`, `GB`, etc.
-- **No TMDB Trending Today:** Only TMDB *Popular* is used as a last-resort candidate fallback if the audience feeds are insufficient or down.
-- **Quality:** Require TMDB rating >= 6.0 and at least 350 votes for movies / 250 for series when a title appears on more than one chart. Single-signal titles require twice as many votes. All numbers are adjustable by environment variables.
-- **TV filtering:** Reject TMDB `Miniseries` and completed one-season runs of 10 episodes or fewer (preserving the prior explicit Cyberpunk: Edgerunners exception), plus reality/soap/news/talk genres. No upcoming premieres.
-- **Movie filtering:** Require confirmed release type 4 (digital) on or before today, as in v5.11.
-- **Anime filtering:** Same general anime exclusion as v5.11, with Cyberpunk: Edgerunners exception.
-- **Caching:** Catalog caches, CDN headers, poster in-flight deduplication, render concurrency limit and TMDB poster fallback retained.
+The Netlify adapter does not modify the upstream Top 10 algorithm, filters, poster layouts, or IDs. It adds a serverless wrapper, a Netlify rewrite and required dependencies. The original GitHub repo is `https://github.com/Sensationa1/my-top10-addon`.
 
 ## Deployment
 
-1. Unzip into your existing add-on repo, replacing `api/index.js`, `package.json`, `vercel.json`, `tests/` and README. **Keep any existing `fonts/` directory** from your working deployment; the original recovered ZIP did not contain those font assets.
-2. Keep `TMDB_API_KEY` and `MDBLIST_API_KEY` configured as private environment variables. The same keys are used server-side for Posters+. Do not commit or expose them in public Git.
-3. `npm install` then deploy to your existing Vercel/Render instance. If the same deployment and manifest URL are retained, the catalog IDs will remain stable.
-4. Check `/api/status`; it should report `version: 5.12.0`, `posterSource: Posters+`, and a JustWatch ranking source.
-5. Check `/catalog/movie/top10_trending_movies.json` and `/catalog/series/top10_trending_shows.json`. Verify the returned IDs and images on your actual device. Fresh chart retrieval and poster responsiveness depend on upstream services and your host; **not live-verified** in this environment.
+1. **Create a NEW GitHub repository** (for example `my-top10-netlify`), extract the ZIP, and commit its contents there. Do not replace the files in `Sensationa1/my-top10-addon`: that is the upstream repository the build fetches, and replacing it with the older offline recovery snapshot would break the version check. Do NOT use Netlify's manual drag-and-drop static upload: it will not build the Functions.
+2. Connect that repository to your existing Netlify site `top10-silo-nyz` under continuous deployment. Keep the repository base directory empty (root). The included `netlify.toml` sets the build and publish directories.
+3. At Netlify → Project configuration → Environment variables, set `TMDB_API_KEY`, `MDBLIST_API_KEY`, and `PUBLIC_BASE_URL=https://top10-silo-nyz.netlify.app` with function access. Never publish your keys.
+4. Trigger a production deploy; confirm the build log includes `Synchronized upstream v5.12.0 source successfully` and that Netlify deployed a function named `api`.
+5. Verify `/manifest.json`, `/api/status`, `/catalog/movie/top10_trending_movies.json`, and `/catalog/series/top10_trending_shows.json`.
+6. Verify actual poster URLs from the catalogue responses on your Nuvio device.
 
-## Optional environment variables
+**Warning:** The included local `api/index.js` is not the latest version; to deploy current v5.12, a successful network-enabled Netlify build is required. This package cannot be tested against live TMDB/MDBList/Posters+ APIs without keys, and cloud deployment has not been verified.
 
-```dotenv
-JUSTWATCH_COUNTRY=US
-MIN_TMDB_MOVIE_VOTES=350
-MIN_TMDB_SERIES_VOTES=250
-MIN_TMDB_RATING=6.0
-POSTERSPLUS_SHAPE=poster
-POSTERSPLUS_TIMEOUT_MS=4200
-POSTER_WIDTH=720
-MAX_POSTER_RENDERS=2
-```
+**Fonts:** No font files are redistributed with this ZIP. The Netlify build retrieves the existing `fonts/` folder from the user's original public GitHub repository if present, and `included_files` bundles it with the function. This keeps any pre-existing artwork typography as configured in the source.
 
-To provide a full Posters+ URL instead, set `POSTERSPLUS_POSTER_TEMPLATE` to the supplied URL with placeholders `{tmdb_id?}`, `{imdb_id?}`, `{id}`, `{type}`, and `{shape}`. The default config already matches its visual options and fills the keys from `TMDB_API_KEY` / `MDBLIST_API_KEY`, so setting this is unnecessary unless those keys or options differ.
-
-**Never commit your actual API keys.** If the shared URL has been posted publicly, rotate both keys.
-
-## Technical caveats
-
-- Rankings are a **curated mainstream streaming Top 10**, not an official top-ten ranking from any one provider.
-- No specific live titles or chart placements have been independently verified. To audit a particular day's candidates, query the deployment after provisioning working API keys.
-- MDBList may enforce quotas or provider-chart access restrictions. When charts fail, the app falls back to TMDB Popular with strict quality gates rather than showing unvetted titles from TMDB Trending.
-- Serverless cold starts or upstream poster delays can still affect initial load. Posters+ has a 4.2-second timeout and falls back to TMDB artwork.
-- Strict filtering may yield fewer than 10 items on a particularly sparse day; the system favors quality over padding the list with weak candidates.
-
-## Tests
-
-`npm test` runs offline mocked tests for ranking, filters, poster options, credential containment, upstream fallback, and status. It does **not** test live JustWatch/MDBList/Posters+ availability or real poster layout pixels.
+**Performance:** These changes fix deployment compatibility, not inherent ranking-generation or image-processing latency. Caching should be measured after endpoints function. Netlify Free usage is metered.

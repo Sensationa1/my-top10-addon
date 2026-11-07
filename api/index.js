@@ -1,5 +1,5 @@
 "use strict";
-// Top 10 for Nuvio | v5.12.0. JustWatch daily + weekly audience charts, mainstream cross-checks, digital-only movies, no miniseries.
+// Top 10 for Nuvio | v5.11.0. TMDB daily trending, digital-only movies, anime excluded except Edgerunners.
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -23,49 +23,11 @@ const TMDB_KEY = process.env.TMDB_API_KEY || '';
 const MDBLIST_KEY = process.env.MDBLIST_API_KEY || '';
 const TMDB_BASE = (process.env.TMDB_API_BASE || 'https://api.themoviedb.org/3').replace(/\/$/, '');
 const MDBLIST_BASE = (process.env.MDBLIST_BASE || 'https://mdblist.com').replace(/\/$/, '');
-// Posters+ instance shared by the user. Keys come from server-side environment,
-// never from client-facing catalog/poster URLs or a tracked source-code file.
-const POSTERSPLUS_TEMPLATE=process.env.POSTERSPLUS_POSTER_TEMPLATE || '';
-const POSTERSPLUS_TIMEOUT_MS=Math.max(900,Math.min(10000,Number(process.env.POSTERSPLUS_TIMEOUT_MS||4200)));
-const POSTERSPLUS_SHAPE=['poster','landscape','square'].includes(process.env.POSTERSPLUS_SHAPE) ? process.env.POSTERSPLUS_SHAPE : 'poster';
-const POSTERSPLUS_OPTIONS={
-  pc:'stremio_tv_nuvio',sbi:'0.010',tg:'off',bgr:'custom',bgo:'0.3',bgh:'0.6',
-  tvso:'1',vpct:'1',vpcb:'1',vcsa:'1.55',vcb:'0.60',vcli:'1.60',vcs:'muted',
-  hg:'1',sm:'hidden',_bgr:'off',_vcsa:'2.00',_vcb:'1.00',_vcli:'1.30',
-  _vcs:'shade',_hy:'1',_hr:'1',_art:'original',bp:'top_left',_cl:'off',
-  fti:'1',trs:'direct',mw:'lb:.25,pc:.1,im:.4,mal:.25',
-  tw:'pc:.1,im:.5,mc:.15,mal:.25',rdm:'0',ll:'fi',
-  lp:'native,custom,english,neutral,native_if_original,original,text',
-  lls:'fi',fbs:'photoreal',lmwr:'0.80',lmhr:'0.40',lbr:'0.21',cg:'0',
-  hur:'1',bdm:'7',bg1:'below_logo:1:network,studio:24:0.074',bls:'0.75'
-};
-function buildPostersPlusUrl(imdbId,tmdbId,type) {
-  if(!validImdb(imdbId) || !cleanTmdb(tmdbId)) throw new Error('Invalid artwork IDs');
-  const variables={
-    id:imdbId,stremio_id:imdbId,imdb_id:imdbId,tmdb_id:cleanTmdb(tmdbId),
-    type:type==='series'?'series':'movie',shape:POSTERSPLUS_SHAPE
-  };
-  let url;
-  if(POSTERSPLUS_TEMPLATE){
-    const expanded=POSTERSPLUS_TEMPLATE.replace(/\{(tmdb_id|imdb_id|stremio_id|id|type|shape)\??\}/g,
-      (_,field)=>encodeURIComponent(variables[field]));
-    if(/\{[^}]+\}/.test(expanded))throw new Error('Unknown Posters+ template placeholder');
-    url=new URL(expanded);
-  }else{
-    url=new URL('https://postersplus.slokker.cc/poster');
-    url.searchParams.set('tmdb_id',variables.tmdb_id);
-    url.searchParams.set('imdb_id',variables.imdb_id);
-    url.searchParams.set('stremio_id',variables.id);
-    url.searchParams.set('type',variables.type);
-    url.searchParams.set('shape',variables.shape);
-    for(const [key,value] of Object.entries(POSTERSPLUS_OPTIONS))url.searchParams.set(key,value);
-    if(TMDB_KEY)url.searchParams.set('tmdb_key',TMDB_KEY);
-    if(MDBLIST_KEY)url.searchParams.set('mdblist_key',MDBLIST_KEY);
-  }
-  if(url.protocol!=='https:' || url.hostname!=='postersplus.slokker.cc' || url.pathname!=='/poster')
-    throw new Error('Unsafe Posters+ URL');
-  return url.toString();
-}
+// Uses the exact EasyRatingsDB URL template supplied by the user. Keep the ID, type and shape placeholders.
+const EASYRATINGS_TEMPLATE = process.env.EASYRATINGS_POSTER_TEMPLATE ||
+  'https://easyratingsdb.com/67b66dcb8878a238077b648eaf2f35c4/poster/{id}.jpg?type={type}&shape={shape}';
+const EASYRATINGS_SHAPE = ['poster','landscape','square'].includes(process.env.EASYRATINGS_SHAPE) ? process.env.EASYRATINGS_SHAPE : 'poster';
+const EASYRATINGS_TIMEOUT_MS = Math.max(900, Math.min(9000, Number(process.env.EASYRATINGS_TIMEOUT_MS || 3500)));
 const MAX_POSTER_RENDERS = Math.max(1,Math.min(4,Number(process.env.MAX_POSTER_RENDERS || 2)));
 let posterRendersActive=0;
 const posterRenderQueue=[];
@@ -75,10 +37,20 @@ async function renderWithLimit(fn) {
   try { return await fn(); }
   finally { posterRendersActive--; const next=posterRenderQueue.shift(); if(next)next(); }
 }
+function buildEasyRatingsUrl(imdbId,type) {
+  if (!validImdb(imdbId)) throw new Error('Invalid IMDb ID for EasyRatings');
+  const value=EASYRATINGS_TEMPLATE
+    .replace(/\{id\}/g,encodeURIComponent(imdbId))
+    .replace(/\{type\}/g,type==='series'?'series':'movie')
+    .replace(/\{shape\}/g,EASYRATINGS_SHAPE);
+  const parsed=new URL(value);
+  if(parsed.protocol!=='https:' || parsed.hostname!=='easyratingsdb.com') throw new Error('Unsafe EasyRatings poster template');
+  return parsed.toString();
+}
 const POSTER_WIDTH = Math.max(720, Math.min(2160, Number(process.env.POSTER_WIDTH || 720) || 1080));
 const TARGET_W = Math.round(POSTER_WIDTH / 2) * 2;
 const TARGET_H = Math.round(TARGET_W * 1.5);
-const POSTER_CACHE_VERSION = 'v5120-postersplus-curated'; // Refresh after catalog changes
+const POSTER_CACHE_VERSION = 'v5110-easyratings-tuned'; // Refresh after catalog changes
 const CATALOG_TTL = 60 * 60 * 1000; // Refresh filtered daily chart about hourly
 const CATALOG_SUCCESS_HEADER = 'public, max-age=120, s-maxage=1800, stale-while-revalidate=86400, stale-if-error=86400';
 const LOG = (...args) => console.log('[top10]', ...args);
@@ -113,9 +85,9 @@ const GENRE_MAP = {
 };
 const MANIFEST = {
   id: 'com.sensationa1.top10.cloud',
-  version: '5.12.0',
+  version: '5.11.0',
   name: 'Top 10 Trending (Apple TV Style)',
-  description: 'Mainstream streaming Top 10, refreshed daily from JustWatch popularity and MDBList signals; no miniseries, Posters+ premium artwork.',
+  description: 'TMDB Trending Today, digital movies, no anime (except Edgerunners), EasyRatingsDB artwork and fast ranked cards.',
   resources: ['catalog'],
   types: ['movie','series'],
   idPrefixes: ['tt'],
@@ -163,18 +135,10 @@ function distinct(items) {
     ids.add(k);return true;
   });
 }
-// Dynamic audience-led shortlist: JustWatch 24h and weekly charts + MDBList
-// broad popularity list. Unlike the TMDB /trending/day feed, these emphasize
-// discoverability and streaming interest rather than sudden niche spikes.
-const TRENDING_MAX_PAGES=3;
-const CHART_REGION=String(process.env.JUSTWATCH_COUNTRY||'US').toUpperCase();
-const CHART_LIMIT=60;
-const MIN_TMDB_VOTES={
-  movie:Math.max(0,Number(process.env.MIN_TMDB_MOVIE_VOTES||350)),
-  series:Math.max(0,Number(process.env.MIN_TMDB_SERIES_VOTES||250))
-};
-const SOURCE_WEIGHTS={daily:0.56,weekly:0.25,popular:0.19};
-const rankingSource='JustWatch Daily + Weekly / MDBList Popularity (curated)';
+// Starting rank comes ONLY from TMDB global Trending Today: no regional Discover
+// queries or regional popularity scoring. We screen ranked titles and fill
+// positions 1-10 from lower-ranked entries in the SAME daily chart as needed.
+const TRENDING_MAX_PAGES = 5;
 const CYBERPUNK_EDGERUNNERS_TMDB_ID = '105248';
 const ANIMATION_GENRE = 16;
 const ANIME_KEYWORD = 210024;
@@ -266,125 +230,62 @@ function hasDigitalRelease(results) {
       return Number(entry?.type)===4 && /^\d{4}-\d{2}-\d{2}$/.test(day) && day<=today;
     }));
 }
-function hasFuturePremiere(details) {
-  const date=String(details?.first_air_date||'').slice(0,10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(date) && date>new Date().toISOString().slice(0,10);
-}
-function isLimitedSeries(details) {
-  const kind=String(details?.type||'').trim().toLowerCase().replace(/[-_ ]/g,'');
-  if(kind==='miniseries'||kind==='limitedseries')return true;
-  // Some services mislabel completed single-season limited runs as Scripted.
-  return details?.status==='Ended' && Number(details?.number_of_seasons||0)===1 &&
-    Number(details?.number_of_episodes||0)>0 && Number(details.number_of_episodes)<=10;
-}
-function isMainstream(details,type,score) {
-  const votes=Number(details?.vote_count||0);
-  const rating=Number(details?.vote_average||0);
-  const min=MIN_TMDB_VOTES[type]||100;
-  // Daily JustWatch chart alone cannot guarantee broad appeal; enforce
-  // social proof, but use a lighter gate for titles on multiple charts.
-  const threshold=score.daily && (score.weekly||score.popular) ? min : min*2;
-  const minRating=Math.max(0,Number(process.env.MIN_TMDB_RATING||6.0));
-  return votes>=threshold && rating>=minRating;
-}
-async function inspectCandidate(item,type,signal={}) {
-  const details=await tmdbDetailsFor(item,type);
-  if(!details)return null;
-  if(type==='series' && ((!isEdgerunners({...details,tmdb_id:item.id},type) && isLimitedSeries(details)) || hasFuturePremiere(details)))return null;
-  if(type==='series' && Array.isArray(details.genres) && details.genres.some(g=>[10763,10764,10766,10767].includes(Number(g.id))))return null;
-  if(!isMainstream(details,type,signal))return null;
-  if(await isExcludedAnime({...details,tmdb_id:item.id},type))return null;
+async function inspectCandidate(item,type) {
+  // Full details are useful even when metadata enrichment is turned off only
+  // when network calls can be combined, so honor the opt-out setting.
+  const details=TMDB_ENRICHMENT_ENABLED ? await tmdbDetailsFor(item,type) : null;
   if(type==='movie') {
     const embeddedDates=details?.release_dates?.results;
     const eligible=Array.isArray(embeddedDates) ? hasDigitalRelease(embeddedDates)
       : await digitalStatus(item.id||item.tmdb_id||item.tmdbid);
     if(!eligible)return null;
   }
-  const imdb=validImdb(details?.external_ids?.imdb_id) ? details.external_ids.imdb_id :
-    validImdb(details?.imdb_id) ? details.imdb_id : await resolveImdbId(details,type);
+  const fromItem=item.imdb_id||item.imdbid||item.external_ids?.imdb_id;
+  const fromDetails=details?.external_ids?.imdb_id || details?.imdb_id;
+  const imdb=validImdb(fromItem) ? fromItem : validImdb(fromDetails) ? fromDetails : await resolveImdbId(item,type);
   if(!validImdb(imdb))return null;
-  return {item:{...item,...details,id:item.id,tmdb_id:item.id},id:imdb};
-}
-function chartIds(payload){
-  const arr=rawList(payload);
-  const ids=[];const used=new Set();
-  for(const row of arr){
-    const nested=row?.ids||row?.movie?.ids||row?.show?.ids||{};
-    const possible=row?.tmdb_id??row?.tmdbid??row?.tmdb??nested?.tmdb??row?.movie?.tmdb_id??row?.show?.tmdb_id??row?.id;
-    const id=cleanTmdb(possible);
-    if(id&&!used.has(id)){used.add(id);ids.push(id);}
-  }
-  return ids.slice(0,CHART_LIMIT);
-}
-async function audienceChart(type,period){
-  if(!MDBLIST_KEY)return [];
-  const media=type==='series'?'show':'movie';
-  const r=await api.get(`https://api.mdblist.com/justwatch/streaming-charts/${media}`,{
-    params:{apikey:MDBLIST_KEY,period,country:CHART_REGION},timeout:5600
-  });
-  return chartIds(r.data);
-}
-async function popularList(type){
-  if(!MDBLIST_KEY)return [];
-  const slug=type==='series'?'most-popular-shows-top-50':'most-popular-top-50';
-  const r=await api.get(`https://api.mdblist.com/lists/linaspurinis/${slug}/items`,{
-    params:{apikey:MDBLIST_KEY,limit:60},timeout:5600
-  });
-  return chartIds(r.data);
-}
-async function tmdbPopularIds(type){
-  const media=type==='series'?'tv':'movie';
-  const [p1,p2]=await Promise.all([1,2].map(page=>
-    tmdbGet(`/${media}/popular`,{language:'en-US',page},5500).catch(()=>({results:[]}))));
-  return chartIds([...rawList(p1),...rawList(p2)]);
+  return {item,id:imdb};
 }
 async function fetchEligibleTrending(type) {
-  const records=new Map();
-  function add(ids,source) {
-    ids.forEach((id,pos)=>{
-      let c=records.get(id);
-      if(!c){c={id,scores:{daily:0,weekly:0,popular:0},rank:{}};records.set(id,c);}
-      if(!c.rank[source]){
-        c.rank[source]=pos+1;
-        // Each data source is normalized to 0..1, so sample sizes differ safely.
-        c.scores[source]=Math.max(0,1-(pos/(source==='popular'?50:60)));
-      }
-    });
-  }
-  if(MDBLIST_KEY){
-    const chartResults=await Promise.allSettled([
-      audienceChart(type,'daily'),audienceChart(type,'weekly'),popularList(type)
-    ]);
-    chartResults.forEach((r,i)=>{
-      const kind=['daily','weekly','popular'][i];
-      if(r.status==='fulfilled')add(r.value,kind);
-      else LOG('Audience chart unavailable',type,kind,r.reason?.message||'unknown');
-    });
-  }
-  if(records.size<20){
-    const popular=await tmdbPopularIds(type);
-    // Fallback only, not TMDB Trending Today. Never replace a functioning chart.
-    for(const [i,id] of popular.entries())if(!records.has(id)){
-      records.set(id,{id,scores:{daily:0,weekly:0,popular:Math.max(.05,.48-i*.009)},rank:{fallback:i+1}});
-    }
-  }
-  const candidates=[...records.values()].map(c=>({
-    ...c,weight:c.scores.daily*SOURCE_WEIGHTS.daily+
-      c.scores.weekly*SOURCE_WEIGHTS.weekly+
-      c.scores.popular*SOURCE_WEIGHTS.popular
-  })).sort((a,b)=>b.weight-a.weight);
-  if(!candidates.length)throw new Error('No audience-chart or popularity candidates');
+  const media=type==='series'?'tv':'movie';
   const eligible=[];
-  for(let offset=0;offset<candidates.length&&eligible.length<10;offset+=8){
-    const batch=candidates.slice(offset,offset+8);
-    const checked=await mapLimited(batch,5,async c=>{
-      const entry=await inspectCandidate({id:c.id},type,c.rank);
-      return entry?{...entry,score:c.weight}:null;
+  const seen=new Set();
+  for(let page=1;page<=TRENDING_MAX_PAGES && eligible.length<10;page++) {
+    let data;
+    try {
+      data=await tmdbGet(`/trending/${media}/day`,{language:'en-US',page},5500);
+    }catch(err){
+      if(page===1) throw err;
+      LOG('TMDB daily trending next page unavailable',type,page,err.message);
+      break;
+    }
+    const raw=rawList(data);
+    if(page===1 && !raw.length) throw new Error(`TMDB Trending Today returned no ${type} titles`);
+    if(!raw.length)break;
+    const items=raw.filter(item=>{
+      const id=cleanTmdb(item?.tmdb_id||item?.tmdbid||item?.id);
+      if(!id||seen.has(id))return false;
+      seen.add(id);return true;
     });
-    eligible.push(...checked.filter(Boolean));
+    // The old implementation checked *all* 20 items on every page even when
+    // the first ten were valid, doubling digital-release and ID API calls.
+    // Small, ordered batches preserve chart order while stopping as soon as
+    // ten qualified candidates are available.
+    for(let pos=0;pos<items.length && eligible.length<10;){
+      const remaining=10-eligible.length;
+      const count=Math.min(items.length-pos,Math.max(4,remaining));
+      const batch=items.slice(pos,pos+count);
+      pos+=count;
+      const checked=await mapLimited(batch,Math.min(6,count),async item=>{
+        if(await isExcludedAnime(item,type))return null;
+        return inspectCandidate(item,type);
+      });
+      eligible.push(...checked.filter(Boolean));
+    }
+    if(data?.total_pages && page>=Number(data.total_pages))break;
   }
-  if(!eligible.length)throw new Error(`No eligible mainstream ${type} titles`);
-  if(eligible.length<10)LOG('Fewer than ten mainstream titles passed filters',type,eligible.length);
+  if(!eligible.length) throw new Error(`No eligible TMDB Trending Today ${type} titles`);
+  if(eligible.length<10)LOG('Fewer than ten titles passed digital/anime filters',type,eligible.length);
   return eligible.slice(0,10);
 }
 const imdbCache = new Map();
@@ -439,7 +340,7 @@ function bestTmdbLogo(images, originalLanguage='en') {
   return tmdbLogoPath(logos[0].file_path);
 }
 async function tmdbDetailsFor(item,type) {
-  // Title details are always required for strict quality and miniseries filtering.
+  if(!TMDB_ENRICHMENT_ENABLED) return null;
   const id=cleanTmdb(item?.tmdb_id||item?.tmdbid||item?.id);
   if(!id) return null;
   const key=`${type}:${id}`;
@@ -452,7 +353,7 @@ async function tmdbDetailsFor(item,type) {
       const originalLang=/^[a-z]{2}$/i.test(String(item.original_language||''))
         ? String(item.original_language).toLowerCase() : 'en';
       const langs=[...new Set(['en','null',originalLang])].join(',');
-      const append=TMDB_ENRICHMENT_ENABLED ? (type==='series' ? 'images,credits,videos,external_ids' : 'images,credits,videos,external_ids,release_dates') : (type==='series'?'external_ids':'external_ids,release_dates');
+      const append=type==='series' ? 'images,credits,videos,external_ids' : 'images,credits,videos,external_ids,release_dates';
       const data=await tmdbGet(`/${type==='series'?'tv':'movie'}/${id}`,
         {language:'en-US',append_to_response:append,include_image_language:langs},
         Number(process.env.TMDB_META_TIMEOUT_MS||3000));
@@ -571,8 +472,8 @@ async function imdbRatingFor(tmdbId, type, fallback) {
 }
 async function buildCatalog(type,host) {
   const eligible=await fetchEligibleTrending(type);
-  // Cross-source mainstream ranking, ranks contiguous 1-10.
-  // Fetch MDBList ratings for only the ten shortlisted titles.
+  // Filtered daily-chart order is retained; ranks become contiguous 1-10.
+  // Fetch ratings and full TMDB metadata only for selected titles.
   const metas=await mapLimited(eligible,8,async ({item,id},index)=>{
     // Ratings and TMDB enrichment do not depend on one another. Parallelize
     // the two network requests instead of adding their latencies.
@@ -836,8 +737,8 @@ app.get('/catalog/:type/:id.json',async(req,res)=>{
   }
 });
 app.get('/api/status',(_req,res)=>res.set('Cache-Control','no-store').json({
-  ok:true,version:MANIFEST.version,tmdbConfigured:Boolean(TMDB_KEY),rankingSource,digitalReleaseStrict:true,animeExcluded:true,animeException:'Cyberpunk: Edgerunners',regionalFilter:false,posterWidth:TARGET_W,
-  posterCacheItems:posterCache.size,posterSource:'Posters+',posterRendersActive,posterQueued:posterRenderQueue.length,audienceChartConfigured:Boolean(MDBLIST_KEY),justwatchRegion:CHART_REGION,excludesMiniseries:true,tmdbEnrichment:TMDB_ENRICHMENT_ENABLED,tmdbMetadataCached:tmdbDetailsCache.size,catalogs:[...catalogCache.values()].map(v=>({items:v.metas.length,ageSeconds:Math.round((Date.now()-v.ts)/1000)})),
+  ok:true,version:MANIFEST.version,tmdbConfigured:Boolean(TMDB_KEY),rankingSource:'TMDB Trending Today — filtered',digitalReleaseStrict:true,animeExcluded:true,animeException:'Cyberpunk: Edgerunners',regionalFilter:false,posterWidth:TARGET_W,
+  posterCacheItems:posterCache.size,posterSource:'EasyRatingsDB',posterRendersActive,posterQueued:posterRenderQueue.length,posterWidth:TARGET_W,tmdbEnrichment:TMDB_ENRICHMENT_ENABLED,tmdbMetadataCached:tmdbDetailsCache.size,catalogs:[...catalogCache.values()].map(v=>({items:v.metas.length,ageSeconds:Math.round((Date.now()-v.ts)/1000)})),
 }));
 app.get('/api/poster',async(req,res)=>{
   const {id,rank,type,tmdb,g,r,p,n}=req.query;
@@ -855,16 +756,16 @@ app.get('/api/poster',async(req,res)=>{
     pending=(async()=>{
       // Keep the independent EasyRatings network requests concurrent. Limit
       // only the CPU-intensive sharp composition on small Render instances.
-      let source='postersplus';
+      let source='easyratingsdb';
       let base=null;
       try {
-        const pp=await api.get(buildPostersPlusUrl(id,tmdb,mediaType),{
-          responseType:'arraybuffer',timeout:POSTERSPLUS_TIMEOUT_MS,
+        const pp=await api.get(buildEasyRatingsUrl(id,mediaType),{
+          responseType:'arraybuffer',timeout:EASYRATINGS_TIMEOUT_MS,
           maxContentLength:8*1024*1024,headers:{Accept:'image/*'}
         });
         // Empty/HTML error pages must not be sent into sharp as artwork.
         if(pp.data?.byteLength>1500 && /image\//i.test(String(pp.headers?.['content-type']||'')))base=Buffer.from(pp.data);
-      }catch(e){LOG('Posters+ unavailable; using TMDB fallback',e.message);}
+      }catch(e){LOG('EasyRatingsDB unavailable; using TMDB fallback',e.message);}
       if(!base){source='tmdb-fallback';base=await fallbackArt(p,n);}
       return renderWithLimit(async()=>{
       const assets = getRankAssets(num);
@@ -905,7 +806,7 @@ app.get('/api/poster',async(req,res)=>{
         .composite(composites)
         .jpeg({quality:81, chromaSubsampling:'4:2:0', mozjpeg:false})
         .toBuffer();
-      const cacheHeader=source==='postersplus'
+      const cacheHeader=source==='easyratingsdb'
         ? 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000, stale-if-error=2592000'
         : 'public, max-age=60, s-maxage=900, stale-while-revalidate=1800';
       const output={bytes,cacheHeader};

@@ -1,24 +1,25 @@
 {
-  "name": "my-top10-addon",
-  "version": "5.12.0",
+  "name": "my-top10-addon-netlify",
+  "version": "5.12.0-netlify",
   "private": true,
-  "description": "JustWatch and MDBList mainstream Top 10, miniseries filtering, Posters+ custom artwork",
+  "description": "Netlify adapter for original Sensationa1 Top 10 addon; sync original source on build",
   "main": "api/index.js",
   "scripts": {
-    "start": "node api/index.js",
-    "test": "node --test tests/*.test.js",
-    "check": "node --check api/index.js"
+    "build:netlify": "node scripts/sync-upstream.mjs && node --check api/index.js",
+    "check": "node --check api/index.js",
+    "start": "node api/index.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
-    "@vercel/functions": "^3.9.0",
     "axios": "^1.7.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "sharp": "^0.33.4"
+    "sharp": "^0.33.4",
+    "serverless-http": "^3.2.0",
+    "@vercel/functions": "^3.9.0"
   }
 }
