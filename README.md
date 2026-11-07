@@ -18,3 +18,7 @@ The Netlify adapter does not modify the upstream Top 10 algorithm, filters, post
 **Fonts:** No font files are redistributed with this ZIP. The Netlify build retrieves the existing `fonts/` folder from the user's original public GitHub repository if present, and `included_files` bundles it with the function. This keeps any pre-existing artwork typography as configured in the source.
 
 **Performance:** These changes fix deployment compatibility, not inherent ranking-generation or image-processing latency. Caching should be measured after endpoints function. Netlify Free usage is metered.
+
+
+## Fixed build guard
+This revision repairs `Unexpected upstream version` caused by syncing the HEAD of a repo that also holds this Netlify package. The build now searches upstream Git history for the latest v5.12 source matching its JustWatch/MDBList ranking, Posters+ artwork, and catalogue IDs; it restores the original fonts from the matching revision where available. It fails safely if no matching version exists. Build-time GitHub access is required. This package includes an older *offline fallback* that must not be deployed unless the reviewed source is restored.
